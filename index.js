@@ -519,26 +519,77 @@ function setupEvents() {
     });
 }
 
-// 확장 버튼 추가
-function addExtensionButton() {
-    const extensionMenu = document.getElementById('extensionsMenu');
-    if (!extensionMenu) return;
+// Extensions 설정 패널에 UI 추가
+function addExtensionSettings() {
+    const settingsContainer = document.getElementById('extensions_settings2');
+    if (!settingsContainer) return;
     
     // 이미 있으면 추가 안함
-    if (document.getElementById('sumone-menu-button')) return;
+    if (document.getElementById('sumone-settings')) return;
     
-    const button = document.createElement('div');
-    button.id = 'sumone-menu-button';
-    button.className = 'list-group-item flex-container flexGap5';
-    button.innerHTML = `
-        <div class="fa-solid fa-heart extensionsMenuExtensionButton"></div>
-        <span>썸원 (SumOne)</span>
+    const settingsHtml = `
+    <div id="sumone-settings" class="extension_settings">
+        <div class="inline-drawer">
+            <div class="inline-drawer-toggle inline-drawer-header">
+                <b>썸원 (SumOne)</b>
+                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+            </div>
+            <div class="inline-drawer-content">
+                <div class="sumone-settings-content">
+                    <p style="margin-bottom: 10px; color: var(--SmartThemeBodyColor);">
+                        매일 새로운 질문에 답하고, 캐릭터의 답변을 확인하세요!
+                    </p>
+                    <div class="flex-container">
+                        <input id="sumone-enabled" type="checkbox" checked />
+                        <label for="sumone-enabled">활성화</label>
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <button id="sumone-open-btn" class="menu_button">
+                            <i class="fa-solid fa-heart"></i>
+                            <span>썸원 열기</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     `;
-    button.addEventListener('click', () => {
+    
+    settingsContainer.insertAdjacentHTML('beforeend', settingsHtml);
+    
+    // 열기 버튼 이벤트
+    document.getElementById('sumone-open-btn')?.addEventListener('click', () => {
         openModal();
     });
     
-    extensionMenu.appendChild(button);
+    // 활성화 체크박스
+    document.getElementById('sumone-enabled')?.addEventListener('change', (e) => {
+        extension_settings[extensionName].enabled = e.target.checked;
+        saveSettingsDebounced();
+    });
+}
+
+// 채팅 입력창 옆에 빠른 접근 버튼 추가
+function addQuickAccessButton() {
+    const sendForm = document.getElementById('send_form');
+    if (!sendForm) return;
+    
+    // 이미 있으면 추가 안함
+    if (document.getElementById('sumone-quick-btn')) return;
+    
+    const button = document.createElement('div');
+    button.id = 'sumone-quick-btn';
+    button.className = 'mes_button interactable';
+    button.title = '썸원 (SumOne)';
+    button.innerHTML = '<i class="fa-solid fa-heart"></i>';
+    button.style.cssText = 'color: #ff6b9d; cursor: pointer;';
+    button.addEventListener('click', openModal);
+    
+    // send_but 버튼 앞에 삽입
+    const sendButton = document.getElementById('send_but');
+    if (sendButton) {
+        sendButton.parentNode.insertBefore(button, sendButton);
+    }
 }
 
 // 메인 초기화
@@ -551,12 +602,16 @@ jQuery(async () => {
     // 이벤트 설정
     setupEvents();
     
-    // 확장 메뉴에 버튼 추가
-    addExtensionButton();
+    // Extensions 설정 패널에 UI 추가
+    addExtensionSettings();
     
-    // 채팅 변경시 캐릭터 이름 업데이트
+    // 채팅 입력창 옆에 빠른 접근 버튼 추가
+    addQuickAccessButton();
+    
+    // 채팅 변경시 캐릭터 이름 업데이트 및 버튼 재추가
     eventSource.on(event_types.CHAT_CHANGED, () => {
         updateCharacterName();
+        addQuickAccessButton();
     });
     
     console.log('SumOne extension loaded!');
