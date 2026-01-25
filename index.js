@@ -1,25 +1,24 @@
-import {
-    extension_settings,
-    getContext,
-    saveSettingsDebounced,
-} from '../../../extensions.js';
+// SumOne (썸원) Extension for SillyTavern
+// 매일 새로운 질문에 답하고 캐릭터의 답변을 확인하세요
 
 import {
+    saveSettingsDebounced,
+    eventSource,
+    event_types,
     generateQuietPrompt,
 } from '../../../../script.js';
 
-import {
-    eventSource,
-    event_types,
-} from '../../../../script.js';
+import { extension_settings } from '../../../extensions.js';
+
+// SillyTavern context
+const getContext = () => SillyTavern.getContext();
 
 const extensionName = 'sumone';
-const extensionFolderPath = `scripts/extensions/third_party/${extensionName}`;
 
 // 기본 설정
 const defaultSettings = {
     enabled: true,
-    history: {}, // { "2026-01-25": { question: "...", myAnswer: "...", aiAnswer: "..." } }
+    history: {}, // { "2026-01-25": { question: "...", myAnswer: "...", aiAnswer: "...", charName: "..." } }
 };
 
 // 현재 상태
@@ -30,28 +29,52 @@ let todayQuestion = null;
 let todayMyAnswer = null;
 let todayAiAnswer = null;
 
-// 초기화
-async function loadSettings() {
+// 달력 네비게이션 상태
+let currentCalendarYear;
+let currentCalendarMonth;
+
+/**
+ * 설정 초기화
+ */
+function loadSettings() {
     extension_settings[extensionName] = extension_settings[extensionName] || {};
-    Object.assign(extension_settings[extensionName], {
-        ...defaultSettings,
-        ...extension_settings[extensionName],
-    });
+    
+    for (const [key, value] of Object.entries(defaultSettings)) {
+        if (extension_settings[extensionName][key] === undefined) {
+            extension_settings[extensionName][key] = value;
+        }
+    }
 }
 
-// 오늘 날짜 키 생성
+/**
+ * 오늘 날짜 키 생성
+ */
 function getTodayKey() {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
-// 날짜 파싱
+/**
+ * 날짜 파싱
+ */
 function parseDate(dateKey) {
     const [year, month, day] = dateKey.split('-').map(Number);
     return new Date(year, month - 1, day);
 }
 
-// 모달 HTML 생성
+/**
+ * HTML 이스케이프
+ */
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+/**
+ * 모달 HTML 생성
+ */
 function createModalHTML() {
     return `
     <div id="sumone-modal" class="sumone-modal" style="display: none;">
@@ -103,7 +126,6 @@ function createModalHTML() {
                             <button class="sumone-cal-nav" id="sumone-next-month">▶</button>
                         </div>
                         <div class="sumone-calendar" id="sumone-calendar">
-                            <!-- 달력 렌더링 -->
                         </div>
                     </div>
                     <div class="sumone-history-detail" id="sumone-history-detail">
@@ -116,7 +138,9 @@ function createModalHTML() {
     `;
 }
 
-// 달력 렌더링
+/**
+ * 달력 렌더링
+ */
 function renderCalendar(year, month) {
     const calendar = document.getElementById('sumone-calendar');
     const title = document.getElementById('sumone-cal-title');
@@ -130,7 +154,6 @@ function renderCalendar(year, month) {
     const startDay = firstDay.getDay();
     const totalDays = lastDay.getDate();
     
-    const today = new Date();
     const todayKey = getTodayKey();
     const history = extension_settings[extensionName]?.history || {};
     
@@ -175,7 +198,9 @@ function renderCalendar(year, month) {
     });
 }
 
-// 히스토리 상세 표시
+/**
+ * 히스토리 상세 표시
+ */
 function showHistoryDetail(dateKey) {
     const detail = document.getElementById('sumone-history-detail');
     if (!detail) return;
@@ -193,8 +218,7 @@ function showHistoryDetail(dateKey) {
     }
     
     const date = parseDate(dateKey);
-    const context = getContext();
-    const charName = context.name2 || '캐릭터';
+    const charName = record.charName || '캐릭터';
     
     detail.innerHTML = `
         <div class="sumone-history-date">${date.getMonth() + 1}월 ${date.getDate()}일</div>
@@ -213,29 +237,25 @@ function showHistoryDetail(dateKey) {
     `;
 }
 
-// HTML 이스케이프
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// 캐릭터 이름 업데이트
+/**
+ * 캐릭터 이름 업데이트
+ */
 function updateCharacterName() {
-    const context = getContext();
-    const charName = context.name2 || '캐릭터';
+    const ctx = getContext();
+    const charName = ctx.name2 || '캐릭터';
     const nameEl = document.querySelector('.sumone-char-name');
     if (nameEl) {
         nameEl.textContent = charName;
     }
 }
 
-// 질문 생성
+/**
+ * 질문 생성
+ */
 async function generateQuestion() {
-    const context = getContext();
-    const charName = context.name2 || '캐릭터';
-    const userName = context.name1 || '사용자';
+    const ctx = getContext();
+    const charName = ctx.name2 || '캐릭터';
+    const userName = ctx.name1 || '사용자';
     
     const questionEl = document.getElementById('sumone-question');
     if (!questionEl) return;
@@ -250,7 +270,6 @@ async function generateQuestion() {
         .slice(-10)
         .join('\n- ');
     
-    // generateQuietPrompt는 자동으로 캐릭터 카드, 로어북, 페르소나, 전체 채팅 히스토리를 컨텍스트에 포함함
     const prompt = `[SumOne Q&A: Generate ONE intimate question for ${userName} and ${charName} to answer about each other or their relationship. Consider their history, personality, and story context.
 
 ${previousQuestions ? `Already asked (avoid repeats):\n- ${previousQuestions}\n` : ''}
@@ -262,9 +281,8 @@ Rules:
 - Topics: feelings, memories, dreams, hypotheticals, preferences, relationship thoughts]`;
 
     try {
-        // skipWIAN=false: 로어북(World Info) 포함
         const result = await generateQuietPrompt(prompt, false, false);
-        todayQuestion = result.trim().replace(/^["']|["']$/g, '').replace(/^["""]+|["""]+$/g, '');
+        todayQuestion = result.trim().replace(/^["'"""]+|["'"""]+$/g, '');
         questionEl.textContent = todayQuestion;
     } catch (error) {
         console.error('SumOne: Failed to generate question', error);
@@ -272,11 +290,13 @@ Rules:
     }
 }
 
-// AI 답변 생성
+/**
+ * AI 답변 생성
+ */
 async function generateAiAnswer(question, myAnswer) {
-    const context = getContext();
-    const charName = context.name2 || '캐릭터';
-    const userName = context.name1 || '사용자';
+    const ctx = getContext();
+    const charName = ctx.name2 || '캐릭터';
+    const userName = ctx.name1 || '사용자';
     
     const aiAnswerEl = document.getElementById('sumone-ai-answer');
     if (!aiAnswerEl) return;
@@ -284,8 +304,6 @@ async function generateAiAnswer(question, myAnswer) {
     aiAnswerEl.innerHTML = '<span class="sumone-loading">답변 생성 중...</span>';
     isGenerating = true;
     
-    // generateQuietPrompt는 자동으로 캐릭터 카드, 로어북, 페르소나, 전체 채팅 히스토리를 컨텍스트에 포함함
-    // 그래서 캐릭터가 "자기답게" 답변할 수 있음
     const prompt = `[SumOne Q&A: ${userName} answered a relationship question. Now ${charName} must answer the same question IN CHARACTER.
 
 Question: "${question}"
@@ -299,9 +317,8 @@ Rules for ${charName}:
 - Just the answer, no meta commentary about this being a Q&A]`;
 
     try {
-        // skipWIAN=false: 로어북(World Info) 포함
         const result = await generateQuietPrompt(prompt, false, false);
-        todayAiAnswer = result.trim().replace(/^["']|["']$/g, '').replace(/^["""]+|["""]+$/g, '');
+        todayAiAnswer = result.trim().replace(/^["'"""]+|["'"""]+$/g, '');
         aiAnswerEl.textContent = todayAiAnswer;
         
         // 저장
@@ -314,9 +331,13 @@ Rules for ${charName}:
     }
 }
 
-// 오늘 데이터 저장
+/**
+ * 오늘 데이터 저장
+ */
 function saveToday() {
     const todayKey = getTodayKey();
+    const ctx = getContext();
+    const charName = ctx.name2 || '캐릭터';
     
     if (!extension_settings[extensionName].history) {
         extension_settings[extensionName].history = {};
@@ -326,12 +347,15 @@ function saveToday() {
         question: todayQuestion,
         myAnswer: todayMyAnswer,
         aiAnswer: todayAiAnswer,
+        charName: charName,
     };
     
     saveSettingsDebounced();
 }
 
-// 오늘 데이터 불러오기
+/**
+ * 오늘 데이터 불러오기
+ */
 function loadToday() {
     const todayKey = getTodayKey();
     const history = extension_settings[extensionName]?.history || {};
@@ -370,8 +394,18 @@ function loadToday() {
     return false;
 }
 
-// 모달 열기
+/**
+ * 모달 열기
+ */
 async function openModal() {
+    const ctx = getContext();
+    
+    // 캐릭터가 선택되어 있는지 확인
+    if (ctx.characterId === undefined && !ctx.groupId) {
+        toastr.warning('먼저 캐릭터를 선택해주세요.');
+        return;
+    }
+    
     const modal = document.getElementById('sumone-modal');
     if (!modal) return;
     
@@ -408,7 +442,9 @@ async function openModal() {
     }
 }
 
-// 모달 닫기
+/**
+ * 모달 닫기
+ */
 function closeModal() {
     const modal = document.getElementById('sumone-modal');
     if (modal) {
@@ -416,7 +452,9 @@ function closeModal() {
     }
 }
 
-// 탭 전환
+/**
+ * 탭 전환
+ */
 function switchTab(tab) {
     currentTab = tab;
     
@@ -430,11 +468,15 @@ function switchTab(tab) {
     
     if (tab === 'history') {
         const now = new Date();
-        renderCalendar(now.getFullYear(), now.getMonth());
+        currentCalendarYear = now.getFullYear();
+        currentCalendarMonth = now.getMonth();
+        renderCalendar(currentCalendarYear, currentCalendarMonth);
     }
 }
 
-// 제출 처리
+/**
+ * 제출 처리
+ */
 async function handleSubmit() {
     const myAnswerEl = document.getElementById('sumone-my-answer');
     const submitBtn = document.getElementById('sumone-submit');
@@ -443,12 +485,12 @@ async function handleSubmit() {
     
     const answer = myAnswerEl.value.trim();
     if (!answer) {
-        alert('답변을 입력해주세요!');
+        toastr.warning('답변을 입력해주세요!');
         return;
     }
     
     if (!todayQuestion) {
-        alert('질문이 아직 준비되지 않았습니다.');
+        toastr.warning('질문이 아직 준비되지 않았습니다.');
         return;
     }
     
@@ -462,11 +504,9 @@ async function handleSubmit() {
     submitBtn.textContent = '완료';
 }
 
-// 달력 네비게이션 상태
-let currentCalendarYear;
-let currentCalendarMonth;
-
-// 이벤트 설정
+/**
+ * 이벤트 설정
+ */
 function setupEvents() {
     const modal = document.getElementById('sumone-modal');
     if (!modal) return;
@@ -487,7 +527,7 @@ function setupEvents() {
     // 제출 버튼
     document.getElementById('sumone-submit')?.addEventListener('click', handleSubmit);
     
-    // Enter 키로 제출
+    // Enter 키로 제출 (Shift+Enter는 줄바꿈)
     document.getElementById('sumone-my-answer')?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -496,10 +536,6 @@ function setupEvents() {
     });
     
     // 달력 네비게이션
-    const now = new Date();
-    currentCalendarYear = now.getFullYear();
-    currentCalendarMonth = now.getMonth();
-    
     document.getElementById('sumone-prev-month')?.addEventListener('click', () => {
         currentCalendarMonth--;
         if (currentCalendarMonth < 0) {
@@ -519,82 +555,76 @@ function setupEvents() {
     });
 }
 
-// Extensions 설정 패널에 UI 추가
-function addExtensionSettings() {
-    const settingsContainer = document.getElementById('extensions_settings2');
-    if (!settingsContainer) return;
-    
-    // 이미 있으면 추가 안함
-    if (document.getElementById('sumone-settings')) return;
-    
+/**
+ * 설정 UI 생성
+ */
+function createSettingsUI() {
     const settingsHtml = `
-    <div id="sumone-settings" class="extension_settings">
-        <div class="inline-drawer">
-            <div class="inline-drawer-toggle inline-drawer-header">
-                <b>썸원 (SumOne)</b>
-                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-            </div>
-            <div class="inline-drawer-content">
-                <div class="sumone-settings-content">
-                    <p style="margin-bottom: 10px; color: var(--SmartThemeBodyColor);">
+        <div class="sumone-settings">
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <b>썸원 (SumOne)</b>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <p style="margin: 10px 0; opacity: 0.8;">
                         매일 새로운 질문에 답하고, 캐릭터의 답변을 확인하세요!
                     </p>
-                    <div class="flex-container">
-                        <input id="sumone-enabled" type="checkbox" checked />
-                        <label for="sumone-enabled">활성화</label>
-                    </div>
-                    <div style="margin-top: 10px;">
-                        <button id="sumone-open-btn" class="menu_button">
-                            <i class="fa-solid fa-heart"></i>
-                            <span>썸원 열기</span>
-                        </button>
+                    <div style="margin: 10px 0;">
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                            <input type="checkbox" id="sumone-enabled" ${extension_settings[extensionName].enabled ? 'checked' : ''}>
+                            <span>버튼 표시</span>
+                        </label>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
     `;
     
-    settingsContainer.insertAdjacentHTML('beforeend', settingsHtml);
+    $('#extensions_settings').append(settingsHtml);
     
-    // 열기 버튼 이벤트
-    document.getElementById('sumone-open-btn')?.addEventListener('click', () => {
-        openModal();
-    });
-    
-    // 활성화 체크박스
-    document.getElementById('sumone-enabled')?.addEventListener('change', (e) => {
-        extension_settings[extensionName].enabled = e.target.checked;
+    $('#sumone-enabled').on('change', function() {
+        extension_settings[extensionName].enabled = this.checked;
         saveSettingsDebounced();
+        updateButtonVisibility();
     });
 }
 
-// 채팅 입력창 옆에 빠른 접근 버튼 추가
-function addQuickAccessButton() {
-    const sendForm = document.getElementById('send_form');
-    if (!sendForm) return;
-    
-    // 이미 있으면 추가 안함
-    if (document.getElementById('sumone-quick-btn')) return;
-    
-    const button = document.createElement('div');
-    button.id = 'sumone-quick-btn';
-    button.className = 'mes_button interactable';
-    button.title = '썸원 (SumOne)';
-    button.innerHTML = '<i class="fa-solid fa-heart"></i>';
-    button.style.cssText = 'color: #ff6b9d; cursor: pointer;';
-    button.addEventListener('click', openModal);
-    
-    // send_but 버튼 앞에 삽입
-    const sendButton = document.getElementById('send_but');
-    if (sendButton) {
-        sendButton.parentNode.insertBefore(button, sendButton);
-    }
+/**
+ * 버튼 표시 여부 업데이트
+ */
+function updateButtonVisibility() {
+    $('#sumone-btn').toggle(extension_settings[extensionName].enabled);
 }
 
-// 메인 초기화
+/**
+ * 메뉴 버튼 추가
+ */
+function addMenuButtons() {
+    $('#sumone_wand_container').remove();
+    
+    const buttonHtml = `
+        <div id="sumone_wand_container" class="extension_container interactable" tabindex="0">
+            <div id="sumone-btn" class="list-group-item flex-container flexGap5 interactable" tabindex="0" role="listitem" style="display:${extension_settings[extensionName].enabled ? 'flex' : 'none'}">
+                <div class="fa-solid fa-heart extensionsMenuExtensionButton" style="color: #ff6b9d;"></div>
+                <span>썸원</span>
+            </div>
+        </div>
+    `;
+    
+    $('#extensionsMenu').prepend(buttonHtml);
+    
+    $('#sumone-btn').on('click', openModal);
+}
+
+/**
+ * 초기화
+ */
 jQuery(async () => {
-    await loadSettings();
+    console.log('[SumOne] Extension loading...');
+    
+    loadSettings();
+    createSettingsUI();
     
     // 모달 HTML 추가
     $('body').append(createModalHTML());
@@ -602,17 +632,15 @@ jQuery(async () => {
     // 이벤트 설정
     setupEvents();
     
-    // Extensions 설정 패널에 UI 추가
-    addExtensionSettings();
+    // 메뉴 버튼 추가 (약간의 딜레이)
+    setTimeout(() => {
+        addMenuButtons();
+    }, 1000);
     
-    // 채팅 입력창 옆에 빠른 접근 버튼 추가
-    addQuickAccessButton();
-    
-    // 채팅 변경시 캐릭터 이름 업데이트 및 버튼 재추가
+    // 채팅 변경시 캐릭터 이름 업데이트
     eventSource.on(event_types.CHAT_CHANGED, () => {
         updateCharacterName();
-        addQuickAccessButton();
     });
     
-    console.log('SumOne extension loaded!');
+    console.log('[SumOne] Extension loaded!');
 });
