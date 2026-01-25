@@ -1,0 +1,456 @@
+/* SumOne Extension Styles */
+
+/* Modal Overlay */
+.sumone-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    backdrop-filter: blur(4px);
+}
+
+/* Modal Container */
+.sumone-container {
+    background: linear-gradient(145deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: 20px;
+    width: 90%;
+    max-width: 450px;
+    max-height: 85vh;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 
+                0 0 40px rgba(255, 107, 157, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header */
+.sumone-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sumone-tabs {
+    display: flex;
+    gap: 8px;
+}
+
+.sumone-tab {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 20px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.sumone-tab:hover {
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.sumone-tab.active {
+    background: linear-gradient(135deg, #ff6b9d 0%, #c44569 100%);
+    color: white;
+}
+
+.sumone-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sumone-close:hover {
+    background: rgba(255, 107, 157, 0.2);
+    color: #ff6b9d;
+}
+
+/* Content Area */
+.sumone-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+}
+
+.sumone-panel {
+    display: none;
+}
+
+.sumone-panel.active {
+    display: block;
+}
+
+/* Today Panel */
+.sumone-today-content {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.sumone-label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #ff6b9d;
+    margin-bottom: 10px;
+}
+
+.sumone-question-area {
+    background: rgba(255, 107, 157, 0.08);
+    border-radius: 16px;
+    padding: 20px;
+    border: 1px solid rgba(255, 107, 157, 0.2);
+}
+
+.sumone-question {
+    font-size: 18px;
+    font-weight: 500;
+    color: #fff;
+    line-height: 1.6;
+}
+
+.sumone-loading {
+    color: rgba(255, 255, 255, 0.5);
+    font-style: italic;
+}
+
+/* Answer Areas */
+.sumone-answer-area,
+.sumone-ai-area {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 16px;
+    padding: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sumone-my-answer-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#sumone-my-answer {
+    width: 100%;
+    padding: 14px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.3);
+    color: #fff;
+    font-size: 15px;
+    resize: none;
+    font-family: inherit;
+    transition: border-color 0.3s ease;
+}
+
+#sumone-my-answer:focus {
+    outline: none;
+    border-color: #ff6b9d;
+}
+
+#sumone-my-answer:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.sumone-submit-btn {
+    align-self: flex-end;
+    padding: 10px 28px;
+    border: none;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #ff6b9d 0%, #c44569 100%);
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.sumone-submit-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 20px rgba(255, 107, 157, 0.4);
+}
+
+.sumone-submit-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* AI Answer */
+.sumone-ai-answer {
+    font-size: 16px;
+    color: #fff;
+    line-height: 1.6;
+    min-height: 50px;
+}
+
+.sumone-hidden-answer {
+    font-size: 32px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.3);
+    padding: 20px;
+    letter-spacing: 8px;
+}
+
+/* Calendar Styles */
+.sumone-calendar-wrapper {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sumone-calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.sumone-cal-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.sumone-cal-nav {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.sumone-cal-nav:hover {
+    background: rgba(255, 107, 157, 0.2);
+    color: #ff6b9d;
+}
+
+.sumone-cal-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.sumone-cal-weekdays span {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+}
+
+.sumone-cal-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+
+.sumone-cal-day {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.sumone-cal-day.empty {
+    cursor: default;
+}
+
+.sumone-cal-day:not(.empty):hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.sumone-cal-day.has-record {
+    color: #fff;
+}
+
+.sumone-cal-day.has-record::after {
+    content: '';
+    position: absolute;
+    bottom: 4px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #ff6b9d;
+}
+
+.sumone-cal-day.today {
+    background: rgba(255, 107, 157, 0.2);
+    color: #ff6b9d;
+    font-weight: 600;
+}
+
+.sumone-cal-day.selected {
+    background: linear-gradient(135deg, #ff6b9d 0%, #c44569 100%);
+    color: #fff;
+}
+
+.sumone-cal-day.selected::after {
+    background: #fff;
+}
+
+/* History Detail */
+.sumone-history-detail {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 16px;
+    padding: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    min-height: 150px;
+}
+
+.sumone-history-date {
+    font-size: 14px;
+    font-weight: 600;
+    color: #ff6b9d;
+    margin-bottom: 16px;
+}
+
+.sumone-no-selection,
+.sumone-no-record {
+    text-align: center;
+    color: rgba(255, 255, 255, 0.4);
+    font-style: italic;
+    padding: 30px;
+}
+
+.sumone-history-item {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sumone-history-item:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.sumone-history-label {
+    min-width: 50px;
+    padding: 4px 10px;
+    background: rgba(255, 107, 157, 0.15);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #ff6b9d;
+    text-align: center;
+    height: fit-content;
+}
+
+.sumone-history-text {
+    flex: 1;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.85);
+    line-height: 1.5;
+}
+
+/* Menu Button */
+#sumone-menu-button {
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+#sumone-menu-button:hover {
+    background: rgba(255, 107, 157, 0.1);
+}
+
+#sumone-menu-button .fa-heart {
+    color: #ff6b9d;
+}
+
+/* Scrollbar */
+.sumone-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sumone-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sumone-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+.sumone-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Animation */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.sumone-container {
+    animation: fadeIn 0.3s ease;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+    .sumone-container {
+        width: 95%;
+        max-height: 90vh;
+        border-radius: 16px;
+    }
+    
+    .sumone-header {
+        padding: 12px 16px;
+    }
+    
+    .sumone-content {
+        padding: 16px;
+    }
+    
+    .sumone-tab {
+        padding: 6px 14px;
+        font-size: 13px;
+    }
+    
+    .sumone-question {
+        font-size: 16px;
+    }
+}
