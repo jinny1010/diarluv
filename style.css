@@ -29,6 +29,12 @@
         inset 0 0 20px rgba(255, 255, 255, 0.02);
     position: relative;
     overflow: hidden;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
 }
 
 /* Notch */
@@ -82,6 +88,30 @@
 
 .phone-signal {
     letter-spacing: -2px;
+}
+
+/* Updating Status */
+.phone-updating-status {
+    position: absolute;
+    top: 56px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 107, 157, 0.9);
+    color: white;
+    padding: 6px 16px;
+    border-radius: 15px;
+    font-size: 11px;
+    font-weight: 600;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
 }
 
 /* Main Screen */
@@ -240,7 +270,7 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* TEXTAREA 수정 - 글자색 어둡게 */
+/* TEXTAREA - 어두운 글자색 */
 #phone-sumone-my-answer {
     width: 100%;
     min-height: 80px;
@@ -248,7 +278,7 @@
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 12px;
     background: rgba(255, 255, 255, 0.95);
-    color: #1c1c1e;  /* 어두운 글자색 */
+    color: #1c1c1e;
     font-size: 14px;
     font-family: inherit;
     resize: none;
@@ -500,20 +530,4 @@
 .phone-page::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.1);
     border-radius: 2px;
-}
-
-/* Animation */
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: scale(0.9);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
-}
-
-.phone-device {
-    animation: slideIn 0.3s ease;
 }
