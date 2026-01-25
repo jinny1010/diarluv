@@ -1,196 +1,292 @@
-/* SumOne Extension Styles */
+/* SumOne Phone - iPhone Style UI */
 
 /* Modal Overlay */
-.sumone-modal {
+.phone-modal {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.7);
+    background: rgba(0, 0, 0, 0.8);
     display: flex;
     justify-content: center;
     align-items: center;
     z-index: 9999;
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(10px);
 }
 
-/* Modal Container */
-.sumone-container {
-    background: linear-gradient(145deg, #1a1a2e 0%, #16213e 100%);
-    border-radius: 20px;
-    width: 90%;
-    max-width: 450px;
-    max-height: 85vh;
+/* iPhone Device Frame */
+.phone-device {
+    width: 320px;
+    height: 640px;
+    background: #1c1c1e;
+    border-radius: 45px;
+    padding: 12px;
+    box-shadow: 
+        0 0 0 3px #2c2c2e,
+        0 0 0 6px #1c1c1e,
+        0 25px 50px rgba(0, 0, 0, 0.5),
+        inset 0 0 20px rgba(255, 255, 255, 0.02);
+    position: relative;
     overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 
-                0 0 40px rgba(255, 107, 157, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Notch */
+.phone-notch {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 120px;
+    height: 28px;
+    background: #1c1c1e;
+    border-radius: 0 0 18px 18px;
+    z-index: 100;
+}
+
+.phone-notch::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 8px;
+    height: 8px;
+    background: #2c2c2e;
+    border-radius: 50%;
+}
+
+/* Status Bar */
+.phone-status-bar {
+    height: 44px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 0 24px 8px;
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    position: relative;
+    z-index: 50;
+}
+
+.phone-time {
+    font-weight: 600;
+}
+
+.phone-status-icons {
+    display: flex;
+    gap: 6px;
+    font-size: 12px;
+}
+
+.phone-signal {
+    letter-spacing: -2px;
+}
+
+/* Main Screen */
+.phone-screen {
+    height: calc(100% - 74px);
+    background: linear-gradient(180deg, #2c2c2e 0%, #1c1c1e 100%);
+    border-radius: 35px;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Home Bar */
+.phone-home-bar {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 120px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+}
+
+/* Pages */
+.phone-page {
+    display: none;
+    height: 100%;
+    overflow-y: auto;
+}
+
+.phone-page.active {
     display: flex;
     flex-direction: column;
 }
 
-/* Header */
-.sumone-header {
+/* App Grid (Home Screen) */
+.phone-app-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    padding: 60px 25px 25px;
+    justify-items: center;
+}
+
+.phone-app-icon {
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
     align-items: center;
-    padding: 16px 20px;
-    background: rgba(255, 255, 255, 0.03);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.sumone-tabs {
-    display: flex;
-    gap: 8px;
-}
-
-.sumone-tab {
-    padding: 8px 20px;
-    border: none;
-    border-radius: 20px;
-    background: transparent;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 14px;
-    font-weight: 500;
+    gap: 6px;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: transform 0.2s;
 }
 
-.sumone-tab:hover {
-    color: rgba(255, 255, 255, 0.8);
-    background: rgba(255, 255, 255, 0.05);
+.phone-app-icon:hover {
+    transform: scale(1.1);
 }
 
-.sumone-tab.active {
-    background: linear-gradient(135deg, #ff6b9d 0%, #c44569 100%);
-    color: white;
+.phone-app-icon:active {
+    transform: scale(0.95);
 }
 
-.sumone-close {
-    width: 32px;
-    height: 32px;
-    border: none;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.05);
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 16px;
-    cursor: pointer;
-    transition: all 0.3s ease;
+.app-icon-image {
+    width: 60px;
+    height: 60px;
+    background: linear-gradient(145deg, #ff6b9d, #c44569);
+    border-radius: 15px;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 28px;
+    box-shadow: 0 4px 12px rgba(255, 107, 157, 0.3);
 }
 
-.sumone-close:hover {
-    background: rgba(255, 107, 157, 0.2);
+.app-icon-label {
+    font-size: 11px;
+    color: white;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* App Header */
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 55px 15px 12px;
+    background: rgba(28, 28, 30, 0.95);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.app-back-btn,
+.sumone-history-btn {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.1);
     color: #ff6b9d;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
 }
 
-/* Content Area */
-.sumone-content {
+.app-back-btn:hover,
+.sumone-history-btn:hover {
+    background: rgba(255, 107, 157, 0.2);
+}
+
+.app-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: white;
+}
+
+/* App Content */
+.app-content {
     flex: 1;
     overflow-y: auto;
-    padding: 20px;
+    padding: 15px;
 }
 
-.sumone-panel {
-    display: none;
-}
-
-.sumone-panel.active {
-    display: block;
-}
-
-/* Today Panel */
-.sumone-today-content {
+/* ============ SUMONE APP ============ */
+.sumone-app {
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 15px;
 }
 
 .sumone-label {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 1px;
     color: #ff6b9d;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 
-.sumone-question-area {
-    background: rgba(255, 107, 157, 0.08);
+.sumone-question-box {
+    background: rgba(255, 107, 157, 0.1);
     border-radius: 16px;
-    padding: 20px;
+    padding: 15px;
     border: 1px solid rgba(255, 107, 157, 0.2);
 }
 
 .sumone-question {
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 500;
-    color: #fff;
-    line-height: 1.6;
+    color: white;
+    line-height: 1.5;
 }
 
-.sumone-loading {
-    color: rgba(255, 255, 255, 0.5);
-    font-style: italic;
-}
-
-/* Answer Areas */
-.sumone-answer-area,
-.sumone-ai-area {
-    background: rgba(255, 255, 255, 0.03);
+.sumone-answer-box {
+    background: rgba(255, 255, 255, 0.05);
     border-radius: 16px;
-    padding: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 15px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.sumone-my-answer-wrapper {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-#sumone-my-answer {
+/* TEXTAREA 수정 - 글자색 어둡게 */
+#phone-sumone-my-answer {
     width: 100%;
-    padding: 14px 16px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    min-height: 80px;
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 12px;
-    background: rgba(0, 0, 0, 0.3);
-    color: #fff;
-    font-size: 15px;
-    resize: none;
+    background: rgba(255, 255, 255, 0.95);
+    color: #1c1c1e;  /* 어두운 글자색 */
+    font-size: 14px;
     font-family: inherit;
-    transition: border-color 0.3s ease;
+    resize: none;
+    box-sizing: border-box;
 }
 
-#sumone-my-answer:focus {
+#phone-sumone-my-answer::placeholder {
+    color: #8e8e93;
+}
+
+#phone-sumone-my-answer:focus {
     outline: none;
     border-color: #ff6b9d;
+    background: white;
 }
 
-#sumone-my-answer:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
+#phone-sumone-my-answer:disabled {
+    background: rgba(255, 255, 255, 0.7);
+    color: #3a3a3c;
 }
 
 .sumone-submit-btn {
+    margin-top: 10px;
     align-self: flex-end;
-    padding: 10px 28px;
+    padding: 10px 24px;
     border: none;
     border-radius: 20px;
-    background: linear-gradient(135deg, #ff6b9d 0%, #c44569 100%);
+    background: linear-gradient(135deg, #ff6b9d, #c44569);
     color: white;
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: all 0.2s;
 }
 
 .sumone-submit-btn:hover:not(:disabled) {
     transform: translateY(-2px);
-    box-shadow: 0 5px 20px rgba(255, 107, 157, 0.4);
+    box-shadow: 0 4px 15px rgba(255, 107, 157, 0.4);
 }
 
 .sumone-submit-btn:disabled {
@@ -198,226 +294,219 @@
     cursor: not-allowed;
 }
 
-/* AI Answer */
-.sumone-ai-answer {
-    font-size: 16px;
-    color: #fff;
-    line-height: 1.6;
-    min-height: 50px;
+.sumone-ai-box {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    padding: 15px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.sumone-hidden-answer {
-    font-size: 32px;
+.sumone-ai-answer {
+    font-size: 15px;
+    color: white;
+    line-height: 1.5;
+    min-height: 40px;
+}
+
+.sumone-hidden {
+    font-size: 24px;
     text-align: center;
     color: rgba(255, 255, 255, 0.3);
-    padding: 20px;
-    letter-spacing: 8px;
+    padding: 15px;
+    letter-spacing: 6px;
 }
 
-/* Calendar Styles */
-.sumone-calendar-wrapper {
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 16px;
-    padding: 20px;
-    margin-bottom: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+.sumone-loading {
+    color: rgba(255, 255, 255, 0.5);
+    font-style: italic;
 }
 
-.sumone-calendar-header {
+/* ============ CALENDAR / HISTORY ============ */
+.sumone-history {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.calendar-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    padding: 8px;
 }
 
-.sumone-cal-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #fff;
-}
-
-.sumone-cal-nav {
+.calendar-header button {
     width: 32px;
     height: 32px;
     border: none;
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.05);
-    color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
     cursor: pointer;
-    transition: all 0.3s ease;
 }
 
-.sumone-cal-nav:hover {
+.calendar-header button:hover {
     background: rgba(255, 107, 157, 0.2);
     color: #ff6b9d;
 }
 
-.sumone-cal-weekdays {
+#phone-cal-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: white;
+}
+
+.calendar-grid {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 10px;
+}
+
+.cal-weekdays {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 4px;
     margin-bottom: 8px;
 }
 
-.sumone-cal-weekdays span {
+.cal-weekdays span {
     text-align: center;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
     color: rgba(255, 255, 255, 0.4);
-    text-transform: uppercase;
 }
 
-.sumone-cal-days {
+.cal-days {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 4px;
+    gap: 2px;
 }
 
-.sumone-cal-day {
+.cal-day {
     aspect-ratio: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
+    font-size: 12px;
     color: rgba(255, 255, 255, 0.6);
-    border-radius: 8px;
+    border-radius: 50%;
     cursor: pointer;
-    transition: all 0.2s ease;
     position: relative;
+    transition: all 0.2s;
 }
 
-.sumone-cal-day.empty {
+.cal-day.empty {
     cursor: default;
 }
 
-.sumone-cal-day:not(.empty):hover {
+.cal-day:not(.empty):hover {
     background: rgba(255, 255, 255, 0.1);
-    color: #fff;
 }
 
-.sumone-cal-day.has-record {
-    color: #fff;
+.cal-day.has-record {
+    color: white;
 }
 
-.sumone-cal-day.has-record::after {
+.cal-day.has-record::after {
     content: '';
     position: absolute;
-    bottom: 4px;
+    bottom: 2px;
     width: 4px;
     height: 4px;
     border-radius: 50%;
     background: #ff6b9d;
 }
 
-.sumone-cal-day.today {
-    background: rgba(255, 107, 157, 0.2);
+.cal-day.today {
+    background: rgba(255, 107, 157, 0.3);
     color: #ff6b9d;
     font-weight: 600;
 }
 
-.sumone-cal-day.selected {
-    background: linear-gradient(135deg, #ff6b9d 0%, #c44569 100%);
-    color: #fff;
+.cal-day.selected {
+    background: #ff6b9d;
+    color: white;
 }
 
-.sumone-cal-day.selected::after {
-    background: #fff;
+.cal-day.selected::after {
+    background: white;
 }
 
-/* History Detail */
-.sumone-history-detail {
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 16px;
-    padding: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    min-height: 150px;
+.history-detail {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 12px;
+    min-height: 100px;
 }
 
-.sumone-history-date {
-    font-size: 14px;
+.history-date {
+    font-size: 13px;
     font-weight: 600;
     color: #ff6b9d;
-    margin-bottom: 16px;
+    margin-bottom: 10px;
 }
 
-.sumone-no-selection,
-.sumone-no-record {
+.history-placeholder {
     text-align: center;
     color: rgba(255, 255, 255, 0.4);
     font-style: italic;
-    padding: 30px;
+    padding: 20px;
 }
 
-.sumone-history-item {
+.history-item {
     display: flex;
-    gap: 12px;
-    margin-bottom: 12px;
-    padding-bottom: 12px;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.sumone-history-item:last-child {
+.history-item:last-child {
     margin-bottom: 0;
     padding-bottom: 0;
     border-bottom: none;
 }
 
-.sumone-history-label {
-    min-width: 50px;
-    padding: 4px 10px;
+.history-label {
+    min-width: 40px;
+    padding: 3px 8px;
     background: rgba(255, 107, 157, 0.15);
-    border-radius: 8px;
-    font-size: 12px;
+    border-radius: 6px;
+    font-size: 10px;
     font-weight: 600;
     color: #ff6b9d;
     text-align: center;
     height: fit-content;
 }
 
-.sumone-history-text {
+.history-text {
     flex: 1;
-    font-size: 14px;
+    font-size: 13px;
     color: rgba(255, 255, 255, 0.85);
-    line-height: 1.5;
-}
-
-/* Menu Button */
-#sumone-menu-button {
-    cursor: pointer;
-    transition: background 0.2s ease;
-}
-
-#sumone-menu-button:hover {
-    background: rgba(255, 107, 157, 0.1);
-}
-
-#sumone-menu-button .fa-heart {
-    color: #ff6b9d;
+    line-height: 1.4;
 }
 
 /* Scrollbar */
-.sumone-content::-webkit-scrollbar {
-    width: 6px;
+.app-content::-webkit-scrollbar,
+.phone-page::-webkit-scrollbar {
+    width: 4px;
 }
 
-.sumone-content::-webkit-scrollbar-track {
+.app-content::-webkit-scrollbar-track,
+.phone-page::-webkit-scrollbar-track {
     background: transparent;
 }
 
-.sumone-content::-webkit-scrollbar-thumb {
+.app-content::-webkit-scrollbar-thumb,
+.phone-page::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
-}
-
-.sumone-content::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
 }
 
 /* Animation */
-@keyframes fadeIn {
+@keyframes slideIn {
     from {
         opacity: 0;
-        transform: scale(0.95);
+        transform: scale(0.9);
     }
     to {
         opacity: 1;
@@ -425,32 +514,6 @@
     }
 }
 
-.sumone-container {
-    animation: fadeIn 0.3s ease;
-}
-
-/* Responsive */
-@media (max-width: 480px) {
-    .sumone-container {
-        width: 95%;
-        max-height: 90vh;
-        border-radius: 16px;
-    }
-    
-    .sumone-header {
-        padding: 12px 16px;
-    }
-    
-    .sumone-content {
-        padding: 16px;
-    }
-    
-    .sumone-tab {
-        padding: 6px 14px;
-        font-size: 13px;
-    }
-    
-    .sumone-question {
-        font-size: 16px;
-    }
+.phone-device {
+    animation: slideIn 0.3s ease;
 }
