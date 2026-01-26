@@ -509,23 +509,35 @@ Write only the message content:`;
         return null;
     },
     
-    async generateReply(userMessage, charName, userName) {
-        const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
+    async generateReply(userMessage, charName, userName, settings, charId) {
+    const ctx = getContext();
+    const data = this.getData(settings, charId);
+    
+    let conversationHistory = '';
+    if (data.conversations.length > 1) {
+        const recent = data.conversations.slice(-11, -1); 
+        conversationHistory = recent.map(msg => {
+            const sender = msg.fromMe ? userName : charName;
+            return `${sender}: ${msg.content}`;
+        }).join('\n');
+        conversationHistory = `[Previous messages]\n${conversationHistory}\n\n`;
+    }
+    
+    const prompt = `${SYSTEM_INSTRUCTION}
 
 [Text Message Reply]
-${userName} sent: "${userMessage}"
+${conversationHistory}${userName} sent: "${userMessage}"
 
 As ${charName}, reply to this text message naturally.
 Be warm, loving, and conversational. 1-3 sentences.
 
 Write only the reply:`;
-        
-        try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
-            return Utils.cleanResponse(result).substring(0, 250);
-        } catch { return null; }
-    },
+    
+    try {
+        const result = await ctx.generateQuietPrompt(prompt, false, false);
+        return Utils.cleanResponse(result).substring(0, 250);
+    } catch { return null; }
+},
     
     render(charName) {
         return `
@@ -655,7 +667,7 @@ Write only the reply:`;
         // Random delay for realism
         await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
         
-        const reply = await this.generateReply(content, charName, ctx.name1 || '나');
+        const reply = await this.generateReply(content, charName, ctx.name1 || '나', settings, charId);
         this.state.isGenerating = false;
         this.hideTypingIndicator();
         
