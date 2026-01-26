@@ -139,6 +139,23 @@ const Utils = {
     },
     cleanResponse(text) {
         if (!text) return '';
+        
+        // Gemini thinking 형식 처리 (parts 배열에서 마지막 text 추출)
+        if (text.includes('parts:') && text.includes('text:')) {
+            const textMatches = text.match(/\{ text: '([^']*)' \}/g);
+            if (textMatches && textMatches.length > 1) {
+                const lastMatch = textMatches[textMatches.length - 1];
+                const extracted = lastMatch.match(/\{ text: '([^']*)' \}/);
+                if (extracted) text = extracted[1];
+            }
+        }
+        
+        // <think> 태그 제거
+        text = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+        
+        // 닫히지 않은 <think> 태그도 제거 (끝까지)
+        text = text.replace(/<think>[\s\S]*/gi, '');
+        
         return text
             .replace(/\*[^*]*\*/g, '')
             .replace(/\([^)]*\)/g, '')
