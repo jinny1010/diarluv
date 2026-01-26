@@ -1394,19 +1394,28 @@ Reason: (why you want to watch it together, 1 sentence)`;
     },
     
     async getDiscussion(title, charName) {
-        const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
+    const ctx = getContext();
+    const prompt = `${SYSTEM_INSTRUCTION}
 
 [Movie Discussion]
 ${ctx.name1} watched "${title}" together with you.
 As ${charName}, share your thoughts about this movie in 1-2 sentences.
 
 Write only your response:`;
-        try {
-            let result = await ctx.generateQuietPrompt(prompt, false, false);
-            return Utils.cleanResponse(result).substring(0, 150);
-        } catch { return null; }
-    },
+    try {
+        let result = await ctx.generateQuietPrompt(prompt, false, false);
+        console.log('[Movie] Raw result:', result);
+        console.log('[Movie] Raw type:', typeof result);
+        
+        const cleaned = Utils.cleanResponse(result);
+        console.log('[Movie] Cleaned:', cleaned);
+        
+        return cleaned.substring(0, 150);
+    } catch (e) { 
+        console.error('[Movie] Error:', e);
+        return null; 
+    }
+},
     
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
