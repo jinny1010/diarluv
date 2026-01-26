@@ -140,30 +140,26 @@ const Utils = {
     cleanResponse(text) {
         if (!text) return '';
         
-        // Gemini thinking 형식 처리 (parts 배열에서 마지막 text 추출)
-        if (text.includes('parts:') && text.includes('text:')) {
-            const textMatches = text.match(/\{ text: '([^']*)' \}/g);
-            if (textMatches && textMatches.length > 1) {
-                const lastMatch = textMatches[textMatches.length - 1];
-                const extracted = lastMatch.match(/\{ text: '([^']*)' \}/);
-                if (extracted) text = extracted[1];
-            }
-        }
+        console.log('[Phone] cleanResponse input:', text.substring(0, 200));
         
-        // <think> 태그 제거
+        // <think> 태그 제거 (닫힌 것)
         text = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
         
-        // 닫히지 않은 <think> 태그도 제거 (끝까지)
+        // 닫히지 않은 <think> 태그도 제거
         text = text.replace(/<think>[\s\S]*/gi, '');
         
-        return text
+        // 기본 정리
+        text = text
             .replace(/\*[^*]*\*/g, '')
-            .replace(/\([^)]*\)/g, '')
             .replace(/「[^」]*」/g, '')
             .replace(/『[^』]*』/g, '')
             .replace(/^\s*["']|["']\s*$/g, '')
             .replace(/\s+/g, ' ')
             .trim();
+        
+        console.log('[Phone] cleanResponse output:', text.substring(0, 200));
+        
+        return text;
     },
     // Split text into sentences for message bubbles
     splitIntoMessages(text) {
