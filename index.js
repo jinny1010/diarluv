@@ -730,13 +730,13 @@ Write a warm, emotional letter filled with genuine feelings. Express:
 - Words you find hard to say in person
 
 Make it personal, touching, and full of that warm fuzzy feeling of being in love.
-Write 4-6 sentences, pouring your heart out.
+Write at least 3 paragraphs. Pour your heart out with deep emotions, memories, and sincere feelings that are hard to say in person.
 
 Write only the letter content (no greeting/signature):`;
         
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
-            return Utils.cleanResponse(result).substring(0, 600);
+            return Utils.cleanResponse(result).substring(0, 1200);
         } catch (e) {
             console.error('[Letter] Generation failed:', e);
             return null;
