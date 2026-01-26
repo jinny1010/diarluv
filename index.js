@@ -1901,7 +1901,7 @@ const PhoneCore = {
     createHTML() {
         const time = new Date();
         return `
-        <div id="phone-modal" class="phone-modal" style="display:none;">
+        <div id="phone-modal" class="phone-modal phone-container" style="display:none;">
             <div class="phone-device">
                 <div class="phone-inner">
                     <div class="phone-status-bar">
