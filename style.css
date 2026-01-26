@@ -77,10 +77,7 @@
 .card *, .detail-card *, .form-card * { color: white; }
 .card input, .card textarea, .form-card input, .form-card textarea { color: #1a1a1a !important; }
 .card-label { color: #ff6b9d !important; }
-.card.pink {
-    background: linear-gradient(135deg, #ff6b9d, var(--phone-theme-light, #ffb6c1));
-    color: white;
-}
+.card.pink { background: rgba(255, 107, 157, 0.1); border-color: rgba(255, 107, 157, 0.2); }
 .card.pink-light { background: rgba(255, 107, 157, 0.08); border-color: rgba(255, 107, 157, 0.15); }
 .card-label {
     font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;
