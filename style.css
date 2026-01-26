@@ -74,7 +74,9 @@
     background: rgba(255,255,255,0.05); border-radius: 16px; padding: 14px;
     border: 1px solid rgba(255,255,255,0.1); color: white;
 }
-.card div, .card span, .card p { color: white; }
+.card *, .detail-card *, .form-card * { color: white; }
+.card input, .card textarea, .form-card input, .form-card textarea { color: #1a1a1a !important; }
+.card-label { color: #ff6b9d !important; }
 .card.pink { background: rgba(255, 107, 157, 0.1); border-color: rgba(255, 107, 157, 0.2); }
 .card.pink-light { background: rgba(255, 107, 157, 0.08); border-color: rgba(255, 107, 157, 0.15); }
 .card-label {
@@ -156,8 +158,8 @@ textarea:disabled { background: rgba(255,255,255,0.7); }
 .char-name { color: #ff6b9d; font-weight: 600; }
 
 /* Empty State */
-.empty-state { text-align: center; padding: 40px 20px; color: rgba(255,255,255,0.4); font-size: 14px; line-height: 1.8; }
-.empty-state small { font-size: 12px; opacity: 0.7; }
+.empty-state { text-align: center; padding: 40px 20px; color: rgba(255,255,255,0.7); font-size: 14px; line-height: 1.8; }
+.empty-state small { font-size: 12px; color: rgba(255,255,255,0.5); display: block; margin-top: 5px; }
 
 /* Typing Indicator */
 .typing-box { text-align: center; padding: 15px; }

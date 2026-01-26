@@ -1,13 +1,99 @@
 // ========================================
-// SumOne Phone v1.8.0
-// 캐릭터가 먼저 행동하는 기능 추가
+// SumOne Phone v1.9.0
+// 데이터를 확장 폴더 내 JSON 파일로 저장
 // ========================================
 
 import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 
 const extensionName = 'sumone-phone';
+const extensionFolderPath = `scripts/extensions/third_party/${extensionName}`;
 const getContext = () => SillyTavern.getContext();
+
+// ========================================
+// 데이터 저장 (JSON 파일)
+// ========================================
+const DataManager = {
+    cache: null,
+    saveTimeout: null,
+    
+    // 데이터 파일 경로
+    getFilePath() {
+        return `${extensionFolderPath}/data.json`;
+    },
+    
+    // 데이터 로드
+    async load() {
+        if (this.cache) return this.cache;
+        
+        try {
+            const response = await fetch(`/api/extensions/fetch?path=${encodeURIComponent(this.getFilePath())}`);
+            if (response.ok) {
+                const text = await response.text();
+                this.cache = JSON.parse(text);
+                console.log('[SumOne] Data loaded from file');
+                return this.cache;
+            }
+        } catch (e) {
+            console.log('[SumOne] No existing data file, creating new');
+        }
+        
+        // 파일 없으면 기본 데이터
+        this.cache = { enabledApps: {}, wallpapers: {}, appData: {} };
+        
+        // extension_settings에서 마이그레이션 시도
+        if (extension_settings[extensionName]?.appData) {
+            console.log('[SumOne] Migrating from extension_settings');
+            this.cache = JSON.parse(JSON.stringify(extension_settings[extensionName]));
+            await this.save();
+        }
+        
+        return this.cache;
+    },
+    
+    // 데이터 저장 (디바운스)
+    save() {
+        if (this.saveTimeout) clearTimeout(this.saveTimeout);
+        this.saveTimeout = setTimeout(() => this._doSave(), 1000);
+    },
+    
+    async _doSave() {
+        if (!this.cache) return;
+        
+        try {
+            const response = await fetch('/api/extensions/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    path: this.getFilePath(),
+                    data: JSON.stringify(this.cache, null, 2),
+                }),
+            });
+            
+            if (response.ok) {
+                console.log('[SumOne] Data saved to file');
+            } else {
+                console.error('[SumOne] Save failed:', response.status);
+                // 폴백: extension_settings에도 저장
+                extension_settings[extensionName] = this.cache;
+                DataManager.save();
+            }
+        } catch (e) {
+            console.error('[SumOne] Save error:', e);
+            // 폴백
+            extension_settings[extensionName] = this.cache;
+            DataManager.save();
+        }
+    },
+    
+    // 데이터 가져오기 (동기, 캐시에서)
+    get() {
+        if (!this.cache) {
+            this.cache = { enabledApps: {}, wallpapers: {}, appData: {} };
+        }
+        return this.cache;
+    },
+};
 
 // ========================================
 // 유틸리티
@@ -422,7 +508,7 @@ ${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 
             
             const charLetter = await this.tryCharacterLetter(settings, charId, charName, userName);
             if (charLetter) {
-                saveSettingsDebounced();
+                DataManager.save();
                 toastr.info(`💌 ${charName}에게서 편지가 도착했어요!`);
             }
             this.state.isGenerating = false;
@@ -451,7 +537,7 @@ ${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 
                 // 읽음 처리
                 if (!letter.fromMe && !letter.read) {
                     letter.read = true;
-                    saveSettingsDebounced();
+                    DataManager.save();
                 }
                 
                 this.state.viewMode = 'view';
@@ -632,7 +718,7 @@ ${charName}(으)로서 이 책에 대한 생각이나 반응 (1-2문장, 한국�
             
             const charBook = await this.tryCharacterRecommend(settings, charId, charName, userName);
             if (charBook) {
-                saveSettingsDebounced();
+                DataManager.save();
                 toastr.info(`📚 ${charName}가 책을 추천해줬어요!`);
             }
             this.state.isGenerating = false;
@@ -658,7 +744,7 @@ ${charName}(으)로서 이 책에 대한 생각이나 반응 (1-2문장, 한국�
                 
                 if (book.fromChar && !book.read) {
                     book.read = true;
-                    saveSettingsDebounced();
+                    DataManager.save();
                 }
                 
                 document.getElementById('book-content').innerHTML = this.renderView(book, charName);
@@ -851,7 +937,7 @@ ${charName}(으)로서 이 영화 감상 (1-2문장, 한국어):`;
             
             const charMovie = await this.tryCharacterRecommend(settings, charId, charName, userName);
             if (charMovie) {
-                saveSettingsDebounced();
+                DataManager.save();
                 toastr.info(`🎬 ${charName}가 영화를 추천해줬어요!`);
             }
             this.state.isGenerating = false;
@@ -877,7 +963,7 @@ ${charName}(으)로서 이 영화 감상 (1-2문장, 한국어):`;
                 
                 if (movie.fromChar && !movie.read) {
                     movie.read = true;
-                    saveSettingsDebounced();
+                    DataManager.save();
                 }
                 
                 document.getElementById('movie-content').innerHTML = this.renderView(movie, charName);
@@ -1062,7 +1148,7 @@ ${charName}(으)로서 따뜻한 답장 (1-2문장, 한국어, 위로/응원/공
             
             const charDiary = await this.tryCharacterDiary(settings, charId, charName, userName);
             if (charDiary) {
-                saveSettingsDebounced();
+                DataManager.save();
                 toastr.info(`📔 ${charName}가 일기를 썼어요!`);
             }
             this.state.isGenerating = false;
@@ -1104,7 +1190,7 @@ ${charName}(으)로서 따뜻한 답장 (1-2문장, 한국어, 위로/응원/공
         // 캐릭터 일기 읽음 처리
         if (entry?.charDiary && !entry.charDiary.read) {
             entry.charDiary.read = true;
-            saveSettingsDebounced();
+            DataManager.save();
         }
         
         document.getElementById('diary-entry-area').innerHTML = this.renderEntry(entry, this.state.selectedDate, charName, userName);
@@ -1173,7 +1259,7 @@ ${charName}(으)로서 따뜻한 답장 (1-2문장, 한국어, 위로/응원/공
             data.entries[this.state.selectedDate].mood = selectedMood;
             data.entries[this.state.selectedDate].charReply = charReply;
             data.entries[this.state.selectedDate].date = this.state.selectedDate;
-            saveSettingsDebounced();
+            DataManager.save();
             
             toastr.success('📔 저장되었습니다!');
             this.renderCalendar(settings, charId, charName);
@@ -1189,15 +1275,15 @@ const PhoneCore = {
     apps: { sumone: SumOneApp, letter: LetterApp, book: BookApp, movie: MovieApp, diary: DiaryApp },
     pageHistory: [],
     currentPage: 'home',
+    initialized: false,
     
     getContext,
     getSettings() {
-        if (!extension_settings[extensionName]) {
-            extension_settings[extensionName] = { enabledApps: {}, wallpapers: {}, appData: {} };
-        }
-        return extension_settings[extensionName];
+        return DataManager.get();
     },
-    saveSettings: () => saveSettingsDebounced(),
+    saveSettings() {
+        DataManager.save();
+    },
     getCharId() { const ctx = getContext(); return ctx.characterId ?? ctx.groupId ?? 'default'; },
     
     getWallpaper() { return this.getSettings().wallpapers?.[this.getCharId()] || ''; },
@@ -1358,9 +1444,13 @@ const PhoneCore = {
         $('#sumone-phone-btn').on('click', () => this.openModal());
     },
     
-    init() {
-        console.log('[SumOne Phone] v1.8.0 로딩...');
-        this.getSettings();
+    async init() {
+        console.log('[SumOne Phone] v1.9.0 로딩...');
+        
+        // 데이터 먼저 로드
+        await DataManager.load();
+        this.initialized = true;
+        
         this.createSettingsUI();
         $('body').append(this.createHTML());
         this.setupEvents();
