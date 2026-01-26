@@ -1,6 +1,6 @@
 // ========================================
-// SumOne Phone v1.7.0
-// 앱: 썸원, 편지, 독서기록, 영화기록, 일기장
+// SumOne Phone v1.8.0
+// 캐릭터가 먼저 행동하는 기능 추가
 // ========================================
 
 import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
@@ -17,21 +17,22 @@ const Utils = {
         const now = new Date();
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     },
-    
     formatDate(dateKey) {
         const [y, m, d] = dateKey.split('-').map(Number);
         return `${m}월 ${d}일`;
     },
-    
     escapeHtml(text) {
         if (!text) return '';
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     },
-    
     generateId() {
         return Date.now().toString(36) + Math.random().toString(36).substr(2);
+    },
+    // 확률 체크 (0~100)
+    chance(percent) {
+        return Math.random() * 100 < percent;
     },
 };
 
@@ -289,19 +290,64 @@ ${charName}로서 답변(1-2문장)과 코멘트(1문장, 달달하게) 작성.
 };
 
 // ========================================
-// 편지 앱
+// 편지 앱 (캐릭터가 먼저 보내기 기능)
 // ========================================
 const LetterApp = {
     id: 'letter',
     name: '편지',
     icon: '💌',
-    state: { currentLetter: null, viewMode: 'list' },
+    state: { currentLetter: null, viewMode: 'list', isGenerating: false },
     
     getData(settings, charId) {
         const key = `letter_${charId}`;
         if (!settings.appData) settings.appData = {};
-        if (!settings.appData[key]) settings.appData[key] = { letters: [] };
+        if (!settings.appData[key]) settings.appData[key] = { letters: [], lastCharLetterDate: null };
         return settings.appData[key];
+    },
+    
+    // 캐릭터가 먼저 편지 보내기 (30% 확률, 하루 1번)
+    async tryCharacterLetter(settings, charId, charName, userName) {
+        const data = this.getData(settings, charId);
+        const today = Utils.getTodayKey();
+        
+        // 오늘 이미 캐릭터 편지 있으면 스킵
+        if (data.lastCharLetterDate === today) return null;
+        
+        // 30% 확률
+        if (!Utils.chance(30)) {
+            data.lastCharLetterDate = today; // 확률 실패해도 오늘은 더 이상 시도 안 함
+            return null;
+        }
+        
+        const ctx = getContext();
+        const prompt = `[편지 쓰기] ${charName}가 ${userName}에게 보내는 짧은 편지를 써줘.
+일상적인 안부, 보고싶다는 말, 오늘 있었던 일, 고마운 마음 중 하나를 골라서.
+2-4문장, 한국어, 자연스럽게, 액션(*) 없이:`;
+        
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const content = result.replace(/\*[^*]*\*/g, '').trim().substring(0, 300);
+            
+            if (content && content.length > 10) {
+                data.letters.push({
+                    id: Utils.generateId(),
+                    date: today,
+                    content: content,
+                    fromMe: false,
+                    charName: charName,
+                    read: false,
+                });
+                data.lastCharLetterDate = today;
+                return content;
+            }
+        } catch (e) {
+            console.error('[Letter] Character letter failed:', e);
+        }
+        return null;
+    },
+    
+    getUnreadCount(data) {
+        return data.letters.filter(l => !l.fromMe && !l.read).length;
     },
     
     render(charName) {
@@ -315,14 +361,18 @@ const LetterApp = {
     },
     
     renderList(data, charName) {
+        const unread = this.getUnreadCount(data);
+        let header = unread > 0 ? `<div class="notification-banner">💌 새 편지가 ${unread}통 도착했어요!</div>` : '';
+        
         if (data.letters.length === 0) {
-            return `<div class="empty-state">💌<br>아직 편지가 없어요<br><small>오른쪽 위 ✏️ 버튼으로 편지를 써보세요</small></div>`;
+            return header + `<div class="empty-state">💌<br>아직 편지가 없어요<br><small>✏️ 버튼으로 편지를 써보세요</small></div>`;
         }
-        return data.letters.map((l, i) => `
-            <div class="list-item" data-idx="${i}">
+        
+        return header + data.letters.map((l, i) => `
+            <div class="list-item ${!l.fromMe && !l.read ? 'unread' : ''}" data-idx="${i}">
                 <div class="list-icon">${l.fromMe ? '📤' : '📩'}</div>
                 <div class="list-content">
-                    <div class="list-title">${l.fromMe ? `To. ${charName}` : `From. ${charName}`}</div>
+                    <div class="list-title">${l.fromMe ? `To. ${charName}` : `From. ${l.charName || charName}`}${!l.fromMe && !l.read ? ' 🆕' : ''}</div>
                     <div class="list-preview">${Utils.escapeHtml(l.content.substring(0, 30))}...</div>
                 </div>
                 <div class="list-date">${Utils.formatDate(l.date)}</div>
@@ -340,13 +390,13 @@ const LetterApp = {
         </div>`;
     },
     
-    renderView(letter, charName) {
+    renderView(letter, charName, isFromChar) {
         return `
-        <div class="letter-paper received">
-            <div class="letter-to">${letter.fromMe ? `To. ${charName}` : `To. 나`}</div>
-            <div class="letter-content">${Utils.escapeHtml(letter.content)}</div>
-            <div class="letter-from">${letter.fromMe ? 'From. 나' : `From. ${charName}`}</div>
-            ${letter.reply ? `<div class="letter-reply"><div class="reply-label">💕 답장</div><div>${Utils.escapeHtml(letter.reply)}</div></div>` : ''}
+        <div class="letter-paper ${isFromChar ? 'received' : ''}">
+            <div class="letter-to">${letter.fromMe ? `To. ${charName}` : 'To. 나'}</div>
+            <div class="letter-body">${Utils.escapeHtml(letter.content)}</div>
+            <div class="letter-from">${letter.fromMe ? 'From. 나' : `From. ${letter.charName || charName}`}</div>
+            ${letter.reply ? `<div class="letter-reply"><div class="reply-label">💕 답장</div><div class="reply-content">${Utils.escapeHtml(letter.reply)}</div></div>` : ''}
             <button id="letter-back-list" class="btn-secondary">목록으로</button>
         </div>`;
     },
@@ -357,13 +407,27 @@ const LetterApp = {
 ${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 없이):`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
-            return result.replace(/\*[^*]*\*/g, '').split('\n')[0].trim().substring(0, 200);
+            return result.replace(/\*[^*]*\*/g, '').trim().substring(0, 200);
         } catch { return null; }
     },
     
-    loadUI(settings, charId, charName) {
-        this.state.viewMode = 'list';
+    async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
+        const userName = getContext().name1 || '나';
+        
+        // 캐릭터 편지 시도
+        if (!this.state.isGenerating) {
+            this.state.isGenerating = true;
+            document.getElementById('letter-content').innerHTML = '<div class="loading-state">💌 우편함 확인 중...</div>';
+            
+            const charLetter = await this.tryCharacterLetter(settings, charId, charName, userName);
+            if (charLetter) {
+                saveSettingsDebounced();
+                toastr.info(`💌 ${charName}에게서 편지가 도착했어요!`);
+            }
+            this.state.isGenerating = false;
+        }
+        
         document.getElementById('letter-content').innerHTML = this.renderList(data, charName);
         this.bindListEvents(settings, charId, charName);
     },
@@ -381,9 +445,17 @@ ${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 
         document.querySelectorAll('#letter-content .list-item').forEach(el => {
             el.onclick = () => {
                 const data = this.getData(settings, charId);
-                const letter = data.letters[el.dataset.idx];
+                const idx = parseInt(el.dataset.idx);
+                const letter = data.letters[idx];
+                
+                // 읽음 처리
+                if (!letter.fromMe && !letter.read) {
+                    letter.read = true;
+                    saveSettingsDebounced();
+                }
+                
                 this.state.viewMode = 'view';
-                document.getElementById('letter-content').innerHTML = this.renderView(letter, charName);
+                document.getElementById('letter-content').innerHTML = this.renderView(letter, charName, !letter.fromMe);
                 document.getElementById('letter-back-list')?.addEventListener('click', () => {
                     this.state.viewMode = 'list';
                     document.getElementById('letter-content').innerHTML = this.renderList(data, charName);
@@ -405,11 +477,11 @@ ${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 
             const data = this.getData(settings, charId);
             
             document.getElementById('letter-send').disabled = true;
-            document.getElementById('letter-send').textContent = '답장 기다리는 중...';
+            document.getElementById('letter-send').textContent = `${charName} 님이 읽는 중...`;
             
             const reply = await this.generateReply(content, charName);
             
-            data.letters.push({ date: Utils.getTodayKey(), content, reply, fromMe: true });
+            data.letters.push({ id: Utils.generateId(), date: Utils.getTodayKey(), content, reply, fromMe: true });
             Core.saveSettings();
             
             toastr.success('💌 편지를 보냈습니다!');
@@ -421,19 +493,66 @@ ${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 
 };
 
 // ========================================
-// 독서기록 앱
+// 독서기록 앱 (캐릭터 추천 기능)
 // ========================================
 const BookApp = {
     id: 'book',
     name: '독서',
     icon: '📚',
-    state: { currentBook: null },
+    state: { isGenerating: false },
     
     getData(settings, charId) {
         const key = `book_${charId}`;
         if (!settings.appData) settings.appData = {};
-        if (!settings.appData[key]) settings.appData[key] = { books: [] };
+        if (!settings.appData[key]) settings.appData[key] = { books: [], lastCharRecommendDate: null };
         return settings.appData[key];
+    },
+    
+    // 캐릭터가 책 추천 (25% 확률)
+    async tryCharacterRecommend(settings, charId, charName, userName) {
+        const data = this.getData(settings, charId);
+        const today = Utils.getTodayKey();
+        
+        if (data.lastCharRecommendDate === today) return null;
+        if (!Utils.chance(25)) {
+            data.lastCharRecommendDate = today;
+            return null;
+        }
+        
+        const ctx = getContext();
+        const prompt = `[책 추천] ${charName}가 ${userName}에게 책을 추천해줘.
+형식:
+제목: (책 제목)
+이유: (왜 추천하는지 1-2문장)
+한국어로, 실제 존재하거나 그럴듯한 책으로:`;
+        
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            let title = '', reason = '';
+            for (const line of result.split('\n')) {
+                if (line.includes('제목:')) title = line.replace(/.*제목:\s*/, '').trim();
+                if (line.includes('이유:')) reason = line.replace(/.*이유:\s*/, '').trim();
+            }
+            if (!title) title = result.split('\n')[0]?.trim() || '추천 도서';
+            
+            if (title) {
+                data.books.push({
+                    date: today,
+                    title: title.substring(0, 50),
+                    author: charName + ' 추천',
+                    rating: 0,
+                    review: '',
+                    charComment: reason.substring(0, 150) || `${userName}이 좋아할 것 같아서!`,
+                    fromChar: true,
+                    read: false,
+                });
+                data.lastCharRecommendDate = today;
+                return title;
+            }
+        } catch (e) {
+            console.error('[Book] Character recommend failed:', e);
+        }
+        return null;
     },
     
     render() {
@@ -446,16 +565,19 @@ const BookApp = {
         <div class="app-content" id="book-content"></div>`;
     },
     
-    renderList(data) {
+    renderList(data, charName) {
+        const unread = data.books.filter(b => b.fromChar && !b.read).length;
+        let header = unread > 0 ? `<div class="notification-banner">📚 ${charName}의 새 추천이 ${unread}개 있어요!</div>` : '';
+        
         if (data.books.length === 0) {
-            return `<div class="empty-state">📚<br>아직 기록이 없어요<br><small>➕ 버튼으로 책을 추가해보세요</small></div>`;
+            return header + `<div class="empty-state">📚<br>아직 기록이 없어요<br><small>➕ 버튼으로 책을 추가해보세요</small></div>`;
         }
-        return data.books.map((b, i) => `
-            <div class="list-item" data-idx="${i}">
-                <div class="list-icon">📖</div>
+        return header + data.books.map((b, i) => `
+            <div class="list-item ${b.fromChar && !b.read ? 'unread' : ''}" data-idx="${i}">
+                <div class="list-icon">${b.fromChar ? '🎁' : '📖'}</div>
                 <div class="list-content">
-                    <div class="list-title">${Utils.escapeHtml(b.title)}</div>
-                    <div class="list-preview">${Utils.escapeHtml(b.author)} · ${'⭐'.repeat(b.rating || 0)}</div>
+                    <div class="list-title">${Utils.escapeHtml(b.title)}${b.fromChar && !b.read ? ' 🆕' : ''}</div>
+                    <div class="list-preview">${Utils.escapeHtml(b.author)} ${b.rating ? '· ' + '⭐'.repeat(b.rating) : ''}</div>
                 </div>
                 <div class="list-date">${Utils.formatDate(b.date)}</div>
             </div>
@@ -471,9 +593,9 @@ const BookApp = {
                 <div class="rating" id="book-rating">${[1,2,3,4,5].map(n => `<span data-n="${n}">☆</span>`).join('')}</div>
             </div>
             <div class="form-group"><label>감상</label><textarea id="book-review" placeholder="책에 대한 감상을 적어보세요..."></textarea></div>
-            <div class="form-group"><label>💬 캐릭터에게 추천받기</label>
+            <div class="form-group"><label>💬 캐릭터에게 물어보기</label>
                 <button id="book-recommend" class="btn-secondary">이 책에 대해 물어보기</button>
-                <div id="book-recommend-result"></div>
+                <div id="book-recommend-result" class="recommend-result"></div>
             </div>
             <button id="book-save" class="btn-primary">저장하기</button>
         </div>`;
@@ -482,9 +604,9 @@ const BookApp = {
     renderView(book, charName) {
         return `
         <div class="detail-card">
-            <div class="detail-header">📖 ${Utils.escapeHtml(book.title)}</div>
-            <div class="detail-sub">${Utils.escapeHtml(book.author)} · ${'⭐'.repeat(book.rating || 0)}</div>
-            <div class="detail-body">${Utils.escapeHtml(book.review)}</div>
+            <div class="detail-header">${book.fromChar ? '🎁 ' : '📖 '}${Utils.escapeHtml(book.title)}</div>
+            <div class="detail-sub">${Utils.escapeHtml(book.author)} ${book.rating ? '· ' + '⭐'.repeat(book.rating) : ''}</div>
+            ${book.review ? `<div class="detail-body">${Utils.escapeHtml(book.review)}</div>` : ''}
             ${book.charComment ? `<div class="char-comment"><span class="char-name">${charName}</span>의 한마디<br>"${Utils.escapeHtml(book.charComment)}"</div>` : ''}
             <button id="book-back-list" class="btn-secondary">목록으로</button>
         </div>`;
@@ -492,18 +614,32 @@ const BookApp = {
     
     async getRecommendation(title, charName) {
         const ctx = getContext();
-        const prompt = `[독서 추천] ${ctx.name1}가 "${title}" 책에 대해 물어봄.
-${charName}(으)로서 이 책에 대한 생각이나 추천 이유를 짧게 말해줘 (1-2문장, 한국어):`;
+        const prompt = `[독서 토크] ${ctx.name1}가 "${title}" 책 읽는다고 함.
+${charName}(으)로서 이 책에 대한 생각이나 반응 (1-2문장, 한국어):`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
-            return result.replace(/\*[^*]*\*/g, '').split('\n')[0].trim().substring(0, 150);
+            return result.replace(/\*[^*]*\*/g, '').trim().substring(0, 150);
         } catch { return null; }
     },
     
-    loadUI(settings, charId) {
+    async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
-        document.getElementById('book-content').innerHTML = this.renderList(data);
-        this.bindListEvents(settings, charId);
+        const userName = getContext().name1 || '나';
+        
+        if (!this.state.isGenerating) {
+            this.state.isGenerating = true;
+            document.getElementById('book-content').innerHTML = '<div class="loading-state">📚 책장 확인 중...</div>';
+            
+            const charBook = await this.tryCharacterRecommend(settings, charId, charName, userName);
+            if (charBook) {
+                saveSettingsDebounced();
+                toastr.info(`📚 ${charName}가 책을 추천해줬어요!`);
+            }
+            this.state.isGenerating = false;
+        }
+        
+        document.getElementById('book-content').innerHTML = this.renderList(data, charName);
+        this.bindListEvents(settings, charId, charName);
     },
     
     bindEvents(Core) {
@@ -513,14 +649,23 @@ ${charName}(으)로서 이 책에 대한 생각이나 추천 이유를 짧게 �
         });
     },
     
-    bindListEvents(settings, charId) {
+    bindListEvents(settings, charId, charName) {
         document.querySelectorAll('#book-content .list-item').forEach(el => {
             el.onclick = () => {
                 const data = this.getData(settings, charId);
-                const book = data.books[el.dataset.idx];
-                const charName = getContext().name2 || '캐릭터';
+                const idx = parseInt(el.dataset.idx);
+                const book = data.books[idx];
+                
+                if (book.fromChar && !book.read) {
+                    book.read = true;
+                    saveSettingsDebounced();
+                }
+                
                 document.getElementById('book-content').innerHTML = this.renderView(book, charName);
-                document.getElementById('book-back-list')?.addEventListener('click', () => this.loadUI(settings, charId));
+                document.getElementById('book-back-list')?.addEventListener('click', () => {
+                    document.getElementById('book-content').innerHTML = this.renderList(data, charName);
+                    this.bindListEvents(settings, charId, charName);
+                });
             };
         });
     },
@@ -542,7 +687,7 @@ ${charName}(으)로서 이 책에 대한 생각이나 추천 이유를 짧게 �
             document.getElementById('book-recommend').disabled = true;
             document.getElementById('book-recommend-result').innerHTML = '<span class="loading">생각 중...</span>';
             charComment = await this.getRecommendation(title, getContext().name2 || '캐릭터');
-            document.getElementById('book-recommend-result').innerHTML = charComment ? `"${charComment}"` : '응답 실패';
+            document.getElementById('book-recommend-result').innerHTML = charComment ? `"${Utils.escapeHtml(charComment)}"` : '응답 실패';
             document.getElementById('book-recommend').disabled = false;
         });
         
@@ -555,28 +700,78 @@ ${charName}(으)로서 이 책에 대한 생각이나 추천 이유를 짧게 �
             const settings = Core.getSettings();
             const charId = Core.getCharId();
             const data = this.getData(settings, charId);
-            data.books.push({ date: Utils.getTodayKey(), title, author, rating, review, charComment });
+            data.books.push({ date: Utils.getTodayKey(), title, author, rating, review, charComment, fromChar: false });
             Core.saveSettings();
             toastr.success('📚 저장되었습니다!');
-            this.loadUI(settings, charId);
+            document.getElementById('book-content').innerHTML = this.renderList(data, getContext().name2 || '캐릭터');
+            this.bindListEvents(settings, charId, getContext().name2 || '캐릭터');
         });
     },
 };
 
 // ========================================
-// 영화기록 앱
+// 영화기록 앱 (캐릭터 추천 기능)
 // ========================================
 const MovieApp = {
     id: 'movie',
     name: '영화',
     icon: '🎬',
-    state: {},
+    state: { isGenerating: false },
     
     getData(settings, charId) {
         const key = `movie_${charId}`;
         if (!settings.appData) settings.appData = {};
-        if (!settings.appData[key]) settings.appData[key] = { movies: [] };
+        if (!settings.appData[key]) settings.appData[key] = { movies: [], lastCharRecommendDate: null };
         return settings.appData[key];
+    },
+    
+    // 캐릭터가 영화 추천 (25% 확률)
+    async tryCharacterRecommend(settings, charId, charName, userName) {
+        const data = this.getData(settings, charId);
+        const today = Utils.getTodayKey();
+        
+        if (data.lastCharRecommendDate === today) return null;
+        if (!Utils.chance(25)) {
+            data.lastCharRecommendDate = today;
+            return null;
+        }
+        
+        const ctx = getContext();
+        const prompt = `[영화 추천] ${charName}가 ${userName}에게 같이 보고 싶은 영화를 추천해줘.
+형식:
+제목: (영화 제목)
+장르: (장르)
+이유: (왜 같이 보고 싶은지 1문장)
+한국어로:`;
+        
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            let title = '', genre = '', reason = '';
+            for (const line of result.split('\n')) {
+                if (line.includes('제목:')) title = line.replace(/.*제목:\s*/, '').trim();
+                if (line.includes('장르:')) genre = line.replace(/.*장르:\s*/, '').trim();
+                if (line.includes('이유:')) reason = line.replace(/.*이유:\s*/, '').trim();
+            }
+            if (!title) title = result.split('\n')[0]?.trim() || '추천 영화';
+            
+            if (title) {
+                data.movies.push({
+                    date: today,
+                    title: title.substring(0, 50),
+                    genre: genre.substring(0, 20) || '',
+                    rating: 0,
+                    review: '',
+                    charComment: reason.substring(0, 150) || `${userName}이랑 같이 보고 싶어!`,
+                    fromChar: true,
+                    read: false,
+                });
+                data.lastCharRecommendDate = today;
+                return title;
+            }
+        } catch (e) {
+            console.error('[Movie] Character recommend failed:', e);
+        }
+        return null;
     },
     
     render() {
@@ -589,16 +784,19 @@ const MovieApp = {
         <div class="app-content" id="movie-content"></div>`;
     },
     
-    renderList(data) {
+    renderList(data, charName) {
+        const unread = data.movies.filter(m => m.fromChar && !m.read).length;
+        let header = unread > 0 ? `<div class="notification-banner">🎬 ${charName}의 새 추천이 ${unread}개 있어요!</div>` : '';
+        
         if (data.movies.length === 0) {
-            return `<div class="empty-state">🎬<br>아직 기록이 없어요<br><small>➕ 버튼으로 영화를 추가해보세요</small></div>`;
+            return header + `<div class="empty-state">🎬<br>아직 기록이 없어요<br><small>➕ 버튼으로 영화를 추가해보세요</small></div>`;
         }
-        return data.movies.map((m, i) => `
-            <div class="list-item" data-idx="${i}">
-                <div class="list-icon">🎥</div>
+        return header + data.movies.map((m, i) => `
+            <div class="list-item ${m.fromChar && !m.read ? 'unread' : ''}" data-idx="${i}">
+                <div class="list-icon">${m.fromChar ? '🎁' : '🎥'}</div>
                 <div class="list-content">
-                    <div class="list-title">${Utils.escapeHtml(m.title)}</div>
-                    <div class="list-preview">${m.genre || ''} · ${'⭐'.repeat(m.rating || 0)}</div>
+                    <div class="list-title">${Utils.escapeHtml(m.title)}${m.fromChar && !m.read ? ' 🆕' : ''}</div>
+                    <div class="list-preview">${m.genre || ''} ${m.rating ? '· ' + '⭐'.repeat(m.rating) : ''}</div>
                 </div>
                 <div class="list-date">${Utils.formatDate(m.date)}</div>
             </div>
@@ -616,7 +814,7 @@ const MovieApp = {
             <div class="form-group"><label>감상</label><textarea id="movie-review" placeholder="영화에 대한 감상..."></textarea></div>
             <div class="form-group"><label>💬 같이 본 소감</label>
                 <button id="movie-discuss" class="btn-secondary">캐릭터와 이야기하기</button>
-                <div id="movie-discuss-result"></div>
+                <div id="movie-discuss-result" class="recommend-result"></div>
             </div>
             <button id="movie-save" class="btn-primary">저장하기</button>
         </div>`;
@@ -625,10 +823,10 @@ const MovieApp = {
     renderView(movie, charName) {
         return `
         <div class="detail-card">
-            <div class="detail-header">🎬 ${Utils.escapeHtml(movie.title)}</div>
-            <div class="detail-sub">${movie.genre || ''} · ${'⭐'.repeat(movie.rating || 0)}</div>
-            <div class="detail-body">${Utils.escapeHtml(movie.review)}</div>
-            ${movie.charComment ? `<div class="char-comment"><span class="char-name">${charName}</span>의 감상<br>"${Utils.escapeHtml(movie.charComment)}"</div>` : ''}
+            <div class="detail-header">${movie.fromChar ? '🎁 ' : '🎬 '}${Utils.escapeHtml(movie.title)}</div>
+            <div class="detail-sub">${movie.genre || ''} ${movie.rating ? '· ' + '⭐'.repeat(movie.rating) : ''}</div>
+            ${movie.review ? `<div class="detail-body">${Utils.escapeHtml(movie.review)}</div>` : ''}
+            ${movie.charComment ? `<div class="char-comment"><span class="char-name">${charName}</span>의 한마디<br>"${Utils.escapeHtml(movie.charComment)}"</div>` : ''}
             <button id="movie-back-list" class="btn-secondary">목록으로</button>
         </div>`;
     },
@@ -636,17 +834,31 @@ const MovieApp = {
     async getDiscussion(title, charName) {
         const ctx = getContext();
         const prompt = `[영화 감상] ${ctx.name1}와 "${title}" 영화를 같이 봤어.
-${charName}(으)로서 이 영화에 대한 감상을 짧게 말해줘 (1-2문장, 한국어):`;
+${charName}(으)로서 이 영화 감상 (1-2문장, 한국어):`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
-            return result.replace(/\*[^*]*\*/g, '').split('\n')[0].trim().substring(0, 150);
+            return result.replace(/\*[^*]*\*/g, '').trim().substring(0, 150);
         } catch { return null; }
     },
     
-    loadUI(settings, charId) {
+    async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
-        document.getElementById('movie-content').innerHTML = this.renderList(data);
-        this.bindListEvents(settings, charId);
+        const userName = getContext().name1 || '나';
+        
+        if (!this.state.isGenerating) {
+            this.state.isGenerating = true;
+            document.getElementById('movie-content').innerHTML = '<div class="loading-state">🎬 영화관 확인 중...</div>';
+            
+            const charMovie = await this.tryCharacterRecommend(settings, charId, charName, userName);
+            if (charMovie) {
+                saveSettingsDebounced();
+                toastr.info(`🎬 ${charName}가 영화를 추천해줬어요!`);
+            }
+            this.state.isGenerating = false;
+        }
+        
+        document.getElementById('movie-content').innerHTML = this.renderList(data, charName);
+        this.bindListEvents(settings, charId, charName);
     },
     
     bindEvents(Core) {
@@ -656,14 +868,23 @@ ${charName}(으)로서 이 영화에 대한 감상을 짧게 말해줘 (1-2문�
         });
     },
     
-    bindListEvents(settings, charId) {
+    bindListEvents(settings, charId, charName) {
         document.querySelectorAll('#movie-content .list-item').forEach(el => {
             el.onclick = () => {
                 const data = this.getData(settings, charId);
-                const movie = data.movies[el.dataset.idx];
-                const charName = getContext().name2 || '캐릭터';
+                const idx = parseInt(el.dataset.idx);
+                const movie = data.movies[idx];
+                
+                if (movie.fromChar && !movie.read) {
+                    movie.read = true;
+                    saveSettingsDebounced();
+                }
+                
                 document.getElementById('movie-content').innerHTML = this.renderView(movie, charName);
-                document.getElementById('movie-back-list')?.addEventListener('click', () => this.loadUI(settings, charId));
+                document.getElementById('movie-back-list')?.addEventListener('click', () => {
+                    document.getElementById('movie-content').innerHTML = this.renderList(data, charName);
+                    this.bindListEvents(settings, charId, charName);
+                });
             };
         });
     },
@@ -685,7 +906,7 @@ ${charName}(으)로서 이 영화에 대한 감상을 짧게 말해줘 (1-2문�
             document.getElementById('movie-discuss').disabled = true;
             document.getElementById('movie-discuss-result').innerHTML = '<span class="loading">생각 중...</span>';
             charComment = await this.getDiscussion(title, getContext().name2 || '캐릭터');
-            document.getElementById('movie-discuss-result').innerHTML = charComment ? `"${charComment}"` : '응답 실패';
+            document.getElementById('movie-discuss-result').innerHTML = charComment ? `"${Utils.escapeHtml(charComment)}"` : '응답 실패';
             document.getElementById('movie-discuss').disabled = false;
         });
         
@@ -698,28 +919,70 @@ ${charName}(으)로서 이 영화에 대한 감상을 짧게 말해줘 (1-2문�
             const settings = Core.getSettings();
             const charId = Core.getCharId();
             const data = this.getData(settings, charId);
-            data.movies.push({ date: Utils.getTodayKey(), title, genre, rating, review, charComment });
+            data.movies.push({ date: Utils.getTodayKey(), title, genre, rating, review, charComment, fromChar: false });
             Core.saveSettings();
             toastr.success('🎬 저장되었습니다!');
-            this.loadUI(settings, charId);
+            document.getElementById('movie-content').innerHTML = this.renderList(data, getContext().name2 || '캐릭터');
+            this.bindListEvents(settings, charId, getContext().name2 || '캐릭터');
         });
     },
 };
 
 // ========================================
-// 일기장 앱
+// 일기장 앱 (캐릭터 일기 기능)
 // ========================================
 const DiaryApp = {
     id: 'diary',
     name: '일기장',
     icon: '📔',
-    state: { selectedDate: null, calYear: null, calMonth: null },
+    state: { selectedDate: null, calYear: null, calMonth: null, isGenerating: false },
     
     getData(settings, charId) {
         const key = `diary_${charId}`;
         if (!settings.appData) settings.appData = {};
-        if (!settings.appData[key]) settings.appData[key] = { entries: {} };
+        if (!settings.appData[key]) settings.appData[key] = { entries: {}, lastCharDiaryDate: null };
         return settings.appData[key];
+    },
+    
+    // 캐릭터가 일기 쓰기 (20% 확률)
+    async tryCharacterDiary(settings, charId, charName, userName) {
+        const data = this.getData(settings, charId);
+        const today = Utils.getTodayKey();
+        
+        if (data.lastCharDiaryDate === today) return null;
+        if (data.entries[today]?.charDiary) return null; // 이미 있으면 스킵
+        if (!Utils.chance(20)) {
+            data.lastCharDiaryDate = today;
+            return null;
+        }
+        
+        const ctx = getContext();
+        const moods = ['😊', '🥰', '😴', '🤔', '😎'];
+        const mood = moods[Math.floor(Math.random() * moods.length)];
+        
+        const prompt = `[일기 쓰기] ${charName}가 오늘 하루를 일기로 써줘.
+${userName}에 대한 이야기나 오늘 있었던 일, 생각 등.
+2-3문장, 한국어, 자연스럽게, 액션(*) 없이:`;
+        
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const content = result.replace(/\*[^*]*\*/g, '').trim().substring(0, 300);
+            
+            if (content && content.length > 10) {
+                if (!data.entries[today]) data.entries[today] = {};
+                data.entries[today].charDiary = {
+                    content: content,
+                    mood: mood,
+                    date: today,
+                    read: false,
+                };
+                data.lastCharDiaryDate = today;
+                return content;
+            }
+        } catch (e) {
+            console.error('[Diary] Character diary failed:', e);
+        }
+        return null;
     },
     
     render() {
@@ -736,9 +999,33 @@ const DiaryApp = {
         </div>`;
     },
     
-    renderEntry(entry, dateKey, charName) {
-        if (!entry) {
-            return `
+    renderEntry(entry, dateKey, charName, userName) {
+        const hasMyEntry = entry?.content;
+        const hasCharEntry = entry?.charDiary;
+        
+        let html = '';
+        
+        // 캐릭터 일기 (있으면)
+        if (hasCharEntry) {
+            const charEntry = entry.charDiary;
+            html += `
+            <div class="card pink-light">
+                <div class="card-label">📔 ${charName}의 일기 ${charEntry.mood || ''} ${!charEntry.read ? '🆕' : ''}</div>
+                <div class="diary-content">${Utils.escapeHtml(charEntry.content)}</div>
+            </div>`;
+        }
+        
+        // 내 일기
+        if (hasMyEntry) {
+            html += `
+            <div class="card">
+                <div class="card-label">📔 나의 일기 ${entry.mood || ''}</div>
+                <div class="diary-content">${Utils.escapeHtml(entry.content)}</div>
+                ${entry.charReply ? `<div class="char-comment"><span class="char-name">${charName}</span>의 답장<br>"${Utils.escapeHtml(entry.charReply)}"</div>` : ''}
+            </div>`;
+        } else {
+            // 일기 쓰기 폼
+            html += `
             <div class="card">
                 <div class="card-label">${Utils.formatDate(dateKey)} 일기</div>
                 <div class="mood-selector" id="diary-mood">${['😊','😢','😡','😴','🥰','😎'].map(m => `<span data-mood="${m}">${m}</span>`).join('')}</div>
@@ -746,12 +1033,8 @@ const DiaryApp = {
                 <button id="diary-save" class="btn-primary">저장하기</button>
             </div>`;
         }
-        return `
-        <div class="card">
-            <div class="card-label">${Utils.formatDate(dateKey)} 일기 ${entry.mood || ''}</div>
-            <div class="diary-content">${Utils.escapeHtml(entry.content)}</div>
-            ${entry.charReply ? `<div class="char-comment"><span class="char-name">${charName}</span>의 답장<br>"${Utils.escapeHtml(entry.charReply)}"</div>` : ''}
-        </div>`;
+        
+        return html;
     },
     
     async generateReply(content, mood, charName) {
@@ -760,21 +1043,37 @@ const DiaryApp = {
 ${charName}(으)로서 따뜻한 답장 (1-2문장, 한국어, 위로/응원/공감):`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
-            return result.replace(/\*[^*]*\*/g, '').split('\n')[0].trim().substring(0, 150);
+            return result.replace(/\*[^*]*\*/g, '').trim().substring(0, 150);
         } catch { return null; }
     },
     
-    loadUI(settings, charId) {
+    async loadUI(settings, charId, charName) {
         const now = new Date();
         this.state.calYear = now.getFullYear();
         this.state.calMonth = now.getMonth();
         this.state.selectedDate = Utils.getTodayKey();
-        this.renderCalendar(settings, charId);
-        this.showEntry(settings, charId);
-        this.bindCalendarEvents(settings, charId);
+        
+        const data = this.getData(settings, charId);
+        const userName = getContext().name1 || '나';
+        
+        // 캐릭터 일기 시도
+        if (!this.state.isGenerating) {
+            this.state.isGenerating = true;
+            
+            const charDiary = await this.tryCharacterDiary(settings, charId, charName, userName);
+            if (charDiary) {
+                saveSettingsDebounced();
+                toastr.info(`📔 ${charName}가 일기를 썼어요!`);
+            }
+            this.state.isGenerating = false;
+        }
+        
+        this.renderCalendar(settings, charId, charName);
+        this.showEntry(settings, charId, charName);
+        this.bindCalendarNav(settings, charId, charName);
     },
     
-    renderCalendar(settings, charId) {
+    renderCalendar(settings, charId, charName) {
         const { calYear: year, calMonth: month } = this.state;
         document.getElementById('diary-cal-title').textContent = `${year}년 ${month + 1}월`;
         const data = this.getData(settings, charId);
@@ -787,19 +1086,30 @@ ${charName}(으)로서 따뜻한 답장 (1-2문장, 한국어, 위로/응원/공
         for (let d = 1; d <= totalDays; d++) {
             const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
             const entry = data.entries[key];
-            const cls = ['cal-day', entry ? 'has-data' : '', key === today ? 'today' : '', key === this.state.selectedDate ? 'selected' : ''].filter(Boolean).join(' ');
-            html += `<span class="${cls}" data-date="${key}">${d}${entry?.mood ? `<small>${entry.mood}</small>` : ''}</span>`;
+            const hasData = entry?.content || entry?.charDiary;
+            const hasUnread = entry?.charDiary && !entry.charDiary.read;
+            const mood = entry?.mood || entry?.charDiary?.mood || '';
+            const cls = ['cal-day', hasData ? 'has-data' : '', key === today ? 'today' : '', key === this.state.selectedDate ? 'selected' : '', hasUnread ? 'unread' : ''].filter(Boolean).join(' ');
+            html += `<span class="${cls}" data-date="${key}">${d}${mood ? `<small>${mood}</small>` : ''}</span>`;
         }
         document.getElementById('diary-calendar').innerHTML = html + '</div>';
+        this.bindCalendarDays(settings, charId, charName);
     },
     
-    showEntry(settings, charId) {
+    showEntry(settings, charId, charName) {
         const data = this.getData(settings, charId);
         const entry = data.entries[this.state.selectedDate];
-        const charName = getContext().name2 || '캐릭터';
-        document.getElementById('diary-entry-area').innerHTML = this.renderEntry(entry, this.state.selectedDate, charName);
+        const userName = getContext().name1 || '나';
         
-        if (!entry) this.bindEntryEvents(settings, charId);
+        // 캐릭터 일기 읽음 처리
+        if (entry?.charDiary && !entry.charDiary.read) {
+            entry.charDiary.read = true;
+            saveSettingsDebounced();
+        }
+        
+        document.getElementById('diary-entry-area').innerHTML = this.renderEntry(entry, this.state.selectedDate, charName, userName);
+        
+        if (!entry?.content) this.bindEntryEvents(settings, charId, charName);
     },
     
     bindEvents(Core) {
@@ -808,39 +1118,36 @@ ${charName}(으)로서 따뜻한 답장 (1-2문장, 한국어, 위로/응원/공
             this.state.calYear = now.getFullYear();
             this.state.calMonth = now.getMonth();
             this.state.selectedDate = Utils.getTodayKey();
-            this.renderCalendar(Core.getSettings(), Core.getCharId());
-            this.showEntry(Core.getSettings(), Core.getCharId());
-            this.bindCalendarEvents(Core.getSettings(), Core.getCharId());
+            const settings = Core.getSettings();
+            const charId = Core.getCharId();
+            const charName = getContext().name2 || '캐릭터';
+            this.renderCalendar(settings, charId, charName);
+            this.showEntry(settings, charId, charName);
         });
-        this.bindCalendarNav(Core);
     },
     
-    bindCalendarNav(Core) {
+    bindCalendarNav(settings, charId, charName) {
         document.getElementById('diary-cal-prev')?.addEventListener('click', () => {
             if (--this.state.calMonth < 0) { this.state.calMonth = 11; this.state.calYear--; }
-            this.renderCalendar(Core.getSettings(), Core.getCharId());
-            this.bindCalendarEvents(Core.getSettings(), Core.getCharId());
+            this.renderCalendar(settings, charId, charName);
         });
         document.getElementById('diary-cal-next')?.addEventListener('click', () => {
             if (++this.state.calMonth > 11) { this.state.calMonth = 0; this.state.calYear++; }
-            this.renderCalendar(Core.getSettings(), Core.getCharId());
-            this.bindCalendarEvents(Core.getSettings(), Core.getCharId());
+            this.renderCalendar(settings, charId, charName);
         });
-        this.bindCalendarEvents(Core.getSettings(), Core.getCharId());
     },
     
-    bindCalendarEvents(settings, charId) {
+    bindCalendarDays(settings, charId, charName) {
         document.querySelectorAll('#diary-calendar .cal-day:not(.empty)').forEach(el => {
             el.onclick = () => {
                 this.state.selectedDate = el.dataset.date;
-                this.renderCalendar(settings, charId);
-                this.showEntry(settings, charId);
-                this.bindCalendarEvents(settings, charId);
+                this.renderCalendar(settings, charId, charName);
+                this.showEntry(settings, charId, charName);
             };
         });
     },
     
-    bindEntryEvents(settings, charId) {
+    bindEntryEvents(settings, charId, charName) {
         let selectedMood = '';
         document.querySelectorAll('#diary-mood span').forEach(el => {
             el.onclick = () => {
@@ -856,19 +1163,21 @@ ${charName}(으)로서 따뜻한 답장 (1-2문장, 한국어, 위로/응원/공
             
             const btn = document.getElementById('diary-save');
             btn.disabled = true;
-            btn.textContent = '답장 기다리는 중...';
+            btn.textContent = `${charName} 님이 읽는 중...`;
             
-            const charName = getContext().name2 || '캐릭터';
             const charReply = await this.generateReply(content, selectedMood, charName);
             
             const data = this.getData(settings, charId);
-            data.entries[this.state.selectedDate] = { content, mood: selectedMood, charReply, date: this.state.selectedDate };
+            if (!data.entries[this.state.selectedDate]) data.entries[this.state.selectedDate] = {};
+            data.entries[this.state.selectedDate].content = content;
+            data.entries[this.state.selectedDate].mood = selectedMood;
+            data.entries[this.state.selectedDate].charReply = charReply;
+            data.entries[this.state.selectedDate].date = this.state.selectedDate;
             saveSettingsDebounced();
             
             toastr.success('📔 저장되었습니다!');
-            this.renderCalendar(settings, charId);
-            this.showEntry(settings, charId);
-            this.bindCalendarEvents(settings, charId);
+            this.renderCalendar(settings, charId, charName);
+            this.showEntry(settings, charId, charName);
         });
     },
 };
@@ -958,7 +1267,6 @@ const PhoneCore = {
             if (prev === 'home') {
                 this.switchPage('home');
             } else {
-                // 이전 앱 페이지로
                 const app = this.apps[prev];
                 if (app) this.openApp(prev);
                 else this.switchPage('home');
@@ -985,7 +1293,7 @@ const PhoneCore = {
         });
     },
     
-    openApp(appId) {
+    async openApp(appId) {
         const ctx = getContext();
         if (ctx.characterId === undefined && !ctx.groupId) { toastr.warning('먼저 캐릭터를 선택해주세요.'); return; }
         
@@ -999,7 +1307,7 @@ const PhoneCore = {
         appPage.dataset.currentPage = appId;
         this.switchPage(appId);
         
-        app.loadUI(this.getSettings(), this.getCharId(), charName);
+        await app.loadUI(this.getSettings(), this.getCharId(), charName);
         app.bindEvents(this);
         this.bindBackButtons();
     },
@@ -1024,7 +1332,7 @@ const PhoneCore = {
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header"><b>📱 썸원 폰</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
                 <div class="inline-drawer-content">
-                    <p style="margin:10px 0;opacity:0.7;">v1.7.0</p>
+                    <p style="margin:10px 0;opacity:0.7;">v1.8.0 - 캐릭터 자동 생성</p>
                     <div style="margin:15px 0;"><b>앱 표시</b>
                         ${Object.entries(this.apps).map(([id, app]) => `<label style="display:flex;align-items:center;gap:8px;margin:8px 0;"><input type="checkbox" class="phone-app-toggle" data-app="${id}" ${settings.enabledApps?.[id] !== false ? 'checked' : ''}><span>${app.icon} ${app.name}</span></label>`).join('')}
                     </div>
@@ -1051,7 +1359,7 @@ const PhoneCore = {
     },
     
     init() {
-        console.log('[SumOne Phone] v1.7.0 로딩...');
+        console.log('[SumOne Phone] v1.8.0 로딩...');
         this.getSettings();
         this.createSettingsUI();
         $('body').append(this.createHTML());
