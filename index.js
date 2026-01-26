@@ -1,6 +1,5 @@
 // SumOne Phone (썸원 폰) Extension for SillyTavern
-// 스마트폰 스타일 UI - 자동 AI 답변 생성 + 블러 처리
-// v1.3.0 - 서버 파일 저장, 재생성 버튼, 모바일 수정
+// v1.5.0 - 제출 시 AI답변+코멘트 동시 생성
 
 import {
     saveSettingsDebounced,
@@ -12,7 +11,6 @@ import { extension_settings } from '../../../extensions.js';
 
 const getContext = () => SillyTavern.getContext();
 const extensionName = 'sumone-phone';
-const DATA_FILE = 'sumone_phone_data.json';
 
 // 기본 설정
 const defaultSettings = {
@@ -20,10 +18,6 @@ const defaultSettings = {
         sumone: { enabled: true, name: '썸원', icon: '💕' },
     },
     wallpaper: '',
-};
-
-// 영속 데이터 구조
-const defaultPersistentData = {
     sumoneHistory: {},
     questionPool: [],
     usedQuestions: [],
@@ -34,17 +28,15 @@ let currentScreen = 'home';
 let selectedDate = null;
 let isGenerating = false;
 let isUpdatingQuestions = false;
-let isBackgroundGenerating = false;
 let todayQuestion = null;
 let todayMyAnswer = null;
 let todayAiAnswer = null;
 let todayComment = null;
-let todayAiAnswerRevealed = false;
+let todayRevealed = false;
 let currentCalendarYear;
 let currentCalendarMonth;
-let persistentDataCache = null;
 
-// 초기 질문 풀 (50개)
+// 초기 질문 풀
 const initialQuestions = [
     "처음 만났을 때 첫인상이 어땠어?",
     "나의 어떤 점이 제일 좋아?",
@@ -98,113 +90,23 @@ const initialQuestions = [
     "나를 처음 좋아하게 된 이유는?",
 ];
 
-// ==================== 서버 파일 저장 ====================
+// ==================== 설정 ====================
 
-async function loadPersistentData() {
-    if (persistentDataCache) return persistentDataCache;
-    
-    try {
-        const response = await fetch('/api/extensions/sumone-phone/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'load' })
-        });
-        
-        if (response.ok) {
-            const data = await response.json();
-            if (data && Object.keys(data).length > 0) {
-                persistentDataCache = data;
-                return data;
-            }
-        }
-    } catch (e) {
-        console.log('[SumOne] Server storage not available, using localStorage');
+function getSettings() {
+    if (!extension_settings[extensionName]) {
+        extension_settings[extensionName] = JSON.parse(JSON.stringify(defaultSettings));
     }
-    
-    // 폴백: localStorage
-    try {
-        const stored = localStorage.getItem('sumone_phone_data_v1');
-        if (stored) {
-            persistentDataCache = JSON.parse(stored);
-            return persistentDataCache;
-        }
-    } catch (e) {
-        console.error('[SumOne] Failed to load data:', e);
-    }
-    
-    persistentDataCache = { ...defaultPersistentData, questionPool: [...initialQuestions] };
-    return persistentDataCache;
+    const s = extension_settings[extensionName];
+    if (!s.apps) s.apps = { ...defaultSettings.apps };
+    if (!s.sumoneHistory) s.sumoneHistory = {};
+    if (!s.questionPool || s.questionPool.length === 0) s.questionPool = [...initialQuestions];
+    if (!s.usedQuestions) s.usedQuestions = [];
+    if (s.wallpaper === undefined) s.wallpaper = '';
+    return s;
 }
 
-async function savePersistentData(data) {
-    persistentDataCache = data;
-    
-    // localStorage에 항상 백업
-    try {
-        localStorage.setItem('sumone_phone_data_v1', JSON.stringify(data));
-    } catch (e) {
-        console.error('[SumOne] localStorage save failed:', e);
-    }
-    
-    // 서버에 저장 시도
-    try {
-        await fetch('/api/extensions/sumone-phone/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'save', data: data })
-        });
-    } catch (e) {
-        console.log('[SumOne] Server save failed, using localStorage only');
-    }
-}
-
-async function getPersistentData() {
-    return await loadPersistentData();
-}
-
-async function updatePersistentData(updates) {
-    const data = await loadPersistentData();
-    Object.assign(data, updates);
-    await savePersistentData(data);
-    return data;
-}
-
-// ==================== 설정 로드 ====================
-
-function loadSettings() {
-    extension_settings[extensionName] = extension_settings[extensionName] || {};
-    const settings = extension_settings[extensionName];
-    if (!settings.apps) settings.apps = { ...defaultSettings.apps };
-    if (settings.wallpaper === undefined) settings.wallpaper = '';
-}
-
-async function initializePersistentData() {
-    const persistent = await loadPersistentData();
-    
-    // 기존 extension_settings에서 마이그레이션
-    const settings = extension_settings[extensionName];
-    if (settings.sumoneHistory && Object.keys(settings.sumoneHistory).length > 0) {
-        if (!persistent.sumoneHistory) persistent.sumoneHistory = {};
-        for (const [key, value] of Object.entries(settings.sumoneHistory)) {
-            if (!persistent.sumoneHistory[key]) {
-                persistent.sumoneHistory[key] = value;
-            }
-        }
-        delete settings.sumoneHistory;
-        saveSettingsDebounced();
-    }
-    
-    if (!persistent.questionPool || persistent.questionPool.length === 0) {
-        persistent.questionPool = [...initialQuestions];
-    }
-    if (!persistent.usedQuestions) {
-        persistent.usedQuestions = [];
-    }
-    if (!persistent.sumoneHistory) {
-        persistent.sumoneHistory = {};
-    }
-    
-    await savePersistentData(persistent);
+function saveSettings() {
+    saveSettingsDebounced();
 }
 
 // ==================== 유틸리티 ====================
@@ -240,47 +142,22 @@ function getFullContext() {
     if (ctx.characters && ctx.characterId !== undefined) {
         const char = ctx.characters[ctx.characterId];
         if (char) {
-            if (char.description) context += `[Character Description]\n${char.description}\n\n`;
+            if (char.description) context += `[Character]\n${char.description}\n\n`;
             if (char.personality) context += `[Personality]\n${char.personality}\n\n`;
             if (char.scenario) context += `[Scenario]\n${char.scenario}\n\n`;
-            if (char.mes_example) context += `[Example Messages]\n${char.mes_example}\n\n`;
         }
-    }
-    
-    if (ctx.groupId && ctx.groups) {
-        const group = ctx.groups.find(g => g.id === ctx.groupId);
-        if (group && group.members) {
-            context += `[Group Members]\n`;
-            group.members.forEach(memberId => {
-                const member = ctx.characters?.find(c => c.avatar === memberId);
-                if (member) {
-                    context += `- ${member.name}: ${member.personality || member.description || ''}\n`;
-                }
-            });
-            context += '\n';
-        }
-    }
-    
-    if (ctx.worldInfo && ctx.worldInfo.length > 0) {
-        context += `[World Info / Lorebook]\n`;
-        ctx.worldInfo.forEach(entry => {
-            if (entry.content) context += `${entry.content}\n`;
-        });
-        context += '\n';
     }
     
     const chat = ctx.chat || [];
     if (chat.length > 0) {
         const userName = ctx.name1 || 'User';
         const charName = ctx.name2 || 'Character';
-        context += `[Recent Chat History]\n`;
-        const recentChat = chat.slice(-30);
-        recentChat.forEach(msg => {
+        context += `[Chat]\n`;
+        chat.slice(-15).forEach(msg => {
             const name = msg.is_user ? userName : charName;
-            const text = msg.mes?.substring(0, 500) || '';
+            const text = msg.mes?.substring(0, 200) || '';
             if (text) context += `${name}: ${text}\n`;
         });
-        context += '\n';
     }
     
     return context;
@@ -288,22 +165,20 @@ function getFullContext() {
 
 // ==================== 질문 관리 ====================
 
-async function getQuestionFromPool() {
-    const persistent = await loadPersistentData();
+function getQuestionFromPool() {
+    const settings = getSettings();
     
-    if (!persistent.questionPool || persistent.questionPool.length === 0) {
-        persistent.questionPool = [...initialQuestions];
-        persistent.usedQuestions = [];
+    if (settings.questionPool.length === 0) {
+        settings.questionPool = [...initialQuestions];
+        settings.usedQuestions = [];
     }
     
-    const randomIndex = Math.floor(Math.random() * persistent.questionPool.length);
-    const question = persistent.questionPool[randomIndex];
+    const idx = Math.floor(Math.random() * settings.questionPool.length);
+    const question = settings.questionPool.splice(idx, 1)[0];
+    settings.usedQuestions.push(question);
+    saveSettings();
     
-    persistent.questionPool.splice(randomIndex, 1);
-    persistent.usedQuestions.push(question);
-    await savePersistentData(persistent);
-    
-    if (persistent.questionPool.length <= 10 && !isUpdatingQuestions) {
+    if (settings.questionPool.length <= 10 && !isUpdatingQuestions) {
         generateMoreQuestions();
     }
     
@@ -311,381 +186,181 @@ async function getQuestionFromPool() {
 }
 
 function showUpdatingStatus(show) {
-    const statusEl = document.getElementById('phone-updating-status');
-    if (statusEl) statusEl.style.display = show ? 'flex' : 'none';
+    const el = document.getElementById('phone-updating-status');
+    if (el) el.style.display = show ? 'flex' : 'none';
 }
 
 async function generateMoreQuestions() {
     if (isUpdatingQuestions) return;
     isUpdatingQuestions = true;
     showUpdatingStatus(true);
-    console.log('[SumOne] Generating new questions...');
     
-    const persistent = await loadPersistentData();
-    const usedList = persistent.usedQuestions.slice(-50).join('\n- ');
-    
-    const prompt = `Generate 100 unique romantic couple Q&A questions in Korean.
-Already used (avoid): ${usedList}
-Rules: 15-40 chars each, one per line, no numbering, topics: feelings/memories/future/preferences
-Output ONLY questions.`;
+    const settings = getSettings();
+    const prompt = `Generate 50 romantic couple Q&A questions in Korean. 10-30 chars each, one per line, no numbers. Output ONLY questions.`;
 
     try {
         const ctx = getContext();
         if (ctx.generateQuietPrompt) {
             const result = await ctx.generateQuietPrompt(prompt, false, true);
-            const newQuestions = result.split('\n')
-                .map(q => q.trim())
-                .filter(q => q.length >= 10 && q.length <= 60 && !q.match(/^\d/) && !q.startsWith('-'))
-                .filter(q => !persistent.usedQuestions.includes(q) && !persistent.questionPool.includes(q));
+            const newQ = result.split('\n')
+                .map(q => q.trim().replace(/^\d+[\.\)]\s*/, '').replace(/^[-•]\s*/, ''))
+                .filter(q => q.length >= 8 && q.length <= 50 && q.includes('?'))
+                .filter(q => !settings.usedQuestions.includes(q) && !settings.questionPool.includes(q));
             
-            if (newQuestions.length > 0) {
-                persistent.questionPool.push(...newQuestions);
-                await savePersistentData(persistent);
-                console.log(`[SumOne] Added ${newQuestions.length} questions`);
+            if (newQ.length > 0) {
+                settings.questionPool.push(...newQ);
+                saveSettings();
             }
         }
     } catch (e) {
-        console.error('[SumOne] Question generation failed:', e);
+        console.error('[SumOne] Question gen failed:', e);
     } finally {
         isUpdatingQuestions = false;
         showUpdatingStatus(false);
     }
 }
 
-// ==================== AI 답변 생성 ====================
+// ==================== AI 생성 ====================
 
-async function generateAiAnswerForQuestion(question) {
+async function generateAiAnswerAndComment(question, userAnswer) {
     const ctx = getContext();
     const charName = ctx.name2 || '캐릭터';
     const userName = ctx.name1 || '사용자';
     const fullContext = getFullContext();
     
     const prompt = `${fullContext}
----
-[SYSTEM: SPECIAL Q&A MODE - NOT ROLEPLAY]
+[커플 Q&A 앱 "썸원"]
+질문: "${question}"
+${userName}의 답변: "${userAnswer}"
 
-This is "SumOne" couple Q&A app. Answer this question: "${question}"
+${charName}(으)로서 두 가지를 작성하세요:
+1. 질문에 대한 ${charName}의 답변 (1-2문장)
+2. ${userName}의 답변에 대한 짧은 반응/코멘트 (1문장, 달달하거나 장난스럽게)
 
-You are ${charName}. Give a SHORT, NATURAL answer (1-2 sentences, under 100 characters).
+형식:
+답변: (질문에 대한 답)
+코멘트: (상대방 답변에 대한 반응)
 
-IMPORTANT:
-- Answer the question directly as ${charName}
-- Use casual Korean speech
-- NO actions, NO asterisks, NO descriptions
-- NO English, NO meta-commentary
-- Just a simple, heartfelt answer
-
-${charName}:`;
-
-    try {
-        console.log('[SumOne] Generating AI answer for:', question);
-        if (ctx.generateQuietPrompt) {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
-            
-            let clean = result
-                .replace(/<[^>]*>/g, '')
-                .replace(/```[\s\S]*?```/g, '')
-                .replace(/\*[^*]*\*/g, '')
-                .replace(/\[[^\]]*\]/g, '')
-                .replace(/\([^)]*\)/g, '')
-                .replace(/^["']|["']$/g, '')
-                .replace(new RegExp(`^${charName}:\\s*`, 'i'), '')
-                .replace(/^(Answer:|답변:|A:|답:)/gi, '')
-                .trim();
-            
-            // 줄바꿈 전까지만
-            clean = clean.split('\n')[0].trim();
-            
-            // 이상한 응답 필터링
-            if (clean.includes('Q&A') || clean.includes('roleplay') || clean.includes('task') || 
-                clean.includes('SYSTEM') || clean.includes('switch') || clean.length < 5) {
-                console.log('[SumOne] Invalid response detected, returning null');
-                return null;
-            }
-            
-            if (clean.length > 150) clean = clean.substring(0, 150) + '...';
-            
-            console.log('[SumOne] AI Answer:', clean);
-            return clean;
-        }
-    } catch (e) {
-        console.error('[SumOne] AI answer failed:', e);
-    }
-    return null;
-}
-
-async function generateCommentForAnswer(question, userAnswer) {
-    const ctx = getContext();
-    const charName = ctx.name2 || '캐릭터';
-    const userName = ctx.name1 || '사용자';
-    const fullContext = getFullContext();
-    
-    const prompt = `${fullContext}
----
-[SYSTEM: REACT TO PARTNER'S ANSWER]
-
-Question was: "${question}"
-${userName} answered: "${userAnswer}"
-
-As ${charName}, give a SHORT reaction (under 80 chars). Be sweet/playful/teasing.
-
-RULES:
-- React to their specific answer
-- Casual Korean speech
-- NO actions, NO asterisks
-- Just a simple comment
-
-${charName}:`;
+액션(*), 괄호, 영어 없이 한국어로만:`;
 
     try {
         if (ctx.generateQuietPrompt) {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             
-            let clean = result
-                .replace(/<[^>]*>/g, '')
-                .replace(/\*[^*]*\*/g, '')
-                .replace(/\[[^\]]*\]/g, '')
-                .replace(/\([^)]*\)/g, '')
-                .replace(new RegExp(`^${charName}:\\s*`, 'i'), '')
-                .trim()
-                .split('\n')[0];
+            // 파싱
+            let answer = '';
+            let comment = '';
             
-            if (clean.length > 100) clean = clean.substring(0, 100) + '...';
-            
-            return clean;
-        }
-    } catch (e) {
-        console.error('[SumOne] Comment generation failed:', e);
-    }
-    return null;
-}
-
-// ==================== 백그라운드 생성 ====================
-
-async function backgroundGenerateToday() {
-    const ctx = getContext();
-    
-    if (ctx.characterId === undefined && !ctx.groupId) {
-        console.log('[SumOne] No character selected, skipping');
-        return;
-    }
-    
-    const todayKey = getTodayKey();
-    const persistent = await loadPersistentData();
-    const todayData = persistent.sumoneHistory?.[todayKey];
-    
-    if (todayData?.question && todayData?.aiAnswer && !isInvalidAnswer(todayData.aiAnswer)) {
-        console.log('[SumOne] Today already prepared');
-        return;
-    }
-    
-    if (isBackgroundGenerating) return;
-    isBackgroundGenerating = true;
-    
-    console.log('[SumOne] Background generating...');
-    
-    try {
-        const question = todayData?.question || await getQuestionFromPool();
-        const aiAnswer = await generateAiAnswerForQuestion(question);
-        
-        if (aiAnswer) {
-            if (!persistent.sumoneHistory) persistent.sumoneHistory = {};
-            persistent.sumoneHistory[todayKey] = {
-                question: question,
-                myAnswer: todayData?.myAnswer || null,
-                aiAnswer: aiAnswer,
-                comment: todayData?.comment || null,
-                revealed: todayData?.revealed || false,
-                charName: ctx.name2 || '캐릭터',
-            };
-            await savePersistentData(persistent);
-            console.log('[SumOne] Background generation complete!');
-        }
-    } catch (e) {
-        console.error('[SumOne] Background generation failed:', e);
-    } finally {
-        isBackgroundGenerating = false;
-    }
-}
-
-function isInvalidAnswer(answer) {
-    if (!answer) return true;
-    const invalidPatterns = ['Q&A', 'roleplay', 'task', 'SYSTEM', 'switch', 'Start:', 'specific question', 'I need to'];
-    return invalidPatterns.some(p => answer.includes(p));
-}
-
-// ==================== 재생성 ====================
-
-async function regenerateAiAnswer() {
-    if (isGenerating || !todayQuestion) return;
-    
-    const aiAnswerEl = document.getElementById('phone-sumone-ai-answer');
-    const regenerateBtn = document.getElementById('phone-sumone-regenerate');
-    
-    if (regenerateBtn) regenerateBtn.disabled = true;
-    if (aiAnswerEl) aiAnswerEl.innerHTML = '<span class="sumone-loading">다시 생성 중...</span>';
-    
-    isGenerating = true;
-    
-    try {
-        const newAnswer = await generateAiAnswerForQuestion(todayQuestion);
-        
-        if (newAnswer && !isInvalidAnswer(newAnswer)) {
-            todayAiAnswer = newAnswer;
-            
-            const todayKey = getTodayKey();
-            const persistent = await loadPersistentData();
-            const ctx = getContext();
-            
-            if (!persistent.sumoneHistory) persistent.sumoneHistory = {};
-            persistent.sumoneHistory[todayKey] = {
-                ...persistent.sumoneHistory[todayKey],
-                question: todayQuestion,
-                aiAnswer: newAnswer,
-                charName: ctx.name2 || '캐릭터',
-            };
-            await savePersistentData(persistent);
-            
-            if (aiAnswerEl) {
-                aiAnswerEl.textContent = newAnswer;
-                if (!todayAiAnswerRevealed) {
-                    aiAnswerEl.classList.add('blurred');
+            const lines = result.split('\n').map(l => l.trim()).filter(l => l);
+            for (const line of lines) {
+                if (line.startsWith('답변:') || line.startsWith('답:')) {
+                    answer = line.replace(/^답변?:\s*/, '').replace(/\*[^*]*\*/g, '').trim();
+                } else if (line.startsWith('코멘트:') || line.startsWith('반응:')) {
+                    comment = line.replace(/^(코멘트|반응):\s*/, '').replace(/\*[^*]*\*/g, '').trim();
                 }
             }
             
-            toastr.success('답변이 다시 생성되었습니다!');
-        } else {
-            toastr.error('생성 실패. 다시 시도해주세요.');
-            if (aiAnswerEl && todayAiAnswer) {
-                aiAnswerEl.textContent = todayAiAnswer;
+            // 형식 못 찾으면 전체를 답변으로
+            if (!answer && lines.length > 0) {
+                answer = lines[0].replace(/\*[^*]*\*/g, '').trim();
             }
+            
+            if (answer.length > 150) answer = answer.substring(0, 150);
+            if (comment.length > 100) comment = comment.substring(0, 100);
+            
+            return { answer, comment };
         }
     } catch (e) {
-        console.error('[SumOne] Regenerate failed:', e);
-        toastr.error('생성 실패');
-    } finally {
-        isGenerating = false;
-        if (regenerateBtn) regenerateBtn.disabled = false;
+        console.error('[SumOne] AI gen failed:', e);
     }
+    return { answer: null, comment: null };
 }
 
 // ==================== 오늘 데이터 ====================
 
-async function loadTodayData() {
+function getTodayData() {
+    const settings = getSettings();
     const todayKey = getTodayKey();
-    const persistent = await loadPersistentData();
-    const data = persistent.sumoneHistory?.[todayKey];
     
-    if (data?.question) {
-        todayQuestion = data.question;
-        todayMyAnswer = data.myAnswer;
-        todayAiAnswer = data.aiAnswer;
-        todayComment = data.comment;
-        todayAiAnswerRevealed = data.revealed || false;
-        
-        const questionEl = document.getElementById('phone-sumone-question');
-        const myAnswerEl = document.getElementById('phone-sumone-my-answer');
-        const aiAnswerEl = document.getElementById('phone-sumone-ai-answer');
-        const commentEl = document.getElementById('phone-sumone-comment');
-        const commentBox = document.querySelector('.sumone-comment-box');
-        const submitBtn = document.getElementById('phone-sumone-submit');
-        const regenerateBtn = document.getElementById('phone-sumone-regenerate');
-        
-        if (questionEl) questionEl.textContent = todayQuestion;
-        
-        // 오늘 이미 답변 완료
-        if (todayMyAnswer && todayAiAnswerRevealed) {
-            if (myAnswerEl) {
-                myAnswerEl.value = todayMyAnswer;
-                myAnswerEl.disabled = true;
-            }
-            
-            if (aiAnswerEl) {
-                aiAnswerEl.textContent = todayAiAnswer || '';
-                aiAnswerEl.classList.remove('blurred');
-            }
-            
-            if (commentEl && commentBox) {
-                if (todayComment) {
-                    commentEl.textContent = todayComment;
-                    commentBox.style.display = 'block';
-                } else {
-                    commentBox.style.display = 'none';
-                }
-            }
-            
-            if (submitBtn) {
-                submitBtn.disabled = true;
-                submitBtn.textContent = '오늘 완료 ✓';
-            }
-            
-            if (regenerateBtn) regenerateBtn.style.display = 'none';
-            
-            return true;
-        }
-        
-        // 아직 답변 안 함
-        if (myAnswerEl) {
-            myAnswerEl.value = '';
-            myAnswerEl.disabled = false;
-        }
-        
-        if (aiAnswerEl) {
-            if (todayAiAnswer && !isInvalidAnswer(todayAiAnswer)) {
-                aiAnswerEl.textContent = todayAiAnswer;
-                aiAnswerEl.classList.add('blurred');
-            } else {
-                aiAnswerEl.innerHTML = '<span class="sumone-loading">답변 준비 중...</span>';
-                // 이상한 답변이면 백그라운드 재생성
-                if (todayAiAnswer && isInvalidAnswer(todayAiAnswer)) {
-                    backgroundGenerateToday();
-                }
-            }
-        }
-        
-        if (commentBox) commentBox.style.display = 'none';
-        
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.textContent = '제출하고 답변 보기';
-        }
-        
-        if (regenerateBtn) regenerateBtn.style.display = 'flex';
-        
-        return true;
+    if (!settings.sumoneHistory[todayKey] || !settings.sumoneHistory[todayKey].question) {
+        settings.sumoneHistory[todayKey] = {
+            question: getQuestionFromPool(),
+            myAnswer: null,
+            aiAnswer: null,
+            comment: null,
+            revealed: false,
+            charName: getContext().name2 || '캐릭터',
+        };
+        saveSettings();
     }
-    return false;
+    
+    return settings.sumoneHistory[todayKey];
 }
 
-function resetTodayUI() {
-    todayQuestion = null;
-    todayMyAnswer = null;
-    todayAiAnswer = null;
-    todayComment = null;
-    todayAiAnswerRevealed = false;
+function loadTodayUI() {
+    const data = getTodayData();
     
+    todayQuestion = data.question;
+    todayMyAnswer = data.myAnswer;
+    todayAiAnswer = data.aiAnswer;
+    todayComment = data.comment;
+    todayRevealed = data.revealed || false;
+    
+    const questionEl = document.getElementById('phone-sumone-question');
     const myAnswerEl = document.getElementById('phone-sumone-my-answer');
     const aiAnswerEl = document.getElementById('phone-sumone-ai-answer');
+    const commentEl = document.getElementById('phone-sumone-comment');
     const commentBox = document.querySelector('.sumone-comment-box');
     const submitBtn = document.getElementById('phone-sumone-submit');
-    const regenerateBtn = document.getElementById('phone-sumone-regenerate');
+    const aiBox = document.querySelector('.sumone-ai-box');
     
-    if (myAnswerEl) { myAnswerEl.value = ''; myAnswerEl.disabled = false; }
-    if (aiAnswerEl) { aiAnswerEl.innerHTML = '<span class="sumone-loading">답변 준비 중...</span>'; aiAnswerEl.classList.remove('blurred'); }
+    if (questionEl) questionEl.textContent = todayQuestion;
+    
+    // 이미 완료
+    if (todayRevealed && todayMyAnswer) {
+        if (myAnswerEl) {
+            myAnswerEl.value = todayMyAnswer;
+            myAnswerEl.disabled = true;
+        }
+        if (aiBox) aiBox.style.display = 'block';
+        if (aiAnswerEl) aiAnswerEl.textContent = todayAiAnswer || '';
+        if (commentEl && commentBox) {
+            if (todayComment) {
+                commentEl.textContent = todayComment;
+                commentBox.style.display = 'block';
+            } else {
+                commentBox.style.display = 'none';
+            }
+        }
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = '오늘 완료 ✓';
+        }
+        return;
+    }
+    
+    // 미완료 - 입력 대기
+    if (myAnswerEl) {
+        myAnswerEl.value = '';
+        myAnswerEl.disabled = false;
+    }
+    if (aiBox) aiBox.style.display = 'none';
     if (commentBox) commentBox.style.display = 'none';
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '제출하고 답변 보기'; }
-    if (regenerateBtn) regenerateBtn.style.display = 'flex';
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '제출하기';
+    }
 }
 
-// ==================== 제출 처리 ====================
+// ==================== 제출 ====================
 
 async function handleSubmit() {
     const myAnswerEl = document.getElementById('phone-sumone-my-answer');
     const submitBtn = document.getElementById('phone-sumone-submit');
     const aiAnswerEl = document.getElementById('phone-sumone-ai-answer');
+    const aiBox = document.querySelector('.sumone-ai-box');
     const commentEl = document.getElementById('phone-sumone-comment');
     const commentBox = document.querySelector('.sumone-comment-box');
-    const regenerateBtn = document.getElementById('phone-sumone-regenerate');
     
     if (!myAnswerEl || !submitBtn || isGenerating) return;
     
@@ -695,77 +370,56 @@ async function handleSubmit() {
         return;
     }
     
-    if (!todayQuestion) {
-        toastr.warning('질문이 준비되지 않았습니다.');
-        return;
-    }
-    
     todayMyAnswer = answer;
     myAnswerEl.disabled = true;
     submitBtn.disabled = true;
-    if (regenerateBtn) regenerateBtn.style.display = 'none';
+    submitBtn.textContent = '생성 중...';
     
-    const todayKey = getTodayKey();
-    const persistent = await loadPersistentData();
-    const ctx = getContext();
+    isGenerating = true;
     
-    // AI 답변 없거나 이상하면 생성
-    if (!todayAiAnswer || isInvalidAnswer(todayAiAnswer)) {
-        submitBtn.textContent = '답변 생성 중...';
-        isGenerating = true;
-        if (aiAnswerEl) aiAnswerEl.innerHTML = '<span class="sumone-loading">답변 생성 중...</span>';
-        
-        const generated = await generateAiAnswerForQuestion(todayQuestion);
-        if (generated && !isInvalidAnswer(generated)) {
-            todayAiAnswer = generated;
-        } else {
-            toastr.error('답변 생성 실패. 다시 시도해주세요.');
-            isGenerating = false;
-            submitBtn.disabled = false;
-            submitBtn.textContent = '제출하고 답변 보기';
-            myAnswerEl.disabled = false;
-            if (regenerateBtn) regenerateBtn.style.display = 'flex';
-            return;
-        }
-        isGenerating = false;
+    // AI 답변 + 코멘트 동시 생성
+    const { answer: aiAnswer, comment } = await generateAiAnswerAndComment(todayQuestion, todayMyAnswer);
+    
+    isGenerating = false;
+    
+    if (!aiAnswer) {
+        toastr.error('생성 실패. 다시 시도해주세요.');
+        myAnswerEl.disabled = false;
+        submitBtn.disabled = false;
+        submitBtn.textContent = '제출하기';
+        return;
     }
     
-    // 코멘트 생성
-    submitBtn.textContent = '코멘트 생성 중...';
-    const comment = await generateCommentForAnswer(todayQuestion, todayMyAnswer);
+    todayAiAnswer = aiAnswer;
     todayComment = comment;
-    
-    todayAiAnswerRevealed = true;
+    todayRevealed = true;
     
     // 저장
-    if (!persistent.sumoneHistory) persistent.sumoneHistory = {};
-    persistent.sumoneHistory[todayKey] = {
+    const settings = getSettings();
+    const todayKey = getTodayKey();
+    settings.sumoneHistory[todayKey] = {
         question: todayQuestion,
         myAnswer: todayMyAnswer,
         aiAnswer: todayAiAnswer,
         comment: todayComment,
         revealed: true,
-        charName: ctx.name2 || '캐릭터',
+        charName: getContext().name2 || '캐릭터',
     };
-    await savePersistentData(persistent);
+    saveSettings();
     
-    // UI 업데이트
-    if (aiAnswerEl) {
-        aiAnswerEl.textContent = todayAiAnswer;
-        aiAnswerEl.classList.remove('blurred');
-    }
-    
+    // UI
+    if (aiBox) aiBox.style.display = 'block';
+    if (aiAnswerEl) aiAnswerEl.textContent = todayAiAnswer;
     if (commentEl && commentBox && todayComment) {
         commentEl.textContent = todayComment;
         commentBox.style.display = 'block';
     }
-    
     submitBtn.textContent = '오늘 완료 ✓';
     
     toastr.success('💕 답변이 공개되었습니다!');
 }
 
-// ==================== HTML 생성 ====================
+// ==================== HTML ====================
 
 function createPhoneHTML() {
     return `
@@ -796,21 +450,16 @@ function createPhoneHTML() {
                         <div class="app-content sumone-app">
                             <div class="sumone-question-box">
                                 <div class="sumone-label">오늘의 질문</div>
-                                <div class="sumone-question" id="phone-sumone-question">질문을 불러오는 중...</div>
+                                <div class="sumone-question" id="phone-sumone-question">로딩 중...</div>
                             </div>
                             <div class="sumone-answer-box">
                                 <div class="sumone-label">나의 답변</div>
                                 <textarea id="phone-sumone-my-answer" placeholder="답변을 입력하세요..."></textarea>
-                                <button id="phone-sumone-submit" class="sumone-submit-btn">제출하고 답변 보기</button>
+                                <button id="phone-sumone-submit" class="sumone-submit-btn">제출하기</button>
                             </div>
-                            <div class="sumone-ai-box">
-                                <div class="sumone-ai-header">
-                                    <div class="sumone-label"><span class="sumone-char-name"></span>의 답변</div>
-                                    <button id="phone-sumone-regenerate" class="sumone-regenerate-btn" title="다시 생성">🔄</button>
-                                </div>
-                                <div class="sumone-ai-answer blurred" id="phone-sumone-ai-answer">
-                                    <span class="sumone-loading">답변 준비 중...</span>
-                                </div>
+                            <div class="sumone-ai-box" style="display: none;">
+                                <div class="sumone-label"><span class="sumone-char-name"></span>의 답변</div>
+                                <div class="sumone-ai-answer" id="phone-sumone-ai-answer"></div>
                             </div>
                             <div class="sumone-comment-box" style="display: none;">
                                 <div class="sumone-label"><span class="sumone-char-name"></span>의 코멘트</div>
@@ -843,27 +492,22 @@ function createPhoneHTML() {
     </div>`;
 }
 
-// ==================== 앱 그리드 ====================
+// ==================== 앱 ====================
 
 function renderAppGrid() {
     const grid = document.getElementById('phone-app-grid');
     if (!grid) return;
-    const apps = extension_settings[extensionName]?.apps || {};
-    const wallpaper = extension_settings[extensionName]?.wallpaper || '';
+    const settings = getSettings();
     
     const homeScreen = document.querySelector('.phone-page[data-page="home"]');
     if (homeScreen) {
-        if (wallpaper) {
-            homeScreen.style.backgroundImage = `url(${wallpaper})`;
-            homeScreen.style.backgroundSize = 'cover';
-            homeScreen.style.backgroundPosition = 'center';
-        } else {
-            homeScreen.style.backgroundImage = '';
-        }
+        homeScreen.style.backgroundImage = settings.wallpaper ? `url(${settings.wallpaper})` : '';
+        homeScreen.style.backgroundSize = 'cover';
+        homeScreen.style.backgroundPosition = 'center';
     }
     
     let html = '';
-    for (const [appId, app] of Object.entries(apps)) {
+    for (const [appId, app] of Object.entries(settings.apps)) {
         if (app.enabled) {
             html += `<div class="phone-app-icon" data-app="${appId}">
                 <div class="app-icon-image">${app.icon}</div>
@@ -884,7 +528,7 @@ function switchPage(pageName) {
     });
 }
 
-async function openApp(appId) {
+function openApp(appId) {
     if (appId === 'sumone') {
         const ctx = getContext();
         if (ctx.characterId === undefined && !ctx.groupId) {
@@ -893,48 +537,35 @@ async function openApp(appId) {
         }
         switchPage('sumone');
         updateCharacterName();
-        
-        const hasToday = await loadTodayData();
-        if (!hasToday) {
-            resetTodayUI();
-            todayQuestion = await getQuestionFromPool();
-            const questionEl = document.getElementById('phone-sumone-question');
-            if (questionEl) questionEl.textContent = todayQuestion;
-            
-            backgroundGenerateToday();
-        }
+        loadTodayUI();
     }
 }
 
-// ==================== 캐릭터 이름 ====================
-
 function updateCharacterName() {
-    const ctx = getContext();
-    const charName = ctx.name2 || '캐릭터';
+    const charName = getContext().name2 || '캐릭터';
     document.querySelectorAll('.sumone-char-name').forEach(el => el.textContent = charName);
 }
 
 // ==================== 캘린더 ====================
 
-async function renderCalendar(year, month) {
+function renderCalendar(year, month) {
     const calendar = document.getElementById('phone-calendar');
     const title = document.getElementById('phone-cal-title');
     if (!calendar || !title) return;
     
+    const settings = getSettings();
     title.textContent = `${year}년 ${month + 1}월`;
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     const startDay = firstDay.getDay();
     const totalDays = lastDay.getDate();
     const todayKey = getTodayKey();
-    const persistent = await loadPersistentData();
-    const history = persistent.sumoneHistory || {};
     
     let html = '<div class="cal-weekdays"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div class="cal-days">';
     for (let i = 0; i < startDay; i++) html += '<span class="cal-day empty"></span>';
     for (let day = 1; day <= totalDays; day++) {
         const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const hasRecord = history[dateKey]?.revealed;
+        const hasRecord = settings.sumoneHistory[dateKey]?.revealed;
         const isToday = dateKey === todayKey;
         const isSelected = dateKey === selectedDate;
         let cls = 'cal-day';
@@ -955,60 +586,44 @@ async function renderCalendar(year, month) {
     });
 }
 
-async function showHistoryDetail(dateKey) {
+function showHistoryDetail(dateKey) {
     const detail = document.getElementById('phone-history-detail');
     if (!detail) return;
-    const persistent = await loadPersistentData();
-    const history = persistent.sumoneHistory || {};
-    const record = history[dateKey];
+    const settings = getSettings();
+    const record = settings.sumoneHistory[dateKey];
     const date = parseDate(dateKey);
     const charName = record?.charName || '캐릭터';
     
-    if (!record?.question || !record?.revealed) {
+    if (!record?.revealed) {
         detail.innerHTML = `<div class="history-date">${date.getMonth() + 1}월 ${date.getDate()}일</div><div class="history-placeholder">기록이 없습니다</div>`;
         return;
     }
     
     let html = `
         <div class="history-date">${date.getMonth() + 1}월 ${date.getDate()}일</div>
-        <div class="history-item">
-            <span class="history-label">Q</span>
-            <span class="history-text">${escapeHtml(record.question)}</span>
-        </div>
-        <div class="history-item">
-            <span class="history-label">나</span>
-            <span class="history-text">${escapeHtml(record.myAnswer)}</span>
-        </div>
-        <div class="history-item">
-            <span class="history-label">${escapeHtml(charName)}</span>
-            <span class="history-text">${escapeHtml(record.aiAnswer)}</span>
-        </div>`;
+        <div class="history-item"><span class="history-label">Q</span><span class="history-text">${escapeHtml(record.question)}</span></div>
+        <div class="history-item"><span class="history-label">나</span><span class="history-text">${escapeHtml(record.myAnswer)}</span></div>
+        <div class="history-item"><span class="history-label">${escapeHtml(charName)}</span><span class="history-text">${escapeHtml(record.aiAnswer)}</span></div>`;
     
     if (record.comment) {
-        html += `
-        <div class="history-item history-comment">
-            <span class="history-label">💬</span>
-            <span class="history-text">${escapeHtml(record.comment)}</span>
-        </div>`;
+        html += `<div class="history-item history-comment"><span class="history-label">💬</span><span class="history-text">${escapeHtml(record.comment)}</span></div>`;
     }
     
     detail.innerHTML = html;
 }
 
-// ==================== 시간 / 배경 ====================
+// ==================== 기타 ====================
 
 function updateTime() {
-    const timeEl = document.querySelector('.phone-time');
-    if (timeEl) timeEl.textContent = getCurrentTime();
+    const el = document.querySelector('.phone-time');
+    if (el) el.textContent = getCurrentTime();
 }
 
 function setWallpaper(dataUrl) {
-    extension_settings[extensionName].wallpaper = dataUrl;
-    saveSettingsDebounced();
+    getSettings().wallpaper = dataUrl;
+    saveSettings();
     renderAppGrid();
 }
-
-// ==================== 모달 ====================
 
 function openPhoneModal() {
     const modal = document.getElementById('phone-modal');
@@ -1032,9 +647,11 @@ function setupEvents() {
     if (!modal) return;
     
     modal.addEventListener('click', (e) => { if (e.target === modal) closePhoneModal(); });
+    
     modal.querySelectorAll('.app-back-btn').forEach(btn => {
         btn.addEventListener('click', () => switchPage(btn.dataset.back));
     });
+    
     modal.querySelector('.sumone-history-btn')?.addEventListener('click', () => {
         const now = new Date();
         currentCalendarYear = now.getFullYear();
@@ -1044,11 +661,12 @@ function setupEvents() {
         selectedDate = getTodayKey();
         showHistoryDetail(selectedDate);
     });
+    
     document.getElementById('phone-sumone-submit')?.addEventListener('click', handleSubmit);
-    document.getElementById('phone-sumone-regenerate')?.addEventListener('click', regenerateAiAnswer);
     document.getElementById('phone-sumone-my-answer')?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
     });
+    
     document.getElementById('phone-cal-prev')?.addEventListener('click', () => {
         currentCalendarMonth--;
         if (currentCalendarMonth < 0) { currentCalendarMonth = 11; currentCalendarYear--; }
@@ -1059,17 +677,16 @@ function setupEvents() {
         if (currentCalendarMonth > 11) { currentCalendarMonth = 0; currentCalendarYear++; }
         renderCalendar(currentCalendarYear, currentCalendarMonth);
     });
+    
     setInterval(updateTime, 60000);
 }
 
 // ==================== 설정 UI ====================
 
-async function createSettingsUI() {
-    const apps = extension_settings[extensionName]?.apps || {};
-    const persistent = await loadPersistentData();
-    const poolSize = persistent.questionPool?.length || 0;
+function createSettingsUI() {
+    const settings = getSettings();
     
-    const settingsHtml = `
+    const html = `
         <div class="sumone-phone-settings">
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header">
@@ -1077,45 +694,36 @@ async function createSettingsUI() {
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
                 <div class="inline-drawer-content">
-                    <p style="margin: 10px 0; opacity: 0.8;">스마트폰 스타일 앱 모음 v1.3.0</p>
-                    <div style="margin: 15px 0;">
-                        <b>앱 표시 설정</b>
-                        ${Object.entries(apps).map(([id, app]) => `
-                            <label style="display:flex; align-items:center; gap:8px; margin:8px 0; cursor:pointer;">
+                    <p style="margin:10px 0;opacity:0.7;">v1.5.0</p>
+                    <div style="margin:15px 0;">
+                        <b>앱 표시</b>
+                        ${Object.entries(settings.apps).map(([id, app]) => `
+                            <label style="display:flex;align-items:center;gap:8px;margin:8px 0;cursor:pointer;">
                                 <input type="checkbox" class="phone-app-toggle" data-app="${id}" ${app.enabled ? 'checked' : ''}>
                                 <span>${app.icon} ${app.name}</span>
                             </label>`).join('')}
                     </div>
-                    <div style="margin: 15px 0;">
-                        <b>질문 풀</b>
-                        <p style="margin:5px 0; opacity:0.7; font-size:12px;">남은 질문: <span id="phone-pool-count">${poolSize}</span>개</p>
+                    <div style="margin:15px 0;">
+                        <b>질문 풀:</b> ${settings.questionPool.length}개
                     </div>
-                    <div style="margin: 15px 0;">
+                    <div style="margin:15px 0;">
                         <b>배경화면</b>
-                        <div style="margin-top: 8px;">
-                            <input type="file" id="phone-wallpaper-input" accept="image/*" style="display:none;">
-                            <button id="phone-wallpaper-btn" class="menu_button" style="width:100%;"><i class="fa-solid fa-image"></i> 이미지 선택</button>
-                            <button id="phone-wallpaper-reset" class="menu_button" style="width:100%; margin-top:5px;"><i class="fa-solid fa-rotate-left"></i> 기본으로 복원</button>
-                        </div>
-                    </div>
-                    <div style="margin: 15px 0;">
-                        <b>데이터 관리</b>
-                        <p style="margin:5px 0; opacity:0.7; font-size:12px;">답변 기록은 브라우저에 저장됩니다.</p>
-                        <button id="phone-export-data" class="menu_button" style="width:100%; margin-top:5px;"><i class="fa-solid fa-download"></i> 데이터 내보내기</button>
-                        <button id="phone-import-data" class="menu_button" style="width:100%; margin-top:5px;"><i class="fa-solid fa-upload"></i> 데이터 가져오기</button>
-                        <input type="file" id="phone-import-input" accept=".json" style="display:none;">
+                        <input type="file" id="phone-wallpaper-input" accept="image/*" style="display:none;">
+                        <button id="phone-wallpaper-btn" class="menu_button" style="width:100%;margin-top:5px;">이미지 선택</button>
+                        <button id="phone-wallpaper-reset" class="menu_button" style="width:100%;margin-top:5px;">기본으로</button>
                     </div>
                 </div>
             </div>
         </div>`;
     
-    $('#extensions_settings').append(settingsHtml);
+    $('#extensions_settings').append(html);
     
     $('.phone-app-toggle').on('change', function() {
-        extension_settings[extensionName].apps[$(this).data('app')].enabled = this.checked;
-        saveSettingsDebounced();
+        getSettings().apps[$(this).data('app')].enabled = this.checked;
+        saveSettings();
         renderAppGrid();
     });
+    
     $('#phone-wallpaper-btn').on('click', () => $('#phone-wallpaper-input').click());
     $('#phone-wallpaper-input').on('change', function() {
         const file = this.files[0];
@@ -1125,83 +733,33 @@ async function createSettingsUI() {
             reader.readAsDataURL(file);
         }
     });
-    $('#phone-wallpaper-reset').on('click', () => { setWallpaper(''); toastr.info('배경화면 복원'); });
-    
-    $('#phone-export-data').on('click', async () => {
-        const data = await loadPersistentData();
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `sumone_data_${getTodayKey()}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        toastr.success('데이터 내보내기 완료!');
-    });
-    
-    $('#phone-import-data').on('click', () => $('#phone-import-input').click());
-    $('#phone-import-input').on('change', async function() {
-        const file = this.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    const imported = JSON.parse(e.target.result);
-                    const current = await loadPersistentData();
-                    
-                    if (imported.sumoneHistory) {
-                        current.sumoneHistory = { ...current.sumoneHistory, ...imported.sumoneHistory };
-                    }
-                    if (imported.questionPool) {
-                        current.questionPool = [...new Set([...current.questionPool, ...imported.questionPool])];
-                    }
-                    if (imported.usedQuestions) {
-                        current.usedQuestions = [...new Set([...current.usedQuestions, ...imported.usedQuestions])];
-                    }
-                    
-                    await savePersistentData(current);
-                    toastr.success('데이터 가져오기 완료!');
-                } catch (err) {
-                    toastr.error('잘못된 파일 형식입니다.');
-                }
-            };
-            reader.readAsText(file);
-        }
-    });
+    $('#phone-wallpaper-reset').on('click', () => { setWallpaper(''); toastr.info('기본으로 복원'); });
 }
 
 // ==================== 메뉴 버튼 ====================
 
 function addMenuButton() {
     $('#sumone-phone-container').remove();
-    const buttonHtml = `
+    const html = `
         <div id="sumone-phone-container" class="extension_container interactable" tabindex="0">
-            <div id="sumone-phone-btn" class="list-group-item flex-container flexGap5 interactable" tabindex="0" role="listitem">
-                <div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton" style="color: #ff6b9d;"></div>
+            <div id="sumone-phone-btn" class="list-group-item flex-container flexGap5 interactable" tabindex="0">
+                <div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton" style="color:#ff6b9d;"></div>
                 <span>썸원 폰</span>
             </div>
         </div>`;
-    $('#extensionsMenu').prepend(buttonHtml);
+    $('#extensionsMenu').prepend(html);
     $('#sumone-phone-btn').on('click', openPhoneModal);
 }
 
 // ==================== 초기화 ====================
 
-jQuery(async () => {
-    console.log('[SumOne Phone] Loading v1.3.0...');
-    loadSettings();
-    await initializePersistentData();
-    await createSettingsUI();
+jQuery(() => {
+    console.log('[SumOne Phone] Loading v1.5.0...');
+    getSettings();
+    createSettingsUI();
     $('body').append(createPhoneHTML());
     setupEvents();
     setTimeout(addMenuButton, 1000);
-    
-    eventSource.on(event_types.CHAT_CHANGED, () => {
-        updateCharacterName();
-        setTimeout(backgroundGenerateToday, 2000);
-    });
-    
-    setTimeout(backgroundGenerateToday, 3000);
-    
+    eventSource.on(event_types.CHAT_CHANGED, updateCharacterName);
     console.log('[SumOne Phone] Loaded!');
 });

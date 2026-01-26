@@ -316,54 +316,12 @@
     border: 1px solid rgba(255,255,255,0.1);
 }
 
-.sumone-ai-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.sumone-ai-header .sumone-label {
-    margin-bottom: 0;
-}
-
-.sumone-regenerate-btn {
-    width: 28px;
-    height: 28px;
-    border: none;
-    border-radius: 8px;
-    background: rgba(255, 107, 157, 0.2);
-    color: #ff6b9d;
-    font-size: 14px;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.sumone-regenerate-btn:hover:not(:disabled) {
-    background: rgba(255, 107, 157, 0.4);
-    transform: rotate(180deg);
-}
-
-.sumone-regenerate-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
 .sumone-ai-answer {
     font-size: 14px;
     color: white;
     line-height: 1.5;
     min-height: 36px;
     margin-top: 8px;
-    transition: filter 0.5s ease;
-}
-
-.sumone-ai-answer.blurred {
-    filter: blur(10px);
-    user-select: none;
-    pointer-events: none;
 }
 
 .sumone-loading {
