@@ -1404,15 +1404,11 @@ As ${charName}, share your thoughts about this movie in 1-2 sentences.
 Write only your response:`;
     try {
         let result = await ctx.generateQuietPrompt(prompt, false, false);
-        console.log('[Movie] Raw result:', result);
-        console.log('[Movie] Raw type:', typeof result);
         
         const cleaned = Utils.cleanResponse(result);
-        console.log('[Movie] Cleaned:', cleaned);
         
         return cleaned.substring(0, 150);
     } catch (e) { 
-        console.error('[Movie] Error:', e);
         return null; 
     }
 },
