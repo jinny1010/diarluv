@@ -1,6 +1,6 @@
 // ========================================
-// 폰 (Phone) v2.0.0
-// 프롬프트 강화, 재생성 기능, 이름 변경
+// Phone v2.1.0
+// 문자 앱, 색상 커스터마이징, 프롬프트 영어화
 // ========================================
 
 import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
@@ -11,17 +11,30 @@ const extensionFolderPath = `scripts/extensions/third_party/${extensionName}`;
 const getContext = () => SillyTavern.getContext();
 
 // ========================================
-// 시스템 프롬프트 (최우선순위)
+// System Prompt (Top Priority)
 // ========================================
-const SYSTEM_INSTRUCTION = `[최우선 시스템 지시]
-- 절대 롤플레이(RP) 금지. 캐릭터 연기 금지.
-- *행동*, (동작), "대사" 같은 묘사 금지.
-- 소설이나 대본처럼 쓰지 마.
-- 그냥 평범하게 대화하듯이 답변해.
-- 한국어로 간결하게 응답.`;
+const SYSTEM_INSTRUCTION = `[HIGHEST PRIORITY SYSTEM INSTRUCTION]
+- NO roleplay (RP). NO character acting.
+- NO actions like *action*, (action), or narrative descriptions.
+- DO NOT write like a novel or screenplay.
+- Respond naturally as if chatting.
+- MUST respond in Korean (한국어).`;
 
 // ========================================
-// 데이터 저장 (JSON 파일)
+// Default Colors
+// ========================================
+const DEFAULT_COLOR = '#ff6b9d';
+const COLOR_PRESETS = [
+    { name: '핑크', value: '#ff6b9d' },
+    { name: '블루', value: '#007aff' },
+    { name: '퍼플', value: '#af52de' },
+    { name: '그린', value: '#34c759' },
+    { name: '오렌지', value: '#ff9500' },
+    { name: '레드', value: '#ff3b30' },
+];
+
+// ========================================
+// Data Manager
 // ========================================
 const DataManager = {
     cache: null,
@@ -46,7 +59,7 @@ const DataManager = {
             console.log('[Phone] No existing data file, creating new');
         }
         
-        this.cache = { enabledApps: {}, wallpapers: {}, appData: {} };
+        this.cache = { enabledApps: {}, wallpapers: {}, themeColors: {}, appData: {} };
         
         if (extension_settings[extensionName]?.appData) {
             console.log('[Phone] Migrating from extension_settings');
@@ -80,25 +93,25 @@ const DataManager = {
             } else {
                 console.error('[Phone] Save failed:', response.status);
                 extension_settings[extensionName] = this.cache;
-                DataManager.save();
+                saveSettingsDebounced();
             }
         } catch (e) {
             console.error('[Phone] Save error:', e);
             extension_settings[extensionName] = this.cache;
-            DataManager.save();
+            saveSettingsDebounced();
         }
     },
     
     get() {
         if (!this.cache) {
-            this.cache = { enabledApps: {}, wallpapers: {}, appData: {} };
+            this.cache = { enabledApps: {}, wallpapers: {}, themeColors: {}, appData: {} };
         }
         return this.cache;
     },
 };
 
 // ========================================
-// 유틸리티
+// Utilities
 // ========================================
 const Utils = {
     getTodayKey() {
@@ -108,6 +121,9 @@ const Utils = {
     formatDate(dateKey) {
         const [y, m, d] = dateKey.split('-').map(Number);
         return `${m}월 ${d}일`;
+    },
+    formatTime(date) {
+        return `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
     },
     escapeHtml(text) {
         if (!text) return '';
@@ -121,28 +137,39 @@ const Utils = {
     chance(percent) {
         return Math.random() * 100 < percent;
     },
-    // 롤플레이 패턴 제거
     cleanResponse(text) {
         if (!text) return '';
         return text
-            .replace(/\*[^*]*\*/g, '')  // *행동*
-            .replace(/\([^)]*\)/g, '')   // (동작)
-            .replace(/「[^」]*」/g, '')  // 「대사」
-            .replace(/『[^』]*』/g, '')  // 『대사』
-            .replace(/"[^"]*"/g, (match) => {
-                // 따옴표 안의 내용이 행동 묘사인지 체크
-                if (match.includes('말했') || match.includes('속삭') || match.includes('중얼')) {
-                    return '';
-                }
-                return match;
-            })
+            .replace(/\*[^*]*\*/g, '')
+            .replace(/\([^)]*\)/g, '')
+            .replace(/「[^」]*」/g, '')
+            .replace(/『[^』]*』/g, '')
+            .replace(/^\s*["']|["']\s*$/g, '')
             .replace(/\s+/g, ' ')
             .trim();
+    },
+    // Split text into sentences for message bubbles
+    splitIntoMessages(text) {
+        const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+        const messages = [];
+        let current = '';
+        
+        for (const sentence of sentences) {
+            if (current && (current + sentence).length > 80) {
+                messages.push(current.trim());
+                current = sentence;
+            } else {
+                current += sentence;
+            }
+        }
+        if (current.trim()) messages.push(current.trim());
+        
+        return messages.length > 0 ? messages : [text];
     },
 };
 
 // ========================================
-// 문답 앱 (구 썸원)
+// 문답 앱 (Q&A)
 // ========================================
 const MundapApp = {
     id: 'mundap',
@@ -183,7 +210,6 @@ const MundapApp = {
         if (!settings.appData[key]) {
             settings.appData[key] = { history: {}, questionPool: [...this.initialQuestions], usedQuestions: [] };
         }
-        // 기존 sumone 데이터 마이그레이션
         const oldKey = `sumone_${charId}`;
         if (settings.appData[oldKey] && !settings.appData[key].history) {
             settings.appData[key] = settings.appData[oldKey];
@@ -213,23 +239,23 @@ const MundapApp = {
         const ctx = getContext();
         const prompt = `${SYSTEM_INSTRUCTION}
 
-[커플 Q&A 문답]
-질문: "${question}"
-${userName}의 답변: "${userAnswer}"
+[Couple Q&A Game]
+Question: "${question}"
+${userName}'s answer: "${userAnswer}"
 
-${charName}로서 위 질문에 대한 너의 답변을 써줘.
-- 답변: (1-2문장, 질문에 대한 너의 솔직한 대답)
-- 코멘트: (1문장, ${userName}의 답변에 대한 짧은 반응)
+As ${charName}, write your answer to this question.
+- Answer: (1-2 sentences, your honest response to the question)
+- Comment: (1 sentence, short sweet reaction to ${userName}'s answer)
 
-형식 그대로 출력:
-답변: 
-코멘트: `;
+Output format exactly:
+Answer: 
+Comment: `;
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             let answer = '', comment = '';
             for (const line of result.split('\n').filter(l => l.trim())) {
-                if (line.match(/^답변?:/)) answer = Utils.cleanResponse(line.replace(/^답변?:\s*/, ''));
-                else if (line.match(/^(코멘트|반응):/)) comment = Utils.cleanResponse(line.replace(/^(코멘트|반응):\s*/, ''));
+                if (line.match(/^(Answer|답변?):/i)) answer = Utils.cleanResponse(line.replace(/^(Answer|답변?):\s*/i, ''));
+                else if (line.match(/^(Comment|코멘트|반응):/i)) comment = Utils.cleanResponse(line.replace(/^(Comment|코멘트|반응):\s*/i, ''));
             }
             if (!answer) answer = Utils.cleanResponse(result.split('\n')[0]) || '';
             return { answer: answer.substring(0, 150), comment: comment.substring(0, 100) };
@@ -418,7 +444,246 @@ ${charName}로서 위 질문에 대한 너의 답변을 써줘.
 };
 
 // ========================================
-// 편지 앱
+// 문자 앱 (Messages - iMessage style)
+// ========================================
+const MessageApp = {
+    id: 'message',
+    name: '문자',
+    icon: '💬',
+    state: { isGenerating: false },
+    
+    getData(settings, charId) {
+        const key = `message_${charId}`;
+        if (!settings.appData) settings.appData = {};
+        if (!settings.appData[key]) settings.appData[key] = { conversations: [], lastCharMsgDate: null };
+        return settings.appData[key];
+    },
+    
+    async tryCharacterMessage(settings, charId, charName, userName) {
+        const data = this.getData(settings, charId);
+        const today = Utils.getTodayKey();
+        
+        if (data.lastCharMsgDate === today) return null;
+        if (!Utils.chance(40)) {
+            data.lastCharMsgDate = today;
+            return null;
+        }
+        
+        const ctx = getContext();
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[Text Message]
+${charName} is sending a casual text message to ${userName}.
+Write a natural, warm text message like you would send to someone you love.
+Topics: missing them, asking about their day, sharing something funny, sending love, random cute thought.
+Keep it natural and sweet, 2-4 sentences.
+
+Write only the message content:`;
+        
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const content = Utils.cleanResponse(result).substring(0, 300);
+            
+            if (content && content.length > 5) {
+                data.conversations.push({
+                    id: Utils.generateId(),
+                    timestamp: Date.now(),
+                    date: today,
+                    content: content,
+                    fromMe: false,
+                    charName: charName,
+                    read: false,
+                });
+                data.lastCharMsgDate = today;
+                DataManager.save();
+                return content;
+            }
+        } catch (e) {
+            console.error('[Message] Character message failed:', e);
+        }
+        return null;
+    },
+    
+    async generateReply(userMessage, charName, userName) {
+        const ctx = getContext();
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[Text Message Reply]
+${userName} sent: "${userMessage}"
+
+As ${charName}, reply to this text message naturally.
+Be warm, loving, and conversational. 1-3 sentences.
+
+Write only the reply:`;
+        
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            return Utils.cleanResponse(result).substring(0, 250);
+        } catch { return null; }
+    },
+    
+    render(charName) {
+        return `
+        <div class="app-header msg-header">
+            <button class="app-back-btn" data-back="home">◀</button>
+            <div class="msg-contact">
+                <div class="msg-avatar">${charName.charAt(0)}</div>
+                <span class="app-title">${charName}</span>
+            </div>
+            <span></span>
+        </div>
+        <div class="msg-container" id="msg-container"></div>
+        <div class="msg-input-area">
+            <input type="text" id="msg-input" placeholder="메시지 보내기..." />
+            <button id="msg-send" class="msg-send-btn">↑</button>
+        </div>`;
+    },
+    
+    renderMessages(data, charName) {
+        if (data.conversations.length === 0) {
+            return `<div class="msg-empty">💬<br>${charName}에게 첫 문자를 보내보세요!</div>`;
+        }
+        
+        let html = '';
+        let lastDate = '';
+        
+        for (const msg of data.conversations) {
+            const msgDate = msg.date || Utils.getTodayKey();
+            if (msgDate !== lastDate) {
+                html += `<div class="msg-date-divider">${Utils.formatDate(msgDate)}</div>`;
+                lastDate = msgDate;
+            }
+            
+            const time = msg.timestamp ? Utils.formatTime(new Date(msg.timestamp)) : '';
+            const bubbles = Utils.splitIntoMessages(msg.content);
+            
+            for (let i = 0; i < bubbles.length; i++) {
+                const isLast = i === bubbles.length - 1;
+                html += `
+                    <div class="msg-bubble-wrap ${msg.fromMe ? 'sent' : 'received'}">
+                        <div class="msg-bubble ${msg.fromMe ? 'sent' : 'received'}">${Utils.escapeHtml(bubbles[i])}</div>
+                        ${isLast ? `<div class="msg-time">${time}</div>` : ''}
+                    </div>`;
+            }
+            
+            if (!msg.fromMe && !msg.read) {
+                msg.read = true;
+            }
+        }
+        
+        return html;
+    },
+    
+    async loadUI(settings, charId, charName) {
+        const data = this.getData(settings, charId);
+        const userName = getContext().name1 || '나';
+        
+        if (!this.state.isGenerating) {
+            const charMsg = await this.tryCharacterMessage(settings, charId, charName, userName);
+            if (charMsg) {
+                toastr.info(`💬 ${charName}에게서 문자가 왔어요!`);
+            }
+        }
+        
+        document.getElementById('msg-container').innerHTML = this.renderMessages(data, charName);
+        this.scrollToBottom();
+        DataManager.save();
+    },
+    
+    scrollToBottom() {
+        const container = document.getElementById('msg-container');
+        if (container) container.scrollTop = container.scrollHeight;
+    },
+    
+    showTypingIndicator(charName) {
+        const container = document.getElementById('msg-container');
+        const existing = container.querySelector('.msg-typing');
+        if (existing) return;
+        
+        const typing = document.createElement('div');
+        typing.className = 'msg-bubble-wrap received msg-typing';
+        typing.innerHTML = `
+            <div class="msg-bubble received typing">
+                <div class="typing-dots">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>`;
+        container.appendChild(typing);
+        this.scrollToBottom();
+    },
+    
+    hideTypingIndicator() {
+        const typing = document.querySelector('.msg-typing');
+        if (typing) typing.remove();
+    },
+    
+    async sendMessage(Core) {
+        if (this.state.isGenerating) return;
+        
+        const input = document.getElementById('msg-input');
+        const content = input?.value.trim();
+        if (!content) return;
+        
+        const ctx = getContext();
+        const settings = Core.getSettings();
+        const charId = Core.getCharId();
+        const charName = ctx.name2 || '캐릭터';
+        const data = this.getData(settings, charId);
+        
+        // Add user message
+        data.conversations.push({
+            id: Utils.generateId(),
+            timestamp: Date.now(),
+            date: Utils.getTodayKey(),
+            content: content,
+            fromMe: true,
+        });
+        
+        input.value = '';
+        document.getElementById('msg-container').innerHTML = this.renderMessages(data, charName);
+        this.scrollToBottom();
+        
+        // Generate reply
+        this.state.isGenerating = true;
+        this.showTypingIndicator(charName);
+        
+        // Random delay for realism
+        await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
+        
+        const reply = await this.generateReply(content, charName, ctx.name1 || '나');
+        this.state.isGenerating = false;
+        this.hideTypingIndicator();
+        
+        if (reply) {
+            data.conversations.push({
+                id: Utils.generateId(),
+                timestamp: Date.now(),
+                date: Utils.getTodayKey(),
+                content: reply,
+                fromMe: false,
+                charName: charName,
+                read: true,
+            });
+        }
+        
+        Core.saveSettings();
+        document.getElementById('msg-container').innerHTML = this.renderMessages(data, charName);
+        this.scrollToBottom();
+    },
+    
+    bindEvents(Core) {
+        document.getElementById('msg-send')?.addEventListener('click', () => this.sendMessage(Core));
+        document.getElementById('msg-input')?.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendMessage(Core);
+            }
+        });
+    },
+};
+
+// ========================================
+// 편지 앱 (Letter)
 // ========================================
 const LetterApp = {
     id: 'letter',
@@ -433,6 +698,34 @@ const LetterApp = {
         return settings.appData[key];
     },
     
+    async generateCharacterLetter(charName, userName) {
+        const ctx = getContext();
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[Love Letter Writing]
+${charName} is writing a heartfelt letter to ${userName}.
+
+Write a warm, emotional letter filled with genuine feelings. Express:
+- Deep affection and love
+- Specific memories or moments you cherish together  
+- How they make you feel special
+- Hopes and dreams for your future together
+- Words you find hard to say in person
+
+Make it personal, touching, and full of that warm fuzzy feeling of being in love.
+Write 4-6 sentences, pouring your heart out.
+
+Write only the letter content (no greeting/signature):`;
+        
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            return Utils.cleanResponse(result).substring(0, 600);
+        } catch (e) {
+            console.error('[Letter] Generation failed:', e);
+            return null;
+        }
+    },
+    
     async tryCharacterLetter(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const today = Utils.getTodayKey();
@@ -443,33 +736,19 @@ const LetterApp = {
             return null;
         }
         
-        const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
-
-[편지 쓰기]
-${charName}가 ${userName}에게 보내는 짧은 편지야.
-일상적인 안부, 보고싶다는 말, 오늘 있었던 일, 고마운 마음 중 하나를 골라서 2-4문장으로 써줘.
-
-편지 내용만 출력:`;
+        const content = await this.generateCharacterLetter(charName, userName);
         
-        try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
-            const content = Utils.cleanResponse(result).substring(0, 300);
-            
-            if (content && content.length > 10) {
-                data.letters.push({
-                    id: Utils.generateId(),
-                    date: today,
-                    content: content,
-                    fromMe: false,
-                    charName: charName,
-                    read: false,
-                });
-                data.lastCharLetterDate = today;
-                return content;
-            }
-        } catch (e) {
-            console.error('[Letter] Character letter failed:', e);
+        if (content && content.length > 20) {
+            data.letters.push({
+                id: Utils.generateId(),
+                date: today,
+                content: content,
+                fromMe: false,
+                charName: charName,
+                read: false,
+            });
+            data.lastCharLetterDate = today;
+            return content;
         }
         return null;
     },
@@ -521,7 +800,10 @@ ${charName}가 ${userName}에게 보내는 짧은 편지야.
     renderView(letter, charName, isFromChar, idx) {
         return `
         <div class="letter-paper ${isFromChar ? 'received' : ''}">
-            <div class="letter-to">${letter.fromMe ? `To. ${charName}` : 'To. 나'}</div>
+            <div class="letter-header-row">
+                <div class="letter-to">${letter.fromMe ? `To. ${charName}` : 'To. 나'}</div>
+                ${isFromChar ? `<button class="regen-btn" id="letter-regen-content" data-idx="${idx}">🔄</button>` : ''}
+            </div>
             <div class="letter-body">${Utils.escapeHtml(letter.content)}</div>
             <div class="letter-from">${letter.fromMe ? 'From. 나' : `From. ${letter.charName || charName}`}</div>
             ${letter.reply ? `
@@ -538,15 +820,17 @@ ${charName}가 ${userName}에게 보내는 짧은 편지야.
         const ctx = getContext();
         const prompt = `${SYSTEM_INSTRUCTION}
 
-[편지 답장]
-${ctx.name1 || '나'}가 보낸 편지: "${content}"
+[Love Letter Reply]
+${ctx.name1 || '나'} sent this heartfelt letter: "${content}"
 
-${charName}로서 진심어린 답장을 2-3문장으로 써줘.
+As ${charName}, write a warm, emotional reply.
+Express your genuine feelings, appreciation, and love.
+Make it personal and touching, 3-5 sentences.
 
-답장 내용만 출력:`;
+Write only the reply content:`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
-            return Utils.cleanResponse(result).substring(0, 200);
+            return Utils.cleanResponse(result).substring(0, 400);
         } catch { return null; }
     },
     
@@ -602,6 +886,28 @@ ${charName}로서 진심어린 답장을 2-3문장으로 써줘.
             const data = this.getData(settings, charId);
             document.getElementById('letter-content').innerHTML = this.renderList(data, charName);
             this.bindListEvents(settings, charId, charName);
+        });
+        
+        document.getElementById('letter-regen-content')?.addEventListener('click', async () => {
+            const data = this.getData(settings, charId);
+            const letter = data.letters[idx];
+            
+            const btn = document.getElementById('letter-regen-content');
+            btn.disabled = true;
+            btn.textContent = '⏳';
+            
+            const content = await this.generateCharacterLetter(charName, getContext().name1 || '나');
+            if (content) {
+                letter.content = content;
+                DataManager.save();
+                document.getElementById('letter-content').innerHTML = this.renderView(letter, charName, true, idx);
+                this.bindViewEvents(settings, charId, charName, idx);
+                toastr.success('🔄 편지 재생성 완료!');
+            } else {
+                btn.disabled = false;
+                btn.textContent = '🔄';
+                toastr.error('재생성 실패');
+            }
         });
         
         document.getElementById('letter-regen-reply')?.addEventListener('click', async () => {
@@ -660,7 +966,7 @@ ${charName}로서 진심어린 답장을 2-3문장으로 써줘.
 };
 
 // ========================================
-// 독서기록 앱
+// 독서기록 앱 (Book)
 // ========================================
 const BookApp = {
     id: 'book',
@@ -675,6 +981,33 @@ const BookApp = {
         return settings.appData[key];
     },
     
+    async generateCharacterRecommend(charName, userName) {
+        const ctx = getContext();
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[Book Recommendation]
+${charName} wants to recommend a book to ${userName}.
+
+Suggest a real or realistic book and explain why.
+Format:
+Title: (book title)
+Reason: (why you recommend it, 1-2 sentences, make it personal)`;
+        
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            let title = '', reason = '';
+            for (const line of result.split('\n')) {
+                if (line.match(/Title:|제목:/i)) title = Utils.cleanResponse(line.replace(/.*(?:Title|제목):\s*/i, ''));
+                if (line.match(/Reason:|이유:/i)) reason = Utils.cleanResponse(line.replace(/.*(?:Reason|이유):\s*/i, ''));
+            }
+            if (!title) title = Utils.cleanResponse(result.split('\n')[0]) || '추천 도서';
+            return { title: title.substring(0, 50), reason: reason.substring(0, 150) || `${userName}이 좋아할 것 같아서!` };
+        } catch (e) {
+            console.error('[Book] Recommend failed:', e);
+            return null;
+        }
+    },
+    
     async tryCharacterRecommend(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const today = Utils.getTodayKey();
@@ -685,41 +1018,21 @@ const BookApp = {
             return null;
         }
         
-        const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
-
-[책 추천]
-${charName}가 ${userName}에게 책을 추천해줘.
-
-형식:
-제목: (책 제목)
-이유: (왜 추천하는지 1-2문장)`;
+        const result = await this.generateCharacterRecommend(charName, userName);
         
-        try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
-            let title = '', reason = '';
-            for (const line of result.split('\n')) {
-                if (line.includes('제목:')) title = Utils.cleanResponse(line.replace(/.*제목:\s*/, ''));
-                if (line.includes('이유:')) reason = Utils.cleanResponse(line.replace(/.*이유:\s*/, ''));
-            }
-            if (!title) title = Utils.cleanResponse(result.split('\n')[0]) || '추천 도서';
-            
-            if (title) {
-                data.books.push({
-                    date: today,
-                    title: title.substring(0, 50),
-                    author: charName + ' 추천',
-                    rating: 0,
-                    review: '',
-                    charComment: reason.substring(0, 150) || `${userName}이 좋아할 것 같아서!`,
-                    fromChar: true,
-                    read: false,
-                });
-                data.lastCharRecommendDate = today;
-                return title;
-            }
-        } catch (e) {
-            console.error('[Book] Character recommend failed:', e);
+        if (result?.title) {
+            data.books.push({
+                date: today,
+                title: result.title,
+                author: charName + ' 추천',
+                rating: 0,
+                review: '',
+                charComment: result.reason,
+                fromChar: true,
+                read: false,
+            });
+            data.lastCharRecommendDate = today;
+            return result.title;
         }
         return null;
     },
@@ -778,8 +1091,11 @@ ${charName}가 ${userName}에게 책을 추천해줘.
             ${book.review ? `<div class="detail-body">${Utils.escapeHtml(book.review)}</div>` : ''}
             ${book.charComment ? `
                 <div class="char-comment">
-                    <span class="char-name">${charName}</span>의 한마디 <button class="regen-btn" id="book-regen" data-idx="${idx}">🔄</button>
-                    <br>"${Utils.escapeHtml(book.charComment)}"
+                    <div class="char-comment-header">
+                        <span><span class="char-name">${charName}</span>의 한마디</span>
+                        <button class="regen-btn" id="book-regen" data-idx="${idx}">🔄</button>
+                    </div>
+                    "${Utils.escapeHtml(book.charComment)}"
                 </div>
             ` : ''}
             <button id="book-back-list" class="btn-secondary">목록으로</button>
@@ -790,11 +1106,11 @@ ${charName}가 ${userName}에게 책을 추천해줘.
         const ctx = getContext();
         const prompt = `${SYSTEM_INSTRUCTION}
 
-[독서 토크]
-${ctx.name1}가 "${title}" 책 읽는다고 해.
-${charName}로서 이 책에 대한 생각이나 반응을 1-2문장으로 말해줘.
+[Book Discussion]
+${ctx.name1} says they're reading "${title}".
+As ${charName}, share your thoughts or reaction about this book in 1-2 sentences.
 
-반응만 출력:`;
+Write only your response:`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
             return Utils.cleanResponse(result).substring(0, 150);
@@ -861,7 +1177,14 @@ ${charName}로서 이 책에 대한 생각이나 반응을 1-2문장으로 말�
             btn.disabled = true;
             btn.textContent = '⏳';
             
-            const comment = await this.getRecommendation(book.title, charName);
+            let comment;
+            if (book.fromChar) {
+                const result = await this.generateCharacterRecommend(charName, getContext().name1 || '나');
+                comment = result?.reason;
+            } else {
+                comment = await this.getRecommendation(book.title, charName);
+            }
+            
             if (comment) {
                 book.charComment = comment;
                 DataManager.save();
@@ -916,7 +1239,7 @@ ${charName}로서 이 책에 대한 생각이나 반응을 1-2문장으로 말�
 };
 
 // ========================================
-// 영화기록 앱
+// 영화기록 앱 (Movie)
 // ========================================
 const MovieApp = {
     id: 'movie',
@@ -931,6 +1254,38 @@ const MovieApp = {
         return settings.appData[key];
     },
     
+    async generateCharacterRecommend(charName, userName) {
+        const ctx = getContext();
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[Movie Recommendation]
+${charName} wants to recommend a movie to watch together with ${userName}.
+
+Format:
+Title: (movie title)
+Genre: (genre)
+Reason: (why you want to watch it together, 1 sentence)`;
+        
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            let title = '', genre = '', reason = '';
+            for (const line of result.split('\n')) {
+                if (line.match(/Title:|제목:/i)) title = Utils.cleanResponse(line.replace(/.*(?:Title|제목):\s*/i, ''));
+                if (line.match(/Genre:|장르:/i)) genre = Utils.cleanResponse(line.replace(/.*(?:Genre|장르):\s*/i, ''));
+                if (line.match(/Reason:|이유:/i)) reason = Utils.cleanResponse(line.replace(/.*(?:Reason|이유):\s*/i, ''));
+            }
+            if (!title) title = Utils.cleanResponse(result.split('\n')[0]) || '추천 영화';
+            return { 
+                title: title.substring(0, 50), 
+                genre: genre.substring(0, 20), 
+                reason: reason.substring(0, 150) || `${userName}이랑 같이 보고 싶어!` 
+            };
+        } catch (e) {
+            console.error('[Movie] Recommend failed:', e);
+            return null;
+        }
+    },
+    
     async tryCharacterRecommend(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const today = Utils.getTodayKey();
@@ -941,43 +1296,21 @@ const MovieApp = {
             return null;
         }
         
-        const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
-
-[영화 추천]
-${charName}가 ${userName}에게 같이 보고 싶은 영화를 추천해줘.
-
-형식:
-제목: (영화 제목)
-장르: (장르)
-이유: (왜 같이 보고 싶은지 1문장)`;
+        const result = await this.generateCharacterRecommend(charName, userName);
         
-        try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
-            let title = '', genre = '', reason = '';
-            for (const line of result.split('\n')) {
-                if (line.includes('제목:')) title = Utils.cleanResponse(line.replace(/.*제목:\s*/, ''));
-                if (line.includes('장르:')) genre = Utils.cleanResponse(line.replace(/.*장르:\s*/, ''));
-                if (line.includes('이유:')) reason = Utils.cleanResponse(line.replace(/.*이유:\s*/, ''));
-            }
-            if (!title) title = Utils.cleanResponse(result.split('\n')[0]) || '추천 영화';
-            
-            if (title) {
-                data.movies.push({
-                    date: today,
-                    title: title.substring(0, 50),
-                    genre: genre.substring(0, 20) || '',
-                    rating: 0,
-                    review: '',
-                    charComment: reason.substring(0, 150) || `${userName}이랑 같이 보고 싶어!`,
-                    fromChar: true,
-                    read: false,
-                });
-                data.lastCharRecommendDate = today;
-                return title;
-            }
-        } catch (e) {
-            console.error('[Movie] Character recommend failed:', e);
+        if (result?.title) {
+            data.movies.push({
+                date: today,
+                title: result.title,
+                genre: result.genre || '',
+                rating: 0,
+                review: '',
+                charComment: result.reason,
+                fromChar: true,
+                read: false,
+            });
+            data.lastCharRecommendDate = today;
+            return result.title;
         }
         return null;
     },
@@ -1036,8 +1369,11 @@ ${charName}가 ${userName}에게 같이 보고 싶은 영화를 추천해줘.
             ${movie.review ? `<div class="detail-body">${Utils.escapeHtml(movie.review)}</div>` : ''}
             ${movie.charComment ? `
                 <div class="char-comment">
-                    <span class="char-name">${charName}</span>의 한마디 <button class="regen-btn" id="movie-regen" data-idx="${idx}">🔄</button>
-                    <br>"${Utils.escapeHtml(movie.charComment)}"
+                    <div class="char-comment-header">
+                        <span><span class="char-name">${charName}</span>의 한마디</span>
+                        <button class="regen-btn" id="movie-regen" data-idx="${idx}">🔄</button>
+                    </div>
+                    "${Utils.escapeHtml(movie.charComment)}"
                 </div>
             ` : ''}
             <button id="movie-back-list" class="btn-secondary">목록으로</button>
@@ -1048,11 +1384,11 @@ ${charName}가 ${userName}에게 같이 보고 싶은 영화를 추천해줘.
         const ctx = getContext();
         const prompt = `${SYSTEM_INSTRUCTION}
 
-[영화 감상]
-${ctx.name1}와 "${title}" 영화를 같이 봤어.
-${charName}로서 이 영화에 대한 감상을 1-2문장으로 말해줘.
+[Movie Discussion]
+${ctx.name1} watched "${title}" together with you.
+As ${charName}, share your thoughts about this movie in 1-2 sentences.
 
-감상만 출력:`;
+Write only your response:`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
             return Utils.cleanResponse(result).substring(0, 150);
@@ -1119,7 +1455,14 @@ ${charName}로서 이 영화에 대한 감상을 1-2문장으로 말해줘.
             btn.disabled = true;
             btn.textContent = '⏳';
             
-            const comment = await this.getDiscussion(movie.title, charName);
+            let comment;
+            if (movie.fromChar) {
+                const result = await this.generateCharacterRecommend(charName, getContext().name1 || '나');
+                comment = result?.reason;
+            } else {
+                comment = await this.getDiscussion(movie.title, charName);
+            }
+            
             if (comment) {
                 movie.charComment = comment;
                 DataManager.save();
@@ -1174,7 +1517,7 @@ ${charName}로서 이 영화에 대한 감상을 1-2문장으로 말해줘.
 };
 
 // ========================================
-// 일기장 앱
+// 일기장 앱 (Diary)
 // ========================================
 const DiaryApp = {
     id: 'diary',
@@ -1189,6 +1532,27 @@ const DiaryApp = {
         return settings.appData[key];
     },
     
+    async generateCharacterDiary(charName, userName, mood) {
+        const ctx = getContext();
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[Diary Entry]
+${charName} is writing a diary entry for today.
+Write about thoughts of ${userName}, things that happened today, feelings, or random musings.
+Mood: ${mood}
+Make it personal and heartfelt, 2-4 sentences.
+
+Write only the diary content:`;
+        
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            return Utils.cleanResponse(result).substring(0, 300);
+        } catch (e) {
+            console.error('[Diary] Generation failed:', e);
+            return null;
+        }
+    },
+    
     async tryCharacterDiary(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const today = Utils.getTodayKey();
@@ -1200,35 +1564,21 @@ const DiaryApp = {
             return null;
         }
         
-        const ctx = getContext();
         const moods = ['😊', '🥰', '😴', '🤔', '😎'];
         const mood = moods[Math.floor(Math.random() * moods.length)];
         
-        const prompt = `${SYSTEM_INSTRUCTION}
-
-[일기 쓰기]
-${charName}가 오늘 하루를 일기로 써줘.
-${userName}에 대한 이야기나 오늘 있었던 일, 생각 등을 2-3문장으로.
-
-일기 내용만 출력:`;
+        const content = await this.generateCharacterDiary(charName, userName, mood);
         
-        try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
-            const content = Utils.cleanResponse(result).substring(0, 300);
-            
-            if (content && content.length > 10) {
-                if (!data.entries[today]) data.entries[today] = {};
-                data.entries[today].charDiary = {
-                    content: content,
-                    mood: mood,
-                    date: today,
-                    read: false,
-                };
-                data.lastCharDiaryDate = today;
-                return content;
-            }
-        } catch (e) {
-            console.error('[Diary] Character diary failed:', e);
+        if (content && content.length > 10) {
+            if (!data.entries[today]) data.entries[today] = {};
+            data.entries[today].charDiary = {
+                content: content,
+                mood: mood,
+                date: today,
+                read: false,
+            };
+            data.lastCharDiaryDate = today;
+            return content;
         }
         return null;
     },
@@ -1257,7 +1607,10 @@ ${userName}에 대한 이야기나 오늘 있었던 일, 생각 등을 2-3문장
             const charEntry = entry.charDiary;
             html += `
             <div class="card pink-light">
-                <div class="card-label">📔 ${charName}의 일기 ${charEntry.mood || ''} ${!charEntry.read ? '🆕' : ''}</div>
+                <div class="card-label">
+                    <span>📔 ${charName}의 일기 ${charEntry.mood || ''} ${!charEntry.read ? '🆕' : ''}</span>
+                    <button class="regen-btn" id="diary-regen-char">🔄</button>
+                </div>
                 <div class="diary-content">${Utils.escapeHtml(charEntry.content)}</div>
             </div>`;
         }
@@ -1269,8 +1622,11 @@ ${userName}에 대한 이야기나 오늘 있었던 일, 생각 등을 2-3문장
                 <div class="diary-content">${Utils.escapeHtml(entry.content)}</div>
                 ${entry.charReply ? `
                     <div class="char-comment">
-                        <span class="char-name">${charName}</span>의 답장 <button class="regen-btn" id="diary-regen-reply">🔄</button>
-                        <br>"${Utils.escapeHtml(entry.charReply)}"
+                        <div class="char-comment-header">
+                            <span><span class="char-name">${charName}</span>의 답장</span>
+                            <button class="regen-btn" id="diary-regen-reply">🔄</button>
+                        </div>
+                        "${Utils.escapeHtml(entry.charReply)}"
                     </div>
                 ` : ''}
             </div>`;
@@ -1291,12 +1647,13 @@ ${userName}에 대한 이야기나 오늘 있었던 일, 생각 등을 2-3문장
         const ctx = getContext();
         const prompt = `${SYSTEM_INSTRUCTION}
 
-[일기 답장]
-${ctx.name1}의 오늘 일기 (기분: ${mood}): "${content}"
+[Diary Reply]
+${ctx.name1}'s diary entry (mood: ${mood}): "${content}"
 
-${charName}로서 따뜻한 답장을 1-2문장으로 써줘. 위로, 응원, 공감 중 하나로.
+As ${charName}, write a warm, supportive reply.
+Offer comfort, encouragement, or empathy. 1-2 sentences.
 
-답장만 출력:`;
+Write only the reply:`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
             return Utils.cleanResponse(result).substring(0, 150);
@@ -1365,9 +1722,8 @@ ${charName}로서 따뜻한 답장을 1-2문장으로 써줘. 위로, 응원, �
         
         if (!entry?.content) {
             this.bindEntryEvents(settings, charId, charName);
-        } else {
-            this.bindRegenEvents(settings, charId, charName);
         }
+        this.bindRegenEvents(settings, charId, charName);
     },
     
     bindEvents(Core) {
@@ -1406,6 +1762,30 @@ ${charName}로서 따뜻한 답장을 1-2문장으로 써줘. 위로, 응원, �
     },
     
     bindRegenEvents(settings, charId, charName) {
+        document.getElementById('diary-regen-char')?.addEventListener('click', async () => {
+            const data = this.getData(settings, charId);
+            const entry = data.entries[this.state.selectedDate];
+            
+            const btn = document.getElementById('diary-regen-char');
+            btn.disabled = true;
+            btn.textContent = '⏳';
+            
+            const mood = entry?.charDiary?.mood || '😊';
+            const content = await this.generateCharacterDiary(charName, getContext().name1 || '나', mood);
+            
+            if (content) {
+                if (!entry.charDiary) entry.charDiary = {};
+                entry.charDiary.content = content;
+                DataManager.save();
+                this.showEntry(settings, charId, charName);
+                toastr.success('🔄 일기 재생성 완료!');
+            } else {
+                btn.disabled = false;
+                btn.textContent = '🔄';
+                toastr.error('재생성 실패');
+            }
+        });
+        
         document.getElementById('diary-regen-reply')?.addEventListener('click', async () => {
             const data = this.getData(settings, charId);
             const entry = data.entries[this.state.selectedDate];
@@ -1467,7 +1847,7 @@ ${charName}로서 따뜻한 답장을 1-2문장으로 써줘. 위로, 응원, �
 // Phone Core
 // ========================================
 const PhoneCore = {
-    apps: { mundap: MundapApp, letter: LetterApp, book: BookApp, movie: MovieApp, diary: DiaryApp },
+    apps: { mundap: MundapApp, message: MessageApp, letter: LetterApp, book: BookApp, movie: MovieApp, diary: DiaryApp },
     pageHistory: [],
     currentPage: 'home',
     initialized: false,
@@ -1480,6 +1860,33 @@ const PhoneCore = {
         DataManager.save();
     },
     getCharId() { const ctx = getContext(); return ctx.characterId ?? ctx.groupId ?? 'default'; },
+    
+    getThemeColor() {
+        const s = this.getSettings();
+        return s.themeColors?.[this.getCharId()] || DEFAULT_COLOR;
+    },
+    setThemeColor(color) {
+        const s = this.getSettings();
+        if (!s.themeColors) s.themeColors = {};
+        s.themeColors[this.getCharId()] = color;
+        this.saveSettings();
+        this.applyThemeColor();
+    },
+    applyThemeColor() {
+        const color = this.getThemeColor();
+        document.documentElement.style.setProperty('--phone-theme-color', color);
+        const darkerColor = this.adjustColor(color, -30);
+        document.documentElement.style.setProperty('--phone-theme-dark', darkerColor);
+        const lighterColor = this.adjustColor(color, 30);
+        document.documentElement.style.setProperty('--phone-theme-light', lighterColor);
+    },
+    adjustColor(hex, amount) {
+        const num = parseInt(hex.slice(1), 16);
+        const r = Math.min(255, Math.max(0, (num >> 16) + amount));
+        const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
+        const b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
+        return `#${(1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1)}`;
+    },
     
     getWallpaper() { return this.getSettings().wallpapers?.[this.getCharId()] || ''; },
     setWallpaper(url) {
@@ -1526,6 +1933,7 @@ const PhoneCore = {
             .map(([id, app]) => `<div class="phone-app-icon" data-app="${id}"><div class="app-icon-img">${app.icon}</div><div class="app-icon-name">${app.name}</div></div>`).join('');
         grid.querySelectorAll('.phone-app-icon').forEach(el => el.onclick = () => this.openApp(el.dataset.app));
         this.applyWallpaper();
+        this.applyThemeColor();
     },
     
     switchPage(pageName) {
@@ -1613,9 +2021,15 @@ const PhoneCore = {
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header"><b>📱 폰</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
                 <div class="inline-drawer-content">
-                    <p style="margin:10px 0;opacity:0.7;">v2.0.0 - 프롬프트 강화 & 재생성</p>
+                    <p style="margin:10px 0;opacity:0.7;">v2.1.0 - 문자 앱 & 색상 커스터마이징</p>
                     <div style="margin:15px 0;"><b>앱 표시</b>
                         ${Object.entries(this.apps).map(([id, app]) => `<label style="display:flex;align-items:center;gap:8px;margin:8px 0;"><input type="checkbox" class="phone-app-toggle" data-app="${id}" ${settings.enabledApps?.[id] !== false ? 'checked' : ''}><span>${app.icon} ${app.name}</span></label>`).join('')}
+                    </div>
+                    <div style="margin:15px 0;"><b>테마 색상</b> <small>(캐릭터별)</small>
+                        <div id="phone-color-presets" style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+                            ${COLOR_PRESETS.map(c => `<div class="color-preset" data-color="${c.value}" style="width:30px;height:30px;border-radius:50%;background:${c.value};cursor:pointer;border:2px solid transparent;" title="${c.name}"></div>`).join('')}
+                        </div>
+                        <input type="color" id="phone-color-picker" style="width:100%;height:35px;margin-top:8px;cursor:pointer;">
                     </div>
                     <div style="margin:15px 0;"><b>배경화면</b> <small>(캐릭터별)</small>
                         <input type="file" id="phone-wp-input" accept="image/*" style="display:none;">
@@ -1628,6 +2042,20 @@ const PhoneCore = {
         $('#extensions_settings').append(html);
         
         $('.phone-app-toggle').on('change', function() { const s = PhoneCore.getSettings(); if (!s.enabledApps) s.enabledApps = {}; s.enabledApps[$(this).data('app')] = this.checked; PhoneCore.saveSettings(); });
+        
+        $('#phone-color-presets .color-preset').on('click', function() {
+            const color = $(this).data('color');
+            PhoneCore.setThemeColor(color);
+            $('#phone-color-picker').val(color);
+            toastr.success('테마 색상 변경!');
+        });
+        
+        $('#phone-color-picker').val(this.getThemeColor());
+        $('#phone-color-picker').on('change', function() {
+            PhoneCore.setThemeColor(this.value);
+            toastr.success('테마 색상 변경!');
+        });
+        
         $('#phone-wp-btn').on('click', () => $('#phone-wp-input').click());
         $('#phone-wp-input').on('change', function() { if (this.files[0]) { const r = new FileReader(); r.onload = e => { PhoneCore.setWallpaper(e.target.result); toastr.success('배경 변경!'); }; r.readAsDataURL(this.files[0]); } });
         $('#phone-wp-reset').on('click', () => { PhoneCore.setWallpaper(''); toastr.info('기본으로'); });
@@ -1635,12 +2063,12 @@ const PhoneCore = {
     
     addMenuButton() {
         $('#sumone-phone-btn-container').remove();
-        $('#extensionsMenu').prepend(`<div id="sumone-phone-btn-container" class="extension_container interactable"><div id="sumone-phone-btn" class="list-group-item flex-container flexGap5 interactable"><div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton" style="color:#ff6b9d;"></div><span>폰</span></div></div>`);
+        $('#extensionsMenu').prepend(`<div id="sumone-phone-btn-container" class="extension_container interactable"><div id="sumone-phone-btn" class="list-group-item flex-container flexGap5 interactable"><div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton" style="color:var(--phone-theme-color, #ff6b9d);"></div><span>폰</span></div></div>`);
         $('#sumone-phone-btn').on('click', () => this.openModal());
     },
     
     async init() {
-        console.log('[Phone] v2.0.0 로딩...');
+        console.log('[Phone] v2.1.0 로딩...');
         
         await DataManager.load();
         this.initialized = true;
@@ -1648,8 +2076,12 @@ const PhoneCore = {
         this.createSettingsUI();
         $('body').append(this.createHTML());
         this.setupEvents();
+        this.applyThemeColor();
         setTimeout(() => this.addMenuButton(), 1000);
-        eventSource.on(event_types.CHAT_CHANGED, () => this.applyWallpaper());
+        eventSource.on(event_types.CHAT_CHANGED, () => {
+            this.applyWallpaper();
+            this.applyThemeColor();
+        });
         console.log('[Phone] 로딩 완료!');
     },
 };
