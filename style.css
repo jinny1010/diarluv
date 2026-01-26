@@ -78,7 +78,7 @@
 .card input, .card textarea, .form-card input, .form-card textarea { color: #1a1a1a !important; }
 .card-label { color: #ff6b9d !important; }
 .card.pink {
-    background: linear-gradient(135deg, var(--phone-theme-color, #ff6b9d), var(--phone-theme-light, #ffb6c1));
+    background: linear-gradient(135deg, #ff6b9d, var(--phone-theme-light, #ffb6c1));
     color: white;
 }
 .card.pink-light { background: rgba(255, 107, 157, 0.08); border-color: rgba(255, 107, 157, 0.15); }
@@ -90,8 +90,8 @@
 /* Regenerate Button */
 .regen-btn {
     background: none;
-    border: 1px solid var(--phone-theme-color, #ff6b9d);
-    color: var(--phone-theme-color, #ff6b9d);
+    border: 1px solid #ff6b9d;
+    color: #ff6b9d;
     border-radius: 12px;
     padding: 2px 8px;
     font-size: 12px;
@@ -99,7 +99,7 @@
     margin-left: auto;
 }
 .regen-btn:hover {
-    background: var(--phone-theme-color, #ff6b9d);
+    background: #ff6b9d;
     color: white;
 }
 .regen-btn:disabled {
@@ -136,7 +136,7 @@ textarea:disabled { background: rgba(255,255,255,0.7); }
 /* Buttons */
 .btn-primary {
     width: 100%; padding: 12px; border: none; border-radius: 20px;
-    background: var(--phone-theme-color, #ff6b9d); color: white;
+    background: #ff6b9d; color: white;
     font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 8px; transition: all 0.2s;
 }
 .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(255,107,157,0.4); }
@@ -232,7 +232,7 @@ textarea:disabled { background: rgba(255,255,255,0.7); }
 .cal-day.empty { cursor: default; }
 .cal-day:not(.empty):hover { background: rgba(255,255,255,0.1); }
 .cal-day.has-data {
-    background: var(--phone-theme-color, #ff6b9d);
+    background: #ff6b9d;
     color: white;
 }
 .cal-day.has-data::after {
@@ -333,7 +333,7 @@ textarea:disabled { background: rgba(255,255,255,0.7); }
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: var(--phone-theme-color, #ff6b9d);
+    background: #ff6b9d;
     display: flex;
     align-items: center;
     justify-content: center;
