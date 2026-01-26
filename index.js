@@ -24,14 +24,6 @@ const SYSTEM_INSTRUCTION = `[HIGHEST PRIORITY SYSTEM INSTRUCTION]
 // Default Colors
 // ========================================
 const DEFAULT_COLOR = '#ff6b9d';
-const COLOR_PRESETS = [
-    { name: '핑크', value: '#ff6b9d' },
-    { name: '블루', value: '#007aff' },
-    { name: '퍼플', value: '#af52de' },
-    { name: '그린', value: '#34c759' },
-    { name: '오렌지', value: '#ff9500' },
-    { name: '레드', value: '#ff3b30' },
-];
 
 // ========================================
 // Data Manager
@@ -1878,34 +1870,6 @@ const PhoneCore = {
         DataManager.save();
     },
     getCharId() { const ctx = getContext(); return ctx.characterId ?? ctx.groupId ?? 'default'; },
-    
-    getThemeColor() {
-        const s = this.getSettings();
-        return s.themeColors?.[this.getCharId()] || DEFAULT_COLOR;
-    },
-    setThemeColor(color) {
-        const s = this.getSettings();
-        if (!s.themeColors) s.themeColors = {};
-        s.themeColors[this.getCharId()] = color;
-        this.saveSettings();
-        this.applyThemeColor();
-    },
-    applyThemeColor() {
-        const color = this.getThemeColor();
-        document.documentElement.style.setProperty('--phone-theme-color', color);
-        const darkerColor = this.adjustColor(color, -30);
-        document.documentElement.style.setProperty('--phone-theme-dark', darkerColor);
-        const lighterColor = this.adjustColor(color, 30);
-        document.documentElement.style.setProperty('--phone-theme-light', lighterColor);
-    },
-    adjustColor(hex, amount) {
-        const num = parseInt(hex.slice(1), 16);
-        const r = Math.min(255, Math.max(0, (num >> 16) + amount));
-        const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
-        const b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
-        return `#${(1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1)}`;
-    },
-    
     getWallpaper() { return this.getSettings().wallpapers?.[this.getCharId()] || ''; },
     setWallpaper(url) {
         const s = this.getSettings();
@@ -1951,7 +1915,6 @@ const PhoneCore = {
             .map(([id, app]) => `<div class="phone-app-icon" data-app="${id}"><div class="app-icon-img">${app.icon}</div><div class="app-icon-name">${app.name}</div></div>`).join('');
         grid.querySelectorAll('.phone-app-icon').forEach(el => el.onclick = () => this.openApp(el.dataset.app));
         this.applyWallpaper();
-        this.applyThemeColor();
     },
     
     switchPage(pageName) {
@@ -2043,12 +2006,6 @@ const PhoneCore = {
                     <div style="margin:15px 0;"><b>앱 표시</b>
                         ${Object.entries(this.apps).map(([id, app]) => `<label style="display:flex;align-items:center;gap:8px;margin:8px 0;"><input type="checkbox" class="phone-app-toggle" data-app="${id}" ${settings.enabledApps?.[id] !== false ? 'checked' : ''}><span>${app.icon} ${app.name}</span></label>`).join('')}
                     </div>
-                    <div style="margin:15px 0;"><b>테마 색상</b> <small>(캐릭터별)</small>
-                        <div id="phone-color-presets" style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-                            ${COLOR_PRESETS.map(c => `<div class="color-preset" data-color="${c.value}" style="width:30px;height:30px;border-radius:50%;background:${c.value};cursor:pointer;border:2px solid transparent;" title="${c.name}"></div>`).join('')}
-                        </div>
-                        <input type="color" id="phone-color-picker" style="width:100%;height:35px;margin-top:8px;cursor:pointer;">
-                    </div>
                     <div style="margin:15px 0;"><b>배경화면</b> <small>(캐릭터별)</small>
                         <input type="file" id="phone-wp-input" accept="image/*" style="display:none;">
                         <button id="phone-wp-btn" class="menu_button" style="width:100%;margin-top:5px;">🖼️ 이미지 선택</button>
@@ -2060,19 +2017,6 @@ const PhoneCore = {
         $('#extensions_settings').append(html);
         
         $('.phone-app-toggle').on('change', function() { const s = PhoneCore.getSettings(); if (!s.enabledApps) s.enabledApps = {}; s.enabledApps[$(this).data('app')] = this.checked; PhoneCore.saveSettings(); });
-        
-        $('#phone-color-presets .color-preset').on('click', function() {
-            const color = $(this).data('color');
-            PhoneCore.setThemeColor(color);
-            $('#phone-color-picker').val(color);
-            toastr.success('테마 색상 변경!');
-        });
-        
-        $('#phone-color-picker').val(this.getThemeColor());
-        $('#phone-color-picker').on('change', function() {
-            PhoneCore.setThemeColor(this.value);
-            toastr.success('테마 색상 변경!');
-        });
         
         $('#phone-wp-btn').on('click', () => $('#phone-wp-input').click());
         $('#phone-wp-input').on('change', function() { if (this.files[0]) { const r = new FileReader(); r.onload = e => { PhoneCore.setWallpaper(e.target.result); toastr.success('배경 변경!'); }; r.readAsDataURL(this.files[0]); } });
@@ -2094,11 +2038,9 @@ const PhoneCore = {
         this.createSettingsUI();
         $('body').append(this.createHTML());
         this.setupEvents();
-        this.applyThemeColor();
         setTimeout(() => this.addMenuButton(), 1000);
         eventSource.on(event_types.CHAT_CHANGED, () => {
             this.applyWallpaper();
-            this.applyThemeColor();
         });
         console.log('[Phone] 로딩 완료!');
     },
