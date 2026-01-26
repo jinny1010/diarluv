@@ -1,20 +1,42 @@
 // ========================================
-// SumOne Phone - 메인 코어
-// v1.6.0 - 모듈화, 캐릭터별 배경, 백그라운드 생성
+// SumOne Phone v1.7.0
+// 앱: 썸원, 편지, 독서기록, 영화기록, 일기장
 // ========================================
 
-import {
-    saveSettingsDebounced,
-    eventSource,
-    event_types,
-} from '../../../../script.js';
-
+import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 
 const extensionName = 'sumone-phone';
+const getContext = () => SillyTavern.getContext();
 
 // ========================================
-// 썸원 앱 모듈 (인라인)
+// 유틸리티
+// ========================================
+const Utils = {
+    getTodayKey() {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    },
+    
+    formatDate(dateKey) {
+        const [y, m, d] = dateKey.split('-').map(Number);
+        return `${m}월 ${d}일`;
+    },
+    
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    },
+    
+    generateId() {
+        return Date.now().toString(36) + Math.random().toString(36).substr(2);
+    },
+};
+
+// ========================================
+// 썸원 앱
 // ========================================
 const SumOneApp = {
     id: 'sumone',
@@ -22,80 +44,40 @@ const SumOneApp = {
     icon: '💕',
     
     initialQuestions: [
-        "처음 만났을 때 첫인상이 어땠어?",
-        "나의 어떤 점이 제일 좋아?",
-        "우리 사이에서 가장 행복했던 순간은?",
-        "나한테 바라는 게 있어?",
-        "같이 꼭 가보고 싶은 곳이 있어?",
-        "나의 습관 중에 귀여운 거 있어?",
-        "우리 10년 후에는 뭐 하고 있을까?",
-        "내가 없으면 제일 먼저 뭐가 생각나?",
-        "우리만의 특별한 기념일 만들까?",
-        "나한테 고마운 점이 있어?",
-        "같이 도전해보고 싶은 게 있어?",
-        "내가 아플 때 어떻게 해줄 거야?",
-        "우리 첫 데이트 기억나?",
-        "나의 목소리 어때?",
-        "같이 늙어가는 거 어때?",
-        "나한테 하고 싶은 말 있어?",
-        "우리 처음 손 잡았을 때 기억나?",
-        "내가 제일 예뻐 보일 때가 언제야?",
-        "나랑 있을 때 제일 행복해?",
-        "우리 첫 키스 기억나?",
-        "나의 어떤 모습이 제일 사랑스러워?",
-        "같이 살면 어떨 것 같아?",
-        "나한테 서운했던 적 있어?",
-        "내가 요리해주면 뭐 먹고 싶어?",
-        "우리 아이가 생기면 어떨 것 같아?",
-        "나의 단점은 뭐라고 생각해?",
-        "내가 울면 어떻게 해줄 거야?",
-        "같이 보고 싶은 영화 있어?",
-        "나한테 반한 순간이 있어?",
-        "우리 결혼하면 어디서 살고 싶어?",
-        "내가 없는 하루는 어때?",
-        "나의 향기 좋아해?",
-        "같이 듣고 싶은 노래 있어?",
-        "나를 한 단어로 표현한다면?",
-        "제일 기억에 남는 선물이 뭐야?",
-        "내가 화났을 때 어떻게 할 거야?",
-        "같이 먹고 싶은 음식 있어?",
-        "나의 잠버릇 알아?",
-        "우리 100일 때 뭐 했었지?",
-        "내가 갑자기 사라지면 어떡할 거야?",
-        "나의 가장 좋아하는 표정은?",
-        "같이 배우고 싶은 거 있어?",
-        "나한테 질투 느낀 적 있어?",
-        "우리 늙으면 뭐 하고 싶어?",
-        "내가 만든 음식 어땠어?",
-        "나의 웃음소리 좋아해?",
-        "같이 키우고 싶은 동물 있어?",
-        "나한테 숨기는 거 있어?",
-        "우리 다음 여행은 어디로 갈까?",
+        "처음 만났을 때 첫인상이 어땠어?", "나의 어떤 점이 제일 좋아?",
+        "우리 사이에서 가장 행복했던 순간은?", "나한테 바라는 게 있어?",
+        "같이 꼭 가보고 싶은 곳이 있어?", "나의 습관 중에 귀여운 거 있어?",
+        "우리 10년 후에는 뭐 하고 있을까?", "내가 없으면 제일 먼저 뭐가 생각나?",
+        "우리만의 특별한 기념일 만들까?", "나한테 고마운 점이 있어?",
+        "같이 도전해보고 싶은 게 있어?", "내가 아플 때 어떻게 해줄 거야?",
+        "우리 첫 데이트 기억나?", "나의 목소리 어때?", "같이 늙어가는 거 어때?",
+        "나한테 하고 싶은 말 있어?", "우리 처음 손 잡았을 때 기억나?",
+        "내가 제일 예뻐 보일 때가 언제야?", "나랑 있을 때 제일 행복해?",
+        "우리 첫 키스 기억나?", "나의 어떤 모습이 제일 사랑스러워?",
+        "같이 살면 어떨 것 같아?", "나한테 서운했던 적 있어?",
+        "내가 요리해주면 뭐 먹고 싶어?", "나의 단점은 뭐라고 생각해?",
+        "내가 울면 어떻게 해줄 거야?", "같이 보고 싶은 영화 있어?",
+        "나한테 반한 순간이 있어?", "우리 결혼하면 어디서 살고 싶어?",
+        "내가 없는 하루는 어때?", "나의 향기 좋아해?", "같이 듣고 싶은 노래 있어?",
+        "나를 한 단어로 표현한다면?", "제일 기억에 남는 선물이 뭐야?",
+        "내가 화났을 때 어떻게 할 거야?", "같이 먹고 싶은 음식 있어?",
+        "나의 잠버릇 알아?", "내가 갑자기 사라지면 어떡할 거야?",
+        "나의 가장 좋아하는 표정은?", "같이 배우고 싶은 거 있어?",
+        "나한테 질투 느낀 적 있어?", "우리 늙으면 뭐 하고 싶어?",
+        "나의 웃음소리 좋아해?", "같이 키우고 싶은 동물 있어?",
+        "나한테 숨기는 거 있어?", "우리 다음 여행은 어디로 갈까?",
         "나를 처음 좋아하게 된 이유는?",
     ],
     
-    state: {
-        isGenerating: false,
-        currentQuestion: null,
-        selectedDate: null,
-        calendarYear: null,
-        calendarMonth: null,
-    },
-    
-    getDataKey(charId) { return `sumone_${charId || 'default'}`; },
+    state: { isGenerating: false, currentQuestion: null, selectedDate: null, calYear: null, calMonth: null },
     
     getData(settings, charId) {
-        const key = this.getDataKey(charId);
+        const key = `sumone_${charId}`;
         if (!settings.appData) settings.appData = {};
         if (!settings.appData[key]) {
             settings.appData[key] = { history: {}, questionPool: [...this.initialQuestions], usedQuestions: [] };
         }
         return settings.appData[key];
-    },
-    
-    getTodayKey() {
-        const now = new Date();
-        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     },
     
     getQuestion(data) {
@@ -104,54 +86,33 @@ const SumOneApp = {
             data.usedQuestions = [];
         }
         const idx = Math.floor(Math.random() * data.questionPool.length);
-        const q = data.questionPool.splice(idx, 1)[0];
-        data.usedQuestions.push(q);
-        return q;
+        return data.questionPool.splice(idx, 1)[0];
     },
     
     getTodayData(settings, charId, charName) {
         const data = this.getData(settings, charId);
-        const todayKey = this.getTodayKey();
-        if (!data.history[todayKey] || !data.history[todayKey].question) {
-            data.history[todayKey] = {
-                question: this.getQuestion(data),
-                myAnswer: null, aiAnswer: null, comment: null,
-                revealed: false, charName: charName,
-            };
+        const today = Utils.getTodayKey();
+        if (!data.history[today]?.question) {
+            data.history[today] = { question: this.getQuestion(data), myAnswer: null, aiAnswer: null, comment: null, revealed: false, charName };
         }
-        return data.history[todayKey];
+        return data.history[today];
     },
     
-    async generateResponse(ctx, question, userAnswer, charName, userName) {
-        const prompt = `[커플 Q&A 앱 "썸원"]
-질문: "${question}"
-${userName}의 답변: "${userAnswer}"
-
-${charName}(으)로서 두 가지를 작성:
-1. 질문에 대한 ${charName}의 답변 (1-2문장)
-2. ${userName}의 답변에 대한 반응 (1문장, 달달하게)
-
-형식:
-답변: (내용)
-코멘트: (내용)
-
-한국어로, 액션(*) 없이:`;
-
+    async generateResponse(question, userAnswer, charName, userName) {
+        const ctx = getContext();
+        const prompt = `[커플 Q&A "썸원"] 질문: "${question}" / ${userName}: "${userAnswer}"
+${charName}로서 답변(1-2문장)과 코멘트(1문장, 달달하게) 작성.
+형식 - 답변: / 코멘트: / 한국어, 액션(*) 없이:`;
         try {
-            if (ctx.generateQuietPrompt) {
-                const result = await ctx.generateQuietPrompt(prompt, false, false);
-                let answer = '', comment = '';
-                for (const line of result.split('\n').map(l => l.trim()).filter(l => l)) {
-                    if (line.match(/^답변?:/)) answer = line.replace(/^답변?:\s*/, '').replace(/\*[^*]*\*/g, '').trim();
-                    else if (line.match(/^(코멘트|반응):/)) comment = line.replace(/^(코멘트|반응):\s*/, '').replace(/\*[^*]*\*/g, '').trim();
-                }
-                if (!answer) answer = result.split('\n')[0]?.replace(/\*[^*]*\*/g, '').trim() || '';
-                if (answer.length > 150) answer = answer.substring(0, 150);
-                if (comment.length > 100) comment = comment.substring(0, 100);
-                return { answer, comment };
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            let answer = '', comment = '';
+            for (const line of result.split('\n').filter(l => l.trim())) {
+                if (line.match(/^답변?:/)) answer = line.replace(/^답변?:\s*/, '').replace(/\*[^*]*\*/g, '').trim();
+                else if (line.match(/^(코멘트|반응):/)) comment = line.replace(/^(코멘트|반응):\s*/, '').replace(/\*[^*]*\*/g, '').trim();
             }
-        } catch (e) { console.error('[SumOne] Generate failed:', e); }
-        return { answer: null, comment: null };
+            if (!answer) answer = result.split('\n')[0]?.replace(/\*[^*]*\*/g, '').trim() || '';
+            return { answer: answer.substring(0, 150), comment: comment.substring(0, 100) };
+        } catch (e) { return { answer: null, comment: null }; }
     },
     
     render(charName) {
@@ -159,32 +120,17 @@ ${charName}(으)로서 두 가지를 작성:
         <div class="app-header">
             <button class="app-back-btn" data-back="home">◀</button>
             <span class="app-title">썸원</span>
-            <button class="sumone-history-btn" id="sumone-history-btn">📅</button>
+            <button class="app-nav-btn" id="sumone-history-btn">📅</button>
         </div>
-        <div class="app-content sumone-app">
-            <div class="sumone-question-box">
-                <div class="sumone-label">오늘의 질문</div>
-                <div class="sumone-question" id="sumone-question">로딩 중...</div>
+        <div class="app-content">
+            <div class="card pink"><div class="card-label">오늘의 질문</div><div id="sumone-question">로딩 중...</div></div>
+            <div class="card"><div class="card-label">나의 답변</div>
+                <textarea id="sumone-input" placeholder="답변을 입력하세요..."></textarea>
+                <button id="sumone-submit" class="btn-primary">제출하기</button>
             </div>
-            <div class="sumone-answer-box">
-                <div class="sumone-label">나의 답변</div>
-                <textarea id="sumone-my-answer" placeholder="답변을 입력하세요..."></textarea>
-                <button id="sumone-submit" class="sumone-submit-btn">제출하기</button>
-            </div>
-            <div class="sumone-ai-box" id="sumone-ai-box" style="display:none;">
-                <div class="sumone-label"><span class="sumone-char-name">${charName}</span>의 답변</div>
-                <div class="sumone-ai-answer" id="sumone-ai-answer"></div>
-            </div>
-            <div class="sumone-comment-box" id="sumone-comment-box" style="display:none;">
-                <div class="sumone-label"><span class="sumone-char-name">${charName}</span>의 코멘트</div>
-                <div class="sumone-comment" id="sumone-comment"></div>
-            </div>
-            <div class="sumone-typing" id="sumone-typing" style="display:none;">
-                <span class="typing-indicator">
-                    <span class="sumone-char-name">${charName}</span> 님이 답변 중
-                    <span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>
-                </span>
-            </div>
+            <div class="card" id="sumone-ai-box" style="display:none;"><div class="card-label"><span class="char-name">${charName}</span>의 답변</div><div id="sumone-ai-answer"></div></div>
+            <div class="card pink-light" id="sumone-comment-box" style="display:none;"><div class="card-label">💬 코멘트</div><div id="sumone-comment"></div></div>
+            <div id="sumone-typing" class="typing-box" style="display:none;"><span class="char-name">${charName}</span> 님이 답변 중<span class="dots"><span>.</span><span>.</span><span>.</span></span></div>
         </div>`;
     },
     
@@ -192,214 +138,737 @@ ${charName}(으)로서 두 가지를 작성:
         return `
         <div class="app-header">
             <button class="app-back-btn" data-back="sumone">◀</button>
-            <span class="app-title">히스토리</span>
-            <span></span>
+            <span class="app-title">히스토리</span><span></span>
         </div>
-        <div class="app-content sumone-history">
-            <div class="calendar-header">
-                <button id="sumone-cal-prev">◀</button>
-                <span id="sumone-cal-title">2026년 1월</span>
-                <button id="sumone-cal-next">▶</button>
-            </div>
-            <div class="calendar-grid" id="sumone-calendar"></div>
-            <div class="history-detail" id="sumone-history-detail">
-                <div class="history-placeholder">날짜를 선택하세요</div>
-            </div>
+        <div class="app-content">
+            <div class="calendar-nav"><button id="sumone-cal-prev">◀</button><span id="sumone-cal-title"></span><button id="sumone-cal-next">▶</button></div>
+            <div class="calendar" id="sumone-calendar"></div>
+            <div class="card" id="sumone-history-detail"><div class="empty-state">날짜를 선택하세요</div></div>
         </div>`;
     },
     
     loadUI(settings, charId, charName) {
-        const todayData = this.getTodayData(settings, charId, charName);
-        this.state.currentQuestion = todayData.question;
+        const data = this.getTodayData(settings, charId, charName);
+        this.state.currentQuestion = data.question;
+        document.getElementById('sumone-question').textContent = data.question;
         
-        const questionEl = document.getElementById('sumone-question');
-        const myAnswerEl = document.getElementById('sumone-my-answer');
-        const submitBtn = document.getElementById('sumone-submit');
-        const aiBox = document.getElementById('sumone-ai-box');
-        const aiAnswerEl = document.getElementById('sumone-ai-answer');
-        const commentBox = document.getElementById('sumone-comment-box');
-        const commentEl = document.getElementById('sumone-comment');
-        const typingEl = document.getElementById('sumone-typing');
-        
-        if (questionEl) questionEl.textContent = todayData.question;
-        
-        if (todayData.revealed) {
-            if (myAnswerEl) { myAnswerEl.value = todayData.myAnswer || ''; myAnswerEl.disabled = true; }
-            if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '오늘 완료 ✓'; }
-            if (aiBox) aiBox.style.display = 'block';
-            if (aiAnswerEl) aiAnswerEl.textContent = todayData.aiAnswer || '';
-            if (todayData.comment && commentBox && commentEl) {
-                commentEl.textContent = todayData.comment;
-                commentBox.style.display = 'block';
+        if (data.revealed) {
+            document.getElementById('sumone-input').value = data.myAnswer || '';
+            document.getElementById('sumone-input').disabled = true;
+            document.getElementById('sumone-submit').disabled = true;
+            document.getElementById('sumone-submit').textContent = '오늘 완료 ✓';
+            document.getElementById('sumone-ai-box').style.display = 'block';
+            document.getElementById('sumone-ai-answer').textContent = data.aiAnswer || '';
+            if (data.comment) {
+                document.getElementById('sumone-comment-box').style.display = 'block';
+                document.getElementById('sumone-comment').textContent = data.comment;
             }
-            if (typingEl) typingEl.style.display = 'none';
-            return;
+        } else if (this.state.isGenerating) {
+            document.getElementById('sumone-input').disabled = true;
+            document.getElementById('sumone-submit').disabled = true;
+            document.getElementById('sumone-typing').style.display = 'block';
         }
-        
-        if (this.state.isGenerating) {
-            if (myAnswerEl) myAnswerEl.disabled = true;
-            if (submitBtn) submitBtn.disabled = true;
-            if (typingEl) typingEl.style.display = 'block';
-            return;
-        }
-        
-        if (myAnswerEl) { myAnswerEl.value = ''; myAnswerEl.disabled = false; }
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '제출하기'; }
-        if (aiBox) aiBox.style.display = 'none';
-        if (commentBox) commentBox.style.display = 'none';
-        if (typingEl) typingEl.style.display = 'none';
     },
     
-    async handleSubmit(PhoneCore) {
+    async handleSubmit(Core) {
         if (this.state.isGenerating) return;
-        
-        const ctx = PhoneCore.getContext();
-        const settings = PhoneCore.getSettings();
-        const charId = PhoneCore.getCharId();
-        const charName = ctx.name2 || '캐릭터';
-        const userName = ctx.name1 || '나';
-        
-        const myAnswerEl = document.getElementById('sumone-my-answer');
-        const submitBtn = document.getElementById('sumone-submit');
-        const typingEl = document.getElementById('sumone-typing');
-        
-        const answer = myAnswerEl?.value.trim();
+        const input = document.getElementById('sumone-input');
+        const answer = input?.value.trim();
         if (!answer) { toastr.warning('답변을 입력해주세요!'); return; }
         
+        const ctx = getContext();
+        const settings = Core.getSettings();
+        const charId = Core.getCharId();
+        const charName = ctx.name2 || '캐릭터';
+        
         this.state.isGenerating = true;
-        if (myAnswerEl) myAnswerEl.disabled = true;
-        if (submitBtn) submitBtn.disabled = true;
-        if (typingEl) typingEl.style.display = 'block';
+        input.disabled = true;
+        document.getElementById('sumone-submit').disabled = true;
+        document.getElementById('sumone-typing').style.display = 'block';
         
-        const { answer: aiAnswer, comment } = await this.generateResponse(ctx, this.state.currentQuestion, answer, charName, userName);
-        
+        const { answer: aiAnswer, comment } = await this.generateResponse(this.state.currentQuestion, answer, charName, ctx.name1 || '나');
         this.state.isGenerating = false;
         
         if (!aiAnswer) {
-            toastr.error('생성 실패. 다시 시도해주세요.');
-            if (myAnswerEl) myAnswerEl.disabled = false;
-            if (submitBtn) submitBtn.disabled = false;
-            if (typingEl) typingEl.style.display = 'none';
+            toastr.error('생성 실패');
+            input.disabled = false;
+            document.getElementById('sumone-submit').disabled = false;
+            document.getElementById('sumone-typing').style.display = 'none';
             return;
         }
         
         const data = this.getData(settings, charId);
-        data.history[this.getTodayKey()] = {
-            question: this.state.currentQuestion,
-            myAnswer: answer, aiAnswer, comment,
-            revealed: true, charName,
-        };
-        PhoneCore.saveSettings();
+        data.history[Utils.getTodayKey()] = { question: this.state.currentQuestion, myAnswer: answer, aiAnswer, comment, revealed: true, charName };
+        Core.saveSettings();
         
-        // UI 업데이트
-        if (typingEl) typingEl.style.display = 'none';
-        const aiBox = document.getElementById('sumone-ai-box');
-        const aiAnswerEl = document.getElementById('sumone-ai-answer');
-        const commentBox = document.getElementById('sumone-comment-box');
-        const commentEl = document.getElementById('sumone-comment');
-        
-        if (aiBox) aiBox.style.display = 'block';
-        if (aiAnswerEl) aiAnswerEl.textContent = aiAnswer;
-        if (comment && commentBox && commentEl) {
-            commentEl.textContent = comment;
-            commentBox.style.display = 'block';
+        document.getElementById('sumone-typing').style.display = 'none';
+        document.getElementById('sumone-ai-box').style.display = 'block';
+        document.getElementById('sumone-ai-answer').textContent = aiAnswer;
+        if (comment) {
+            document.getElementById('sumone-comment-box').style.display = 'block';
+            document.getElementById('sumone-comment').textContent = comment;
         }
-        if (submitBtn) submitBtn.textContent = '오늘 완료 ✓';
-        
+        document.getElementById('sumone-submit').textContent = '오늘 완료 ✓';
         toastr.success('💕 답변이 도착했습니다!');
     },
     
     renderCalendar(settings, charId, year, month) {
-        const calendar = document.getElementById('sumone-calendar');
-        const title = document.getElementById('sumone-cal-title');
-        if (!calendar || !title) return;
-        
+        this.state.calYear = year;
+        this.state.calMonth = month;
+        document.getElementById('sumone-cal-title').textContent = `${year}년 ${month + 1}월`;
         const data = this.getData(settings, charId);
-        this.state.calendarYear = year;
-        this.state.calendarMonth = month;
-        
-        title.textContent = `${year}년 ${month + 1}월`;
         const startDay = new Date(year, month, 1).getDay();
         const totalDays = new Date(year, month + 1, 0).getDate();
-        const todayKey = this.getTodayKey();
+        const today = Utils.getTodayKey();
         
-        let html = '<div class="cal-weekdays"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div class="cal-days">';
+        let html = '<div class="cal-week"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div class="cal-days">';
         for (let i = 0; i < startDay; i++) html += '<span class="cal-day empty"></span>';
-        for (let day = 1; day <= totalDays; day++) {
-            const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            let cls = 'cal-day';
-            if (data.history[dateKey]?.revealed) cls += ' has-record';
-            if (dateKey === todayKey) cls += ' today';
-            if (dateKey === this.state.selectedDate) cls += ' selected';
-            html += `<span class="${cls}" data-date="${dateKey}">${day}</span>`;
+        for (let d = 1; d <= totalDays; d++) {
+            const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const cls = ['cal-day', data.history[key]?.revealed ? 'has-data' : '', key === today ? 'today' : '', key === this.state.selectedDate ? 'selected' : ''].filter(Boolean).join(' ');
+            html += `<span class="${cls}" data-date="${key}">${d}</span>`;
         }
-        html += '</div>';
-        calendar.innerHTML = html;
+        document.getElementById('sumone-calendar').innerHTML = html + '</div>';
     },
     
-    showHistoryDetail(settings, charId, dateKey) {
-        const detail = document.getElementById('sumone-history-detail');
-        if (!detail) return;
+    showDetail(settings, charId, dateKey) {
         this.state.selectedDate = dateKey;
         const data = this.getData(settings, charId);
         const record = data.history[dateKey];
-        const [y, m, d] = dateKey.split('-').map(Number);
+        const detail = document.getElementById('sumone-history-detail');
         
         if (!record?.revealed) {
-            detail.innerHTML = `<div class="history-date">${m}월 ${d}일</div><div class="history-placeholder">기록이 없습니다</div>`;
+            detail.innerHTML = `<div class="detail-date">${Utils.formatDate(dateKey)}</div><div class="empty-state">기록이 없습니다</div>`;
             return;
         }
-        
-        const esc = t => { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
-        let html = `<div class="history-date">${m}월 ${d}일</div>
-            <div class="history-item"><span class="history-label">Q</span><span class="history-text">${esc(record.question)}</span></div>
-            <div class="history-item"><span class="history-label">나</span><span class="history-text">${esc(record.myAnswer)}</span></div>
-            <div class="history-item"><span class="history-label">${esc(record.charName||'캐릭터')}</span><span class="history-text">${esc(record.aiAnswer)}</span></div>`;
-        if (record.comment) html += `<div class="history-item history-comment"><span class="history-label">💬</span><span class="history-text">${esc(record.comment)}</span></div>`;
-        detail.innerHTML = html;
+        detail.innerHTML = `
+            <div class="detail-date">${Utils.formatDate(dateKey)}</div>
+            <div class="detail-row"><span class="label">Q</span><span>${Utils.escapeHtml(record.question)}</span></div>
+            <div class="detail-row"><span class="label">나</span><span>${Utils.escapeHtml(record.myAnswer)}</span></div>
+            <div class="detail-row"><span class="label">${Utils.escapeHtml(record.charName)}</span><span>${Utils.escapeHtml(record.aiAnswer)}</span></div>
+            ${record.comment ? `<div class="detail-row comment"><span class="label">💬</span><span>${Utils.escapeHtml(record.comment)}</span></div>` : ''}`;
     },
     
-    bindEvents(PhoneCore) {
-        document.getElementById('sumone-submit')?.addEventListener('click', () => this.handleSubmit(PhoneCore));
-        document.getElementById('sumone-my-answer')?.addEventListener('keydown', e => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.handleSubmit(PhoneCore); }
-        });
+    bindEvents(Core) {
+        document.getElementById('sumone-submit')?.addEventListener('click', () => this.handleSubmit(Core));
+        document.getElementById('sumone-input')?.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.handleSubmit(Core); } });
         document.getElementById('sumone-history-btn')?.addEventListener('click', () => {
-            PhoneCore.switchPage('sumone-history');
+            Core.openPage('sumone-history', this.renderHistory());
             const now = new Date();
-            this.state.calendarYear = now.getFullYear();
-            this.state.calendarMonth = now.getMonth();
-            this.renderCalendar(PhoneCore.getSettings(), PhoneCore.getCharId(), this.state.calendarYear, this.state.calendarMonth);
-            this.state.selectedDate = this.getTodayKey();
-            this.showHistoryDetail(PhoneCore.getSettings(), PhoneCore.getCharId(), this.state.selectedDate);
-            this.bindHistoryEvents(PhoneCore);
+            this.renderCalendar(Core.getSettings(), Core.getCharId(), now.getFullYear(), now.getMonth());
+            this.state.selectedDate = Utils.getTodayKey();
+            this.showDetail(Core.getSettings(), Core.getCharId(), this.state.selectedDate);
+            this.bindHistoryEvents(Core);
         });
     },
     
-    bindHistoryEvents(PhoneCore) {
+    bindHistoryEvents(Core) {
+        const settings = Core.getSettings(), charId = Core.getCharId();
         document.getElementById('sumone-cal-prev')?.addEventListener('click', () => {
-            this.state.calendarMonth--;
-            if (this.state.calendarMonth < 0) { this.state.calendarMonth = 11; this.state.calendarYear--; }
-            this.renderCalendar(PhoneCore.getSettings(), PhoneCore.getCharId(), this.state.calendarYear, this.state.calendarMonth);
-            this.bindCalendarDays(PhoneCore);
+            if (--this.state.calMonth < 0) { this.state.calMonth = 11; this.state.calYear--; }
+            this.renderCalendar(settings, charId, this.state.calYear, this.state.calMonth);
+            this.bindCalendarDays(Core);
         });
         document.getElementById('sumone-cal-next')?.addEventListener('click', () => {
-            this.state.calendarMonth++;
-            if (this.state.calendarMonth > 11) { this.state.calendarMonth = 0; this.state.calendarYear++; }
-            this.renderCalendar(PhoneCore.getSettings(), PhoneCore.getCharId(), this.state.calendarYear, this.state.calendarMonth);
-            this.bindCalendarDays(PhoneCore);
+            if (++this.state.calMonth > 11) { this.state.calMonth = 0; this.state.calYear++; }
+            this.renderCalendar(settings, charId, this.state.calYear, this.state.calMonth);
+            this.bindCalendarDays(Core);
         });
-        this.bindCalendarDays(PhoneCore);
+        this.bindCalendarDays(Core);
     },
     
-    bindCalendarDays(PhoneCore) {
+    bindCalendarDays(Core) {
         document.querySelectorAll('#sumone-calendar .cal-day:not(.empty)').forEach(el => {
-            el.addEventListener('click', () => {
+            el.onclick = () => {
+                this.showDetail(Core.getSettings(), Core.getCharId(), el.dataset.date);
+                this.renderCalendar(Core.getSettings(), Core.getCharId(), this.state.calYear, this.state.calMonth);
+                this.bindCalendarDays(Core);
+            };
+        });
+    },
+};
+
+// ========================================
+// 편지 앱
+// ========================================
+const LetterApp = {
+    id: 'letter',
+    name: '편지',
+    icon: '💌',
+    state: { currentLetter: null, viewMode: 'list' },
+    
+    getData(settings, charId) {
+        const key = `letter_${charId}`;
+        if (!settings.appData) settings.appData = {};
+        if (!settings.appData[key]) settings.appData[key] = { letters: [] };
+        return settings.appData[key];
+    },
+    
+    render(charName) {
+        return `
+        <div class="app-header">
+            <button class="app-back-btn" data-back="home">◀</button>
+            <span class="app-title">편지</span>
+            <button class="app-nav-btn" id="letter-write-btn">✏️</button>
+        </div>
+        <div class="app-content" id="letter-content"></div>`;
+    },
+    
+    renderList(data, charName) {
+        if (data.letters.length === 0) {
+            return `<div class="empty-state">💌<br>아직 편지가 없어요<br><small>오른쪽 위 ✏️ 버튼으로 편지를 써보세요</small></div>`;
+        }
+        return data.letters.map((l, i) => `
+            <div class="list-item" data-idx="${i}">
+                <div class="list-icon">${l.fromMe ? '📤' : '📩'}</div>
+                <div class="list-content">
+                    <div class="list-title">${l.fromMe ? `To. ${charName}` : `From. ${charName}`}</div>
+                    <div class="list-preview">${Utils.escapeHtml(l.content.substring(0, 30))}...</div>
+                </div>
+                <div class="list-date">${Utils.formatDate(l.date)}</div>
+            </div>
+        `).reverse().join('');
+    },
+    
+    renderWrite(charName) {
+        return `
+        <div class="letter-paper">
+            <div class="letter-to">To. ${charName}</div>
+            <textarea id="letter-textarea" placeholder="마음을 담아 편지를 써보세요..."></textarea>
+            <div class="letter-from">From. 나</div>
+            <button id="letter-send" class="btn-primary">💌 편지 보내기</button>
+        </div>`;
+    },
+    
+    renderView(letter, charName) {
+        return `
+        <div class="letter-paper received">
+            <div class="letter-to">${letter.fromMe ? `To. ${charName}` : `To. 나`}</div>
+            <div class="letter-content">${Utils.escapeHtml(letter.content)}</div>
+            <div class="letter-from">${letter.fromMe ? 'From. 나' : `From. ${charName}`}</div>
+            ${letter.reply ? `<div class="letter-reply"><div class="reply-label">💕 답장</div><div>${Utils.escapeHtml(letter.reply)}</div></div>` : ''}
+            <button id="letter-back-list" class="btn-secondary">목록으로</button>
+        </div>`;
+    },
+    
+    async generateReply(content, charName) {
+        const ctx = getContext();
+        const prompt = `[편지 답장] ${ctx.name1 || '나'}가 보낸 편지: "${content}"
+${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 없이):`;
+        try {
+            let result = await ctx.generateQuietPrompt(prompt, false, false);
+            return result.replace(/\*[^*]*\*/g, '').split('\n')[0].trim().substring(0, 200);
+        } catch { return null; }
+    },
+    
+    loadUI(settings, charId, charName) {
+        this.state.viewMode = 'list';
+        const data = this.getData(settings, charId);
+        document.getElementById('letter-content').innerHTML = this.renderList(data, charName);
+        this.bindListEvents(settings, charId, charName);
+    },
+    
+    bindEvents(Core) {
+        document.getElementById('letter-write-btn')?.addEventListener('click', () => {
+            const charName = getContext().name2 || '캐릭터';
+            this.state.viewMode = 'write';
+            document.getElementById('letter-content').innerHTML = this.renderWrite(charName);
+            this.bindWriteEvents(Core);
+        });
+    },
+    
+    bindListEvents(settings, charId, charName) {
+        document.querySelectorAll('#letter-content .list-item').forEach(el => {
+            el.onclick = () => {
+                const data = this.getData(settings, charId);
+                const letter = data.letters[el.dataset.idx];
+                this.state.viewMode = 'view';
+                document.getElementById('letter-content').innerHTML = this.renderView(letter, charName);
+                document.getElementById('letter-back-list')?.addEventListener('click', () => {
+                    this.state.viewMode = 'list';
+                    document.getElementById('letter-content').innerHTML = this.renderList(data, charName);
+                    this.bindListEvents(settings, charId, charName);
+                });
+            };
+        });
+    },
+    
+    bindWriteEvents(Core) {
+        document.getElementById('letter-send')?.addEventListener('click', async () => {
+            const content = document.getElementById('letter-textarea')?.value.trim();
+            if (!content) { toastr.warning('편지 내용을 입력해주세요!'); return; }
+            
+            const ctx = getContext();
+            const settings = Core.getSettings();
+            const charId = Core.getCharId();
+            const charName = ctx.name2 || '캐릭터';
+            const data = this.getData(settings, charId);
+            
+            document.getElementById('letter-send').disabled = true;
+            document.getElementById('letter-send').textContent = '답장 기다리는 중...';
+            
+            const reply = await this.generateReply(content, charName);
+            
+            data.letters.push({ date: Utils.getTodayKey(), content, reply, fromMe: true });
+            Core.saveSettings();
+            
+            toastr.success('💌 편지를 보냈습니다!');
+            this.state.viewMode = 'list';
+            document.getElementById('letter-content').innerHTML = this.renderList(data, charName);
+            this.bindListEvents(settings, charId, charName);
+        });
+    },
+};
+
+// ========================================
+// 독서기록 앱
+// ========================================
+const BookApp = {
+    id: 'book',
+    name: '독서',
+    icon: '📚',
+    state: { currentBook: null },
+    
+    getData(settings, charId) {
+        const key = `book_${charId}`;
+        if (!settings.appData) settings.appData = {};
+        if (!settings.appData[key]) settings.appData[key] = { books: [] };
+        return settings.appData[key];
+    },
+    
+    render() {
+        return `
+        <div class="app-header">
+            <button class="app-back-btn" data-back="home">◀</button>
+            <span class="app-title">독서기록</span>
+            <button class="app-nav-btn" id="book-add-btn">➕</button>
+        </div>
+        <div class="app-content" id="book-content"></div>`;
+    },
+    
+    renderList(data) {
+        if (data.books.length === 0) {
+            return `<div class="empty-state">📚<br>아직 기록이 없어요<br><small>➕ 버튼으로 책을 추가해보세요</small></div>`;
+        }
+        return data.books.map((b, i) => `
+            <div class="list-item" data-idx="${i}">
+                <div class="list-icon">📖</div>
+                <div class="list-content">
+                    <div class="list-title">${Utils.escapeHtml(b.title)}</div>
+                    <div class="list-preview">${Utils.escapeHtml(b.author)} · ${'⭐'.repeat(b.rating || 0)}</div>
+                </div>
+                <div class="list-date">${Utils.formatDate(b.date)}</div>
+            </div>
+        `).reverse().join('');
+    },
+    
+    renderAdd() {
+        return `
+        <div class="form-card">
+            <div class="form-group"><label>책 제목</label><input type="text" id="book-title" placeholder="책 제목"></div>
+            <div class="form-group"><label>저자</label><input type="text" id="book-author" placeholder="저자"></div>
+            <div class="form-group"><label>평점</label>
+                <div class="rating" id="book-rating">${[1,2,3,4,5].map(n => `<span data-n="${n}">☆</span>`).join('')}</div>
+            </div>
+            <div class="form-group"><label>감상</label><textarea id="book-review" placeholder="책에 대한 감상을 적어보세요..."></textarea></div>
+            <div class="form-group"><label>💬 캐릭터에게 추천받기</label>
+                <button id="book-recommend" class="btn-secondary">이 책에 대해 물어보기</button>
+                <div id="book-recommend-result"></div>
+            </div>
+            <button id="book-save" class="btn-primary">저장하기</button>
+        </div>`;
+    },
+    
+    renderView(book, charName) {
+        return `
+        <div class="detail-card">
+            <div class="detail-header">📖 ${Utils.escapeHtml(book.title)}</div>
+            <div class="detail-sub">${Utils.escapeHtml(book.author)} · ${'⭐'.repeat(book.rating || 0)}</div>
+            <div class="detail-body">${Utils.escapeHtml(book.review)}</div>
+            ${book.charComment ? `<div class="char-comment"><span class="char-name">${charName}</span>의 한마디<br>"${Utils.escapeHtml(book.charComment)}"</div>` : ''}
+            <button id="book-back-list" class="btn-secondary">목록으로</button>
+        </div>`;
+    },
+    
+    async getRecommendation(title, charName) {
+        const ctx = getContext();
+        const prompt = `[독서 추천] ${ctx.name1}가 "${title}" 책에 대해 물어봄.
+${charName}(으)로서 이 책에 대한 생각이나 추천 이유를 짧게 말해줘 (1-2문장, 한국어):`;
+        try {
+            let result = await ctx.generateQuietPrompt(prompt, false, false);
+            return result.replace(/\*[^*]*\*/g, '').split('\n')[0].trim().substring(0, 150);
+        } catch { return null; }
+    },
+    
+    loadUI(settings, charId) {
+        const data = this.getData(settings, charId);
+        document.getElementById('book-content').innerHTML = this.renderList(data);
+        this.bindListEvents(settings, charId);
+    },
+    
+    bindEvents(Core) {
+        document.getElementById('book-add-btn')?.addEventListener('click', () => {
+            document.getElementById('book-content').innerHTML = this.renderAdd();
+            this.bindAddEvents(Core);
+        });
+    },
+    
+    bindListEvents(settings, charId) {
+        document.querySelectorAll('#book-content .list-item').forEach(el => {
+            el.onclick = () => {
+                const data = this.getData(settings, charId);
+                const book = data.books[el.dataset.idx];
+                const charName = getContext().name2 || '캐릭터';
+                document.getElementById('book-content').innerHTML = this.renderView(book, charName);
+                document.getElementById('book-back-list')?.addEventListener('click', () => this.loadUI(settings, charId));
+            };
+        });
+    },
+    
+    bindAddEvents(Core) {
+        let rating = 0;
+        let charComment = null;
+        
+        document.querySelectorAll('#book-rating span').forEach(el => {
+            el.onclick = () => {
+                rating = parseInt(el.dataset.n);
+                document.querySelectorAll('#book-rating span').forEach((s, i) => s.textContent = i < rating ? '⭐' : '☆');
+            };
+        });
+        
+        document.getElementById('book-recommend')?.addEventListener('click', async () => {
+            const title = document.getElementById('book-title')?.value.trim();
+            if (!title) { toastr.warning('책 제목을 먼저 입력해주세요!'); return; }
+            document.getElementById('book-recommend').disabled = true;
+            document.getElementById('book-recommend-result').innerHTML = '<span class="loading">생각 중...</span>';
+            charComment = await this.getRecommendation(title, getContext().name2 || '캐릭터');
+            document.getElementById('book-recommend-result').innerHTML = charComment ? `"${charComment}"` : '응답 실패';
+            document.getElementById('book-recommend').disabled = false;
+        });
+        
+        document.getElementById('book-save')?.addEventListener('click', () => {
+            const title = document.getElementById('book-title')?.value.trim();
+            const author = document.getElementById('book-author')?.value.trim();
+            const review = document.getElementById('book-review')?.value.trim();
+            if (!title) { toastr.warning('책 제목을 입력해주세요!'); return; }
+            
+            const settings = Core.getSettings();
+            const charId = Core.getCharId();
+            const data = this.getData(settings, charId);
+            data.books.push({ date: Utils.getTodayKey(), title, author, rating, review, charComment });
+            Core.saveSettings();
+            toastr.success('📚 저장되었습니다!');
+            this.loadUI(settings, charId);
+        });
+    },
+};
+
+// ========================================
+// 영화기록 앱
+// ========================================
+const MovieApp = {
+    id: 'movie',
+    name: '영화',
+    icon: '🎬',
+    state: {},
+    
+    getData(settings, charId) {
+        const key = `movie_${charId}`;
+        if (!settings.appData) settings.appData = {};
+        if (!settings.appData[key]) settings.appData[key] = { movies: [] };
+        return settings.appData[key];
+    },
+    
+    render() {
+        return `
+        <div class="app-header">
+            <button class="app-back-btn" data-back="home">◀</button>
+            <span class="app-title">영화기록</span>
+            <button class="app-nav-btn" id="movie-add-btn">➕</button>
+        </div>
+        <div class="app-content" id="movie-content"></div>`;
+    },
+    
+    renderList(data) {
+        if (data.movies.length === 0) {
+            return `<div class="empty-state">🎬<br>아직 기록이 없어요<br><small>➕ 버튼으로 영화를 추가해보세요</small></div>`;
+        }
+        return data.movies.map((m, i) => `
+            <div class="list-item" data-idx="${i}">
+                <div class="list-icon">🎥</div>
+                <div class="list-content">
+                    <div class="list-title">${Utils.escapeHtml(m.title)}</div>
+                    <div class="list-preview">${m.genre || ''} · ${'⭐'.repeat(m.rating || 0)}</div>
+                </div>
+                <div class="list-date">${Utils.formatDate(m.date)}</div>
+            </div>
+        `).reverse().join('');
+    },
+    
+    renderAdd() {
+        return `
+        <div class="form-card">
+            <div class="form-group"><label>영화 제목</label><input type="text" id="movie-title" placeholder="영화 제목"></div>
+            <div class="form-group"><label>장르</label><input type="text" id="movie-genre" placeholder="장르 (로맨스, 액션 등)"></div>
+            <div class="form-group"><label>평점</label>
+                <div class="rating" id="movie-rating">${[1,2,3,4,5].map(n => `<span data-n="${n}">☆</span>`).join('')}</div>
+            </div>
+            <div class="form-group"><label>감상</label><textarea id="movie-review" placeholder="영화에 대한 감상..."></textarea></div>
+            <div class="form-group"><label>💬 같이 본 소감</label>
+                <button id="movie-discuss" class="btn-secondary">캐릭터와 이야기하기</button>
+                <div id="movie-discuss-result"></div>
+            </div>
+            <button id="movie-save" class="btn-primary">저장하기</button>
+        </div>`;
+    },
+    
+    renderView(movie, charName) {
+        return `
+        <div class="detail-card">
+            <div class="detail-header">🎬 ${Utils.escapeHtml(movie.title)}</div>
+            <div class="detail-sub">${movie.genre || ''} · ${'⭐'.repeat(movie.rating || 0)}</div>
+            <div class="detail-body">${Utils.escapeHtml(movie.review)}</div>
+            ${movie.charComment ? `<div class="char-comment"><span class="char-name">${charName}</span>의 감상<br>"${Utils.escapeHtml(movie.charComment)}"</div>` : ''}
+            <button id="movie-back-list" class="btn-secondary">목록으로</button>
+        </div>`;
+    },
+    
+    async getDiscussion(title, charName) {
+        const ctx = getContext();
+        const prompt = `[영화 감상] ${ctx.name1}와 "${title}" 영화를 같이 봤어.
+${charName}(으)로서 이 영화에 대한 감상을 짧게 말해줘 (1-2문장, 한국어):`;
+        try {
+            let result = await ctx.generateQuietPrompt(prompt, false, false);
+            return result.replace(/\*[^*]*\*/g, '').split('\n')[0].trim().substring(0, 150);
+        } catch { return null; }
+    },
+    
+    loadUI(settings, charId) {
+        const data = this.getData(settings, charId);
+        document.getElementById('movie-content').innerHTML = this.renderList(data);
+        this.bindListEvents(settings, charId);
+    },
+    
+    bindEvents(Core) {
+        document.getElementById('movie-add-btn')?.addEventListener('click', () => {
+            document.getElementById('movie-content').innerHTML = this.renderAdd();
+            this.bindAddEvents(Core);
+        });
+    },
+    
+    bindListEvents(settings, charId) {
+        document.querySelectorAll('#movie-content .list-item').forEach(el => {
+            el.onclick = () => {
+                const data = this.getData(settings, charId);
+                const movie = data.movies[el.dataset.idx];
+                const charName = getContext().name2 || '캐릭터';
+                document.getElementById('movie-content').innerHTML = this.renderView(movie, charName);
+                document.getElementById('movie-back-list')?.addEventListener('click', () => this.loadUI(settings, charId));
+            };
+        });
+    },
+    
+    bindAddEvents(Core) {
+        let rating = 0;
+        let charComment = null;
+        
+        document.querySelectorAll('#movie-rating span').forEach(el => {
+            el.onclick = () => {
+                rating = parseInt(el.dataset.n);
+                document.querySelectorAll('#movie-rating span').forEach((s, i) => s.textContent = i < rating ? '⭐' : '☆');
+            };
+        });
+        
+        document.getElementById('movie-discuss')?.addEventListener('click', async () => {
+            const title = document.getElementById('movie-title')?.value.trim();
+            if (!title) { toastr.warning('영화 제목을 먼저 입력해주세요!'); return; }
+            document.getElementById('movie-discuss').disabled = true;
+            document.getElementById('movie-discuss-result').innerHTML = '<span class="loading">생각 중...</span>';
+            charComment = await this.getDiscussion(title, getContext().name2 || '캐릭터');
+            document.getElementById('movie-discuss-result').innerHTML = charComment ? `"${charComment}"` : '응답 실패';
+            document.getElementById('movie-discuss').disabled = false;
+        });
+        
+        document.getElementById('movie-save')?.addEventListener('click', () => {
+            const title = document.getElementById('movie-title')?.value.trim();
+            const genre = document.getElementById('movie-genre')?.value.trim();
+            const review = document.getElementById('movie-review')?.value.trim();
+            if (!title) { toastr.warning('영화 제목을 입력해주세요!'); return; }
+            
+            const settings = Core.getSettings();
+            const charId = Core.getCharId();
+            const data = this.getData(settings, charId);
+            data.movies.push({ date: Utils.getTodayKey(), title, genre, rating, review, charComment });
+            Core.saveSettings();
+            toastr.success('🎬 저장되었습니다!');
+            this.loadUI(settings, charId);
+        });
+    },
+};
+
+// ========================================
+// 일기장 앱
+// ========================================
+const DiaryApp = {
+    id: 'diary',
+    name: '일기장',
+    icon: '📔',
+    state: { selectedDate: null, calYear: null, calMonth: null },
+    
+    getData(settings, charId) {
+        const key = `diary_${charId}`;
+        if (!settings.appData) settings.appData = {};
+        if (!settings.appData[key]) settings.appData[key] = { entries: {} };
+        return settings.appData[key];
+    },
+    
+    render() {
+        return `
+        <div class="app-header">
+            <button class="app-back-btn" data-back="home">◀</button>
+            <span class="app-title">일기장</span>
+            <button class="app-nav-btn" id="diary-today-btn">오늘</button>
+        </div>
+        <div class="app-content">
+            <div class="calendar-nav"><button id="diary-cal-prev">◀</button><span id="diary-cal-title"></span><button id="diary-cal-next">▶</button></div>
+            <div class="calendar" id="diary-calendar"></div>
+            <div id="diary-entry-area"></div>
+        </div>`;
+    },
+    
+    renderEntry(entry, dateKey, charName) {
+        if (!entry) {
+            return `
+            <div class="card">
+                <div class="card-label">${Utils.formatDate(dateKey)} 일기</div>
+                <div class="mood-selector" id="diary-mood">${['😊','😢','😡','😴','🥰','😎'].map(m => `<span data-mood="${m}">${m}</span>`).join('')}</div>
+                <textarea id="diary-content" placeholder="오늘 하루는 어땠나요?"></textarea>
+                <button id="diary-save" class="btn-primary">저장하기</button>
+            </div>`;
+        }
+        return `
+        <div class="card">
+            <div class="card-label">${Utils.formatDate(dateKey)} 일기 ${entry.mood || ''}</div>
+            <div class="diary-content">${Utils.escapeHtml(entry.content)}</div>
+            ${entry.charReply ? `<div class="char-comment"><span class="char-name">${charName}</span>의 답장<br>"${Utils.escapeHtml(entry.charReply)}"</div>` : ''}
+        </div>`;
+    },
+    
+    async generateReply(content, mood, charName) {
+        const ctx = getContext();
+        const prompt = `[일기 답장] ${ctx.name1}의 오늘 일기 (기분: ${mood}): "${content}"
+${charName}(으)로서 따뜻한 답장 (1-2문장, 한국어, 위로/응원/공감):`;
+        try {
+            let result = await ctx.generateQuietPrompt(prompt, false, false);
+            return result.replace(/\*[^*]*\*/g, '').split('\n')[0].trim().substring(0, 150);
+        } catch { return null; }
+    },
+    
+    loadUI(settings, charId) {
+        const now = new Date();
+        this.state.calYear = now.getFullYear();
+        this.state.calMonth = now.getMonth();
+        this.state.selectedDate = Utils.getTodayKey();
+        this.renderCalendar(settings, charId);
+        this.showEntry(settings, charId);
+        this.bindCalendarEvents(settings, charId);
+    },
+    
+    renderCalendar(settings, charId) {
+        const { calYear: year, calMonth: month } = this.state;
+        document.getElementById('diary-cal-title').textContent = `${year}년 ${month + 1}월`;
+        const data = this.getData(settings, charId);
+        const startDay = new Date(year, month, 1).getDay();
+        const totalDays = new Date(year, month + 1, 0).getDate();
+        const today = Utils.getTodayKey();
+        
+        let html = '<div class="cal-week"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div class="cal-days">';
+        for (let i = 0; i < startDay; i++) html += '<span class="cal-day empty"></span>';
+        for (let d = 1; d <= totalDays; d++) {
+            const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const entry = data.entries[key];
+            const cls = ['cal-day', entry ? 'has-data' : '', key === today ? 'today' : '', key === this.state.selectedDate ? 'selected' : ''].filter(Boolean).join(' ');
+            html += `<span class="${cls}" data-date="${key}">${d}${entry?.mood ? `<small>${entry.mood}</small>` : ''}</span>`;
+        }
+        document.getElementById('diary-calendar').innerHTML = html + '</div>';
+    },
+    
+    showEntry(settings, charId) {
+        const data = this.getData(settings, charId);
+        const entry = data.entries[this.state.selectedDate];
+        const charName = getContext().name2 || '캐릭터';
+        document.getElementById('diary-entry-area').innerHTML = this.renderEntry(entry, this.state.selectedDate, charName);
+        
+        if (!entry) this.bindEntryEvents(settings, charId);
+    },
+    
+    bindEvents(Core) {
+        document.getElementById('diary-today-btn')?.addEventListener('click', () => {
+            const now = new Date();
+            this.state.calYear = now.getFullYear();
+            this.state.calMonth = now.getMonth();
+            this.state.selectedDate = Utils.getTodayKey();
+            this.renderCalendar(Core.getSettings(), Core.getCharId());
+            this.showEntry(Core.getSettings(), Core.getCharId());
+            this.bindCalendarEvents(Core.getSettings(), Core.getCharId());
+        });
+        this.bindCalendarNav(Core);
+    },
+    
+    bindCalendarNav(Core) {
+        document.getElementById('diary-cal-prev')?.addEventListener('click', () => {
+            if (--this.state.calMonth < 0) { this.state.calMonth = 11; this.state.calYear--; }
+            this.renderCalendar(Core.getSettings(), Core.getCharId());
+            this.bindCalendarEvents(Core.getSettings(), Core.getCharId());
+        });
+        document.getElementById('diary-cal-next')?.addEventListener('click', () => {
+            if (++this.state.calMonth > 11) { this.state.calMonth = 0; this.state.calYear++; }
+            this.renderCalendar(Core.getSettings(), Core.getCharId());
+            this.bindCalendarEvents(Core.getSettings(), Core.getCharId());
+        });
+        this.bindCalendarEvents(Core.getSettings(), Core.getCharId());
+    },
+    
+    bindCalendarEvents(settings, charId) {
+        document.querySelectorAll('#diary-calendar .cal-day:not(.empty)').forEach(el => {
+            el.onclick = () => {
                 this.state.selectedDate = el.dataset.date;
-                this.renderCalendar(PhoneCore.getSettings(), PhoneCore.getCharId(), this.state.calendarYear, this.state.calendarMonth);
-                this.showHistoryDetail(PhoneCore.getSettings(), PhoneCore.getCharId(), this.state.selectedDate);
-                this.bindCalendarDays(PhoneCore);
-            });
+                this.renderCalendar(settings, charId);
+                this.showEntry(settings, charId);
+                this.bindCalendarEvents(settings, charId);
+            };
+        });
+    },
+    
+    bindEntryEvents(settings, charId) {
+        let selectedMood = '';
+        document.querySelectorAll('#diary-mood span').forEach(el => {
+            el.onclick = () => {
+                selectedMood = el.dataset.mood;
+                document.querySelectorAll('#diary-mood span').forEach(s => s.classList.remove('selected'));
+                el.classList.add('selected');
+            };
+        });
+        
+        document.getElementById('diary-save')?.addEventListener('click', async () => {
+            const content = document.getElementById('diary-content')?.value.trim();
+            if (!content) { toastr.warning('일기 내용을 입력해주세요!'); return; }
+            
+            const btn = document.getElementById('diary-save');
+            btn.disabled = true;
+            btn.textContent = '답장 기다리는 중...';
+            
+            const charName = getContext().name2 || '캐릭터';
+            const charReply = await this.generateReply(content, selectedMood, charName);
+            
+            const data = this.getData(settings, charId);
+            data.entries[this.state.selectedDate] = { content, mood: selectedMood, charReply, date: this.state.selectedDate };
+            saveSettingsDebounced();
+            
+            toastr.success('📔 저장되었습니다!');
+            this.renderCalendar(settings, charId);
+            this.showEntry(settings, charId);
+            this.bindCalendarEvents(settings, charId);
         });
     },
 };
@@ -408,75 +877,50 @@ ${charName}(으)로서 두 가지를 작성:
 // Phone Core
 // ========================================
 const PhoneCore = {
-    apps: { sumone: SumOneApp },
+    apps: { sumone: SumOneApp, letter: LetterApp, book: BookApp, movie: MovieApp, diary: DiaryApp },
+    pageHistory: [],
     currentPage: 'home',
     
-    getContext: () => SillyTavern.getContext(),
-    
+    getContext,
     getSettings() {
         if (!extension_settings[extensionName]) {
-            extension_settings[extensionName] = {
-                enabledApps: { sumone: true },
-                wallpapers: {},  // 캐릭터별 배경
-                appData: {},
-            };
+            extension_settings[extensionName] = { enabledApps: {}, wallpapers: {}, appData: {} };
         }
         return extension_settings[extensionName];
     },
-    
     saveSettings: () => saveSettingsDebounced(),
+    getCharId() { const ctx = getContext(); return ctx.characterId ?? ctx.groupId ?? 'default'; },
     
-    getCharId() {
-        const ctx = this.getContext();
-        return ctx.characterId ?? ctx.groupId ?? 'default';
-    },
-    
-    getWallpaper() {
-        const settings = this.getSettings();
-        const charId = this.getCharId();
-        return settings.wallpapers?.[charId] || '';
-    },
-    
-    setWallpaper(dataUrl) {
-        const settings = this.getSettings();
-        const charId = this.getCharId();
-        if (!settings.wallpapers) settings.wallpapers = {};
-        settings.wallpapers[charId] = dataUrl;
+    getWallpaper() { return this.getSettings().wallpapers?.[this.getCharId()] || ''; },
+    setWallpaper(url) {
+        const s = this.getSettings();
+        if (!s.wallpapers) s.wallpapers = {};
+        s.wallpapers[this.getCharId()] = url;
         this.saveSettings();
         this.applyWallpaper();
     },
-    
     applyWallpaper() {
-        const homeScreen = document.querySelector('.phone-page[data-page="home"]');
-        if (homeScreen) {
+        const home = document.querySelector('.phone-page[data-page="home"]');
+        if (home) {
             const wp = this.getWallpaper();
-            homeScreen.style.backgroundImage = wp ? `url(${wp})` : '';
-            homeScreen.style.backgroundSize = 'cover';
-            homeScreen.style.backgroundPosition = 'center';
+            home.style.backgroundImage = wp ? `url(${wp})` : '';
         }
     },
     
-    getCurrentTime() {
-        const now = new Date();
-        return `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
-    },
-    
     createHTML() {
+        const time = new Date();
         return `
         <div id="phone-modal" class="phone-modal" style="display:none;">
             <div class="phone-device">
                 <div class="phone-inner">
                     <div class="phone-status-bar">
-                        <span class="phone-time">${this.getCurrentTime()}</span>
-                        <div class="phone-notch-area"></div>
-                        <div class="phone-status-icons"><span>●●●●○</span><span>🔋</span></div>
+                        <span class="phone-time">${time.getHours()}:${String(time.getMinutes()).padStart(2, '0')}</span>
+                        <div class="phone-notch"></div>
+                        <div class="phone-status-icons">●●●●○ 🔋</div>
                     </div>
                     <div class="phone-screen">
-                        <div class="phone-page active" data-page="home">
-                            <div class="phone-app-grid" id="phone-app-grid"></div>
-                        </div>
-                        <div class="phone-page" data-page="sumone"></div>
-                        <div class="phone-page" data-page="sumone-history"></div>
+                        <div class="phone-page active" data-page="home"><div class="phone-app-grid" id="phone-app-grid"></div></div>
+                        <div class="phone-page" data-page="app" id="phone-app-page"></div>
                     </div>
                     <div class="phone-home-bar"></div>
                 </div>
@@ -488,173 +932,133 @@ const PhoneCore = {
         const grid = document.getElementById('phone-app-grid');
         if (!grid) return;
         const settings = this.getSettings();
-        
-        let html = '';
-        for (const [id, app] of Object.entries(this.apps)) {
-            if (settings.enabledApps?.[id] !== false) {
-                html += `<div class="phone-app-icon" data-app="${id}">
-                    <div class="app-icon-image">${app.icon}</div>
-                    <div class="app-icon-label">${app.name}</div>
-                </div>`;
-            }
-        }
-        grid.innerHTML = html;
-        
-        grid.querySelectorAll('.phone-app-icon').forEach(el => {
-            el.addEventListener('click', () => this.openApp(el.dataset.app));
-        });
-        
+        grid.innerHTML = Object.entries(this.apps).filter(([id]) => settings.enabledApps?.[id] !== false)
+            .map(([id, app]) => `<div class="phone-app-icon" data-app="${id}"><div class="app-icon-img">${app.icon}</div><div class="app-icon-name">${app.name}</div></div>`).join('');
+        grid.querySelectorAll('.phone-app-icon').forEach(el => el.onclick = () => this.openApp(el.dataset.app));
         this.applyWallpaper();
     },
     
     switchPage(pageName) {
         this.currentPage = pageName;
-        document.querySelectorAll('.phone-page').forEach(el => {
-            el.classList.toggle('active', el.dataset.page === pageName);
+        document.querySelectorAll('.phone-page').forEach(p => p.classList.toggle('active', p.dataset.page === pageName || (pageName !== 'home' && p.dataset.page === 'app')));
+    },
+    
+    openPage(pageId, html) {
+        this.pageHistory.push(this.currentPage);
+        const appPage = document.getElementById('phone-app-page');
+        appPage.innerHTML = html;
+        appPage.dataset.currentPage = pageId;
+        this.switchPage(pageId);
+        this.bindBackButtons();
+    },
+    
+    goBack() {
+        if (this.pageHistory.length > 0) {
+            const prev = this.pageHistory.pop();
+            if (prev === 'home') {
+                this.switchPage('home');
+            } else {
+                // 이전 앱 페이지로
+                const app = this.apps[prev];
+                if (app) this.openApp(prev);
+                else this.switchPage('home');
+            }
+        } else {
+            this.switchPage('home');
+        }
+    },
+    
+    bindBackButtons() {
+        document.querySelectorAll('.app-back-btn').forEach(btn => {
+            btn.onclick = () => {
+                const target = btn.dataset.back;
+                if (target === 'home') {
+                    this.pageHistory = [];
+                    this.switchPage('home');
+                } else if (this.apps[target]) {
+                    this.pageHistory = [];
+                    this.openApp(target);
+                } else {
+                    this.goBack();
+                }
+            };
         });
     },
     
     openApp(appId) {
+        const ctx = getContext();
+        if (ctx.characterId === undefined && !ctx.groupId) { toastr.warning('먼저 캐릭터를 선택해주세요.'); return; }
+        
         const app = this.apps[appId];
         if (!app) return;
         
-        const ctx = this.getContext();
-        if (ctx.characterId === undefined && !ctx.groupId) {
-            toastr.warning('먼저 캐릭터를 선택해주세요.');
-            return;
-        }
-        
+        this.pageHistory = [];
         const charName = ctx.name2 || '캐릭터';
-        const charId = this.getCharId();
-        const settings = this.getSettings();
+        const appPage = document.getElementById('phone-app-page');
+        appPage.innerHTML = app.render(charName);
+        appPage.dataset.currentPage = appId;
+        this.switchPage(appId);
         
-        // 앱 페이지 렌더링
-        const page = document.querySelector(`.phone-page[data-page="${appId}"]`);
-        if (page) {
-            page.innerHTML = app.render(charName);
-            this.switchPage(appId);
-            app.loadUI(settings, charId, charName);
-            app.bindEvents(this);
-            
-            // 뒤로가기 버튼
-            page.querySelectorAll('.app-back-btn').forEach(btn => {
-                btn.addEventListener('click', () => this.switchPage(btn.dataset.back));
-            });
-        }
-        
-        // 히스토리 페이지도 준비
-        if (appId === 'sumone') {
-            const histPage = document.querySelector('.phone-page[data-page="sumone-history"]');
-            if (histPage) histPage.innerHTML = app.renderHistory();
-        }
+        app.loadUI(this.getSettings(), this.getCharId(), charName);
+        app.bindEvents(this);
+        this.bindBackButtons();
     },
     
     openModal() {
-        const modal = document.getElementById('phone-modal');
-        if (modal) {
-            modal.style.display = 'flex';
-            this.switchPage('home');
-            this.renderAppGrid();
-            document.querySelector('.phone-time').textContent = this.getCurrentTime();
-        }
+        document.getElementById('phone-modal').style.display = 'flex';
+        this.switchPage('home');
+        this.pageHistory = [];
+        this.renderAppGrid();
     },
-    
-    closeModal() {
-        const modal = document.getElementById('phone-modal');
-        if (modal) modal.style.display = 'none';
-    },
+    closeModal() { document.getElementById('phone-modal').style.display = 'none'; },
     
     setupEvents() {
-        const modal = document.getElementById('phone-modal');
-        if (!modal) return;
-        
-        modal.addEventListener('click', e => { if (e.target === modal) this.closeModal(); });
-        setInterval(() => {
-            const el = document.querySelector('.phone-time');
-            if (el) el.textContent = this.getCurrentTime();
-        }, 60000);
+        document.getElementById('phone-modal')?.addEventListener('click', e => { if (e.target.id === 'phone-modal') this.closeModal(); });
+        setInterval(() => { const t = new Date(); document.querySelector('.phone-time').textContent = `${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`; }, 60000);
     },
     
     createSettingsUI() {
         const settings = this.getSettings();
-        const ctx = this.getContext();
-        const charName = ctx.name2 || '(캐릭터 없음)';
-        
         const html = `
         <div class="sumone-phone-settings">
             <div class="inline-drawer">
-                <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>📱 썸원 폰</b>
-                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-                </div>
+                <div class="inline-drawer-toggle inline-drawer-header"><b>📱 썸원 폰</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
                 <div class="inline-drawer-content">
-                    <p style="margin:10px 0;opacity:0.7;">v1.6.0 - 캐릭터별 배경</p>
-                    <div style="margin:15px 0;">
-                        <b>앱 표시</b>
-                        ${Object.entries(this.apps).map(([id, app]) => `
-                        <label style="display:flex;align-items:center;gap:8px;margin:8px 0;cursor:pointer;">
-                            <input type="checkbox" class="phone-app-toggle" data-app="${id}" ${settings.enabledApps?.[id] !== false ? 'checked' : ''}>
-                            <span>${app.icon} ${app.name}</span>
-                        </label>`).join('')}
+                    <p style="margin:10px 0;opacity:0.7;">v1.7.0</p>
+                    <div style="margin:15px 0;"><b>앱 표시</b>
+                        ${Object.entries(this.apps).map(([id, app]) => `<label style="display:flex;align-items:center;gap:8px;margin:8px 0;"><input type="checkbox" class="phone-app-toggle" data-app="${id}" ${settings.enabledApps?.[id] !== false ? 'checked' : ''}><span>${app.icon} ${app.name}</span></label>`).join('')}
                     </div>
-                    <div style="margin:15px 0;">
-                        <b>배경화면</b> <span style="opacity:0.6;font-size:12px;">(현재: ${charName})</span>
-                        <input type="file" id="phone-wallpaper-input" accept="image/*" style="display:none;">
-                        <button id="phone-wallpaper-btn" class="menu_button" style="width:100%;margin-top:5px;">🖼️ 이미지 선택</button>
-                        <button id="phone-wallpaper-reset" class="menu_button" style="width:100%;margin-top:5px;">↩️ 기본으로</button>
+                    <div style="margin:15px 0;"><b>배경화면</b> <small>(캐릭터별)</small>
+                        <input type="file" id="phone-wp-input" accept="image/*" style="display:none;">
+                        <button id="phone-wp-btn" class="menu_button" style="width:100%;margin-top:5px;">🖼️ 이미지 선택</button>
+                        <button id="phone-wp-reset" class="menu_button" style="width:100%;margin-top:5px;">↩️ 기본으로</button>
                     </div>
                 </div>
             </div>
         </div>`;
-        
         $('#extensions_settings').append(html);
         
-        $('.phone-app-toggle').on('change', function() {
-            const s = PhoneCore.getSettings();
-            if (!s.enabledApps) s.enabledApps = {};
-            s.enabledApps[$(this).data('app')] = this.checked;
-            PhoneCore.saveSettings();
-        });
-        
-        $('#phone-wallpaper-btn').on('click', () => $('#phone-wallpaper-input').click());
-        $('#phone-wallpaper-input').on('change', function() {
-            const file = this.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = e => { PhoneCore.setWallpaper(e.target.result); toastr.success('배경화면 변경!'); };
-                reader.readAsDataURL(file);
-            }
-        });
-        $('#phone-wallpaper-reset').on('click', () => { PhoneCore.setWallpaper(''); toastr.info('기본으로 복원'); });
+        $('.phone-app-toggle').on('change', function() { const s = PhoneCore.getSettings(); if (!s.enabledApps) s.enabledApps = {}; s.enabledApps[$(this).data('app')] = this.checked; PhoneCore.saveSettings(); });
+        $('#phone-wp-btn').on('click', () => $('#phone-wp-input').click());
+        $('#phone-wp-input').on('change', function() { if (this.files[0]) { const r = new FileReader(); r.onload = e => { PhoneCore.setWallpaper(e.target.result); toastr.success('배경 변경!'); }; r.readAsDataURL(this.files[0]); } });
+        $('#phone-wp-reset').on('click', () => { PhoneCore.setWallpaper(''); toastr.info('기본으로'); });
     },
     
     addMenuButton() {
-        $('#sumone-phone-container').remove();
-        const html = `
-        <div id="sumone-phone-container" class="extension_container interactable" tabindex="0">
-            <div id="sumone-phone-btn" class="list-group-item flex-container flexGap5 interactable" tabindex="0">
-                <div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton" style="color:#ff6b9d;"></div>
-                <span>썸원 폰</span>
-            </div>
-        </div>`;
-        $('#extensionsMenu').prepend(html);
+        $('#sumone-phone-btn-container').remove();
+        $('#extensionsMenu').prepend(`<div id="sumone-phone-btn-container" class="extension_container interactable"><div id="sumone-phone-btn" class="list-group-item flex-container flexGap5 interactable"><div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton" style="color:#ff6b9d;"></div><span>썸원 폰</span></div></div>`);
         $('#sumone-phone-btn').on('click', () => this.openModal());
     },
     
     init() {
-        console.log('[SumOne Phone] Loading v1.6.0...');
+        console.log('[SumOne Phone] v1.7.0 로딩...');
         this.getSettings();
         this.createSettingsUI();
         $('body').append(this.createHTML());
         this.setupEvents();
         setTimeout(() => this.addMenuButton(), 1000);
-        
-        eventSource.on(event_types.CHAT_CHANGED, () => {
-            // 캐릭터 바뀌면 배경도 바뀜
-            this.applyWallpaper();
-        });
-        
-        console.log('[SumOne Phone] Loaded!');
+        eventSource.on(event_types.CHAT_CHANGED, () => this.applyWallpaper());
+        console.log('[SumOne Phone] 로딩 완료!');
     },
 };
 
