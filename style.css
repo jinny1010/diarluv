@@ -1,5 +1,4 @@
-/* SumOne Phone - iPhone Style UI */
-/* v1.3.0 - 모바일 완전 수정, 재생성 버튼 */
+/* SumOne Phone v1.6.0 */
 
 .phone-modal {
     position: fixed;
@@ -18,13 +17,10 @@
 .phone-device {
     width: 380px;
     max-width: 95vw;
-    height: auto;
-    max-height: 90vh;
     background: #1c1c1e;
     border-radius: 40px;
     padding: 10px;
     box-shadow: 0 0 0 3px #2c2c2e, 0 0 0 6px #1c1c1e, 0 25px 50px rgba(0,0,0,0.5);
-    position: relative;
     animation: slideIn 0.3s ease;
 }
 
@@ -61,75 +57,34 @@
 
 .phone-notch-area {
     position: absolute;
-    left: 50%;
-    top: 0;
+    left: 50%; top: 0;
     transform: translateX(-50%);
-    width: 100px;
-    height: 28px;
+    width: 100px; height: 28px;
     background: #000;
     border-radius: 0 0 16px 16px;
 }
 
-.phone-notch-area::before {
-    content: '';
-    position: absolute;
-    top: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 8px;
-    height: 8px;
-    background: #2c2c2e;
-    border-radius: 50%;
-}
-
-.phone-time { font-weight: 600; z-index: 1; }
-.phone-status-icons { display: flex; gap: 4px; font-size: 12px; z-index: 1; }
-.phone-signal { letter-spacing: -2px; }
-
-.phone-updating-status {
-    position: absolute;
-    top: 50px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(255, 107, 157, 0.9);
-    color: white;
-    padding: 6px 16px;
-    border-radius: 15px;
-    font-size: 11px;
-    font-weight: 600;
-    z-index: 200;
-    animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-}
+.phone-status-icons { display: flex; gap: 4px; font-size: 12px; }
 
 .phone-screen {
     flex: 1;
     min-height: 0;
     background: linear-gradient(180deg, #2c2c2e 0%, #1c1c1e 100%);
     overflow: hidden;
-    position: relative;
     display: flex;
     flex-direction: column;
 }
 
 .phone-home-bar {
     height: 24px;
-    min-height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: #1c1c1e;
-    flex-shrink: 0;
 }
-
 .phone-home-bar::before {
     content: '';
-    width: 100px;
-    height: 4px;
+    width: 100px; height: 4px;
     background: rgba(255,255,255,0.3);
     border-radius: 2px;
 }
@@ -141,15 +96,10 @@
     background: linear-gradient(180deg, #2c2c2e 0%, #1c1c1e 100%);
     overflow: hidden;
 }
-
-.phone-page.active {
-    display: flex;
-}
-
+.phone-page.active { display: flex; }
 .phone-page[data-page="home"] {
     background-size: cover;
     background-position: center;
-    background-repeat: no-repeat;
 }
 
 .phone-app-grid {
@@ -171,7 +121,6 @@
     cursor: pointer;
     transition: transform 0.2s;
 }
-
 .phone-app-icon:hover { transform: scale(1.1); }
 .phone-app-icon:active { transform: scale(0.95); }
 
@@ -198,10 +147,8 @@
     align-items: center;
     padding: 12px 15px;
     background: rgba(28, 28, 30, 0.98);
-    backdrop-filter: blur(10px);
     border-bottom: 1px solid rgba(255,255,255,0.1);
     flex-shrink: 0;
-    min-height: 50px;
 }
 
 .app-back-btn, .sumone-history-btn {
@@ -212,10 +159,7 @@
     color: #ff6b9d;
     font-size: 16px;
     cursor: pointer;
-    transition: all 0.2s;
-    flex-shrink: 0;
 }
-
 .app-back-btn:hover, .sumone-history-btn:hover {
     background: rgba(255, 107, 157, 0.2);
 }
@@ -233,7 +177,7 @@
     min-height: 0;
 }
 
-/* SUMONE APP */
+/* SUMONE */
 .sumone-app {
     display: flex;
     flex-direction: column;
@@ -270,7 +214,7 @@
     border: 1px solid rgba(255,255,255,0.1);
 }
 
-#phone-sumone-my-answer {
+#sumone-my-answer {
     width: 100%;
     min-height: 70px;
     padding: 10px 12px;
@@ -283,69 +227,84 @@
     resize: none;
     box-sizing: border-box;
 }
-
-#phone-sumone-my-answer::placeholder { color: #8e8e93; }
-#phone-sumone-my-answer:focus { outline: none; border-color: #ff6b9d; background: white; }
-#phone-sumone-my-answer:disabled { background: rgba(255,255,255,0.7); color: #3a3a3c; }
+#sumone-my-answer::placeholder { color: #8e8e93; }
+#sumone-my-answer:focus { outline: none; border-color: #ff6b9d; }
+#sumone-my-answer:disabled { background: rgba(255,255,255,0.7); }
 
 .sumone-submit-btn {
     margin-top: 8px;
     width: 100%;
-    padding: 10px 20px;
+    padding: 12px 20px;
     border: none;
     border-radius: 20px;
     background: linear-gradient(135deg, #ff6b9d, #c44569);
     color: white;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
 }
-
 .sumone-submit-btn:hover:not(:disabled) {
     transform: translateY(-2px);
     box-shadow: 0 4px 15px rgba(255, 107, 157, 0.4);
 }
+.sumone-submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.sumone-submit-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-
-.sumone-ai-box {
+.sumone-ai-box, .sumone-comment-box {
     background: rgba(255,255,255,0.05);
     border-radius: 16px;
     padding: 12px 15px;
     border: 1px solid rgba(255,255,255,0.1);
 }
 
-.sumone-ai-answer {
+.sumone-ai-answer, .sumone-comment {
     font-size: 14px;
     color: white;
     line-height: 1.5;
-    min-height: 36px;
-    margin-top: 8px;
 }
 
-.sumone-loading {
-    color: rgba(255,255,255,0.5);
-    font-style: italic;
-}
-
-/* 코멘트 박스 */
 .sumone-comment-box {
     background: rgba(255, 107, 157, 0.08);
-    border-radius: 16px;
-    padding: 12px 15px;
     border: 1px solid rgba(255, 107, 157, 0.15);
 }
+.sumone-comment { font-style: italic; color: rgba(255,255,255,0.9); }
 
-.sumone-comment {
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.9);
-    line-height: 1.5;
-    font-style: italic;
-    margin-top: 6px;
+/* 타이핑 인디케이터 */
+.sumone-typing {
+    padding: 15px;
+    text-align: center;
 }
 
-/* CALENDAR / HISTORY */
+.typing-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 14px;
+    background: rgba(255, 107, 157, 0.1);
+    padding: 10px 18px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 107, 157, 0.2);
+}
+
+.typing-dots {
+    display: inline-flex;
+    gap: 2px;
+}
+
+.typing-dots span {
+    animation: typingDot 1.4s infinite;
+    opacity: 0.3;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typingDot {
+    0%, 60%, 100% { opacity: 0.3; }
+    30% { opacity: 1; }
+}
+
+/* CALENDAR */
 .sumone-history {
     display: flex;
     flex-direction: column;
@@ -358,9 +317,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 6px 8px;
-    flex-shrink: 0;
 }
-
 .calendar-header button {
     width: 32px; height: 32px;
     border: none;
@@ -369,13 +326,11 @@
     color: white;
     cursor: pointer;
 }
-
 .calendar-header button:hover {
     background: rgba(255, 107, 157, 0.2);
     color: #ff6b9d;
 }
-
-#phone-cal-title {
+#sumone-cal-title {
     font-size: 15px;
     font-weight: 600;
     color: white;
@@ -385,7 +340,6 @@
     background: rgba(255,255,255,0.05);
     border-radius: 12px;
     padding: 10px;
-    flex-shrink: 0;
 }
 
 .cal-weekdays {
@@ -393,7 +347,6 @@
     grid-template-columns: repeat(7, 1fr);
     margin-bottom: 6px;
 }
-
 .cal-weekdays span {
     text-align: center;
     font-size: 10px;
@@ -417,13 +370,10 @@
     border-radius: 50%;
     cursor: pointer;
     position: relative;
-    transition: all 0.2s;
 }
-
 .cal-day.empty { cursor: default; }
 .cal-day:not(.empty):hover { background: rgba(255,255,255,0.1); }
 .cal-day.has-record { color: white; }
-
 .cal-day.has-record::after {
     content: '';
     position: absolute;
@@ -432,18 +382,15 @@
     border-radius: 50%;
     background: #ff6b9d;
 }
-
 .cal-day.today {
     background: rgba(255, 107, 157, 0.3);
     color: #ff6b9d;
     font-weight: 600;
 }
-
 .cal-day.selected {
     background: #ff6b9d;
     color: white;
 }
-
 .cal-day.selected::after { background: white; }
 
 .history-detail {
@@ -452,7 +399,6 @@
     padding: 12px;
     flex: 1;
     overflow-y: auto;
-    min-height: 80px;
 }
 
 .history-date {
@@ -476,12 +422,7 @@
     padding-bottom: 8px;
     border-bottom: 1px solid rgba(255,255,255,0.05);
 }
-
-.history-item:last-child {
-    margin-bottom: 0;
-    padding-bottom: 0;
-    border-bottom: none;
-}
+.history-item:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
 
 .history-label {
     min-width: 45px;
@@ -495,7 +436,6 @@
     text-align: center;
     height: fit-content;
     word-break: break-all;
-    flex-shrink: 0;
 }
 
 .history-text {
@@ -509,170 +449,31 @@
     background: rgba(255, 107, 157, 0.05);
     border-radius: 8px;
     padding: 8px;
-    margin-top: 4px;
 }
-
-.history-comment .history-label {
-    background: rgba(255, 107, 157, 0.25);
-}
-
-.history-comment .history-text {
-    font-style: italic;
-    color: rgba(255, 255, 255, 0.75);
-}
+.history-comment .history-label { background: rgba(255, 107, 157, 0.25); }
+.history-comment .history-text { font-style: italic; color: rgba(255,255,255,0.75); }
 
 /* 스크롤바 */
-.app-content::-webkit-scrollbar,
-.phone-page::-webkit-scrollbar,
-.history-detail::-webkit-scrollbar { width: 3px; }
-.app-content::-webkit-scrollbar-track,
-.phone-page::-webkit-scrollbar-track,
-.history-detail::-webkit-scrollbar-track { background: transparent; }
-.app-content::-webkit-scrollbar-thumb,
-.phone-page::-webkit-scrollbar-thumb,
-.history-detail::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+.app-content::-webkit-scrollbar, .history-detail::-webkit-scrollbar { width: 3px; }
+.app-content::-webkit-scrollbar-thumb, .history-detail::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 
-/* 모바일 대응 */
+/* 모바일 */
 @media screen and (max-height: 750px) {
-    .phone-device {
-        border-radius: 30px;
-        padding: 8px;
-    }
-    
-    .phone-inner {
-        height: calc(90vh - 16px);
-        border-radius: 24px;
-    }
-    
-    .phone-status-bar {
-        height: 36px;
-        min-height: 36px;
-        padding: 0 16px;
-        font-size: 12px;
-    }
-    
-    .phone-notch-area {
-        width: 80px;
-        height: 22px;
-    }
-    
-    .app-header {
-        padding: 10px 12px;
-        min-height: 44px;
-    }
-    
-    .app-content {
-        padding: 12px;
-    }
-    
-    .sumone-app {
-        gap: 10px;
-    }
-    
-    .sumone-question-box,
-    .sumone-answer-box,
-    .sumone-ai-box,
-    .sumone-comment-box {
-        padding: 10px 12px;
-        border-radius: 12px;
-    }
-    
-    #phone-sumone-my-answer {
-        min-height: 60px;
-    }
-    
-    .phone-home-bar {
-        height: 20px;
-        min-height: 20px;
-    }
+    .phone-inner { height: calc(90vh - 16px); }
+    .phone-status-bar { height: 36px; min-height: 36px; }
+    .phone-notch-area { width: 80px; height: 22px; }
 }
 
 @media screen and (max-height: 600px) {
-    .phone-device {
-        border-radius: 20px;
-        padding: 6px;
-    }
-    
-    .phone-inner {
-        height: calc(90vh - 12px);
-        border-radius: 16px;
-    }
-    
-    .phone-status-bar {
-        height: 28px;
-        min-height: 28px;
-        font-size: 11px;
-    }
-    
-    .phone-notch-area {
-        display: none;
-    }
-    
-    .app-header {
-        padding: 8px 10px;
-        min-height: 40px;
-    }
-    
-    .app-back-btn, .sumone-history-btn {
-        width: 30px;
-        height: 30px;
-        font-size: 14px;
-    }
-    
-    .app-title {
-        font-size: 15px;
-    }
-    
-    .app-content {
-        padding: 10px;
-    }
-    
-    .sumone-question {
-        font-size: 14px;
-    }
-    
-    .sumone-label {
-        font-size: 10px;
-    }
-    
-    #phone-sumone-my-answer {
-        min-height: 50px;
-        font-size: 13px;
-    }
-    
-    .sumone-submit-btn {
-        padding: 8px 16px;
-        font-size: 12px;
-    }
-    
-    .phone-home-bar {
-        height: 16px;
-        min-height: 16px;
-    }
-    
-    .phone-home-bar::before {
-        width: 80px;
-        height: 3px;
-    }
+    .phone-device { border-radius: 20px; padding: 6px; }
+    .phone-inner { height: calc(90vh - 12px); border-radius: 16px; }
+    .phone-status-bar { height: 28px; min-height: 28px; font-size: 11px; }
+    .phone-notch-area { display: none; }
+    .phone-home-bar { height: 16px; }
 }
 
 @media screen and (max-width: 420px) {
-    .phone-device {
-        width: 100%;
-        max-width: none;
-        border-radius: 0;
-        padding: 0;
-    }
-    
-    .phone-inner {
-        border-radius: 0;
-        height: 90vh;
-        max-height: 90vh;
-    }
-    
-    .phone-modal {
-        padding: 0;
-        align-items: flex-start;
-        padding-top: 5vh;
-    }
+    .phone-device { width: 100%; border-radius: 0; padding: 0; }
+    .phone-inner { border-radius: 0; height: 90vh; }
+    .phone-modal { padding: 0; align-items: flex-start; padding-top: 5vh; }
 }
