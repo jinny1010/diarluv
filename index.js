@@ -1,6 +1,6 @@
 // ========================================
-// SumOne Phone v1.9.0
-// 데이터를 확장 폴더 내 JSON 파일로 저장
+// 폰 (Phone) v2.0.0
+// 프롬프트 강화, 재생성 기능, 이름 변경
 // ========================================
 
 import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
@@ -11,18 +11,26 @@ const extensionFolderPath = `scripts/extensions/third_party/${extensionName}`;
 const getContext = () => SillyTavern.getContext();
 
 // ========================================
+// 시스템 프롬프트 (최우선순위)
+// ========================================
+const SYSTEM_INSTRUCTION = `[최우선 시스템 지시]
+- 절대 롤플레이(RP) 금지. 캐릭터 연기 금지.
+- *행동*, (동작), "대사" 같은 묘사 금지.
+- 소설이나 대본처럼 쓰지 마.
+- 그냥 평범하게 대화하듯이 답변해.
+- 한국어로 간결하게 응답.`;
+
+// ========================================
 // 데이터 저장 (JSON 파일)
 // ========================================
 const DataManager = {
     cache: null,
     saveTimeout: null,
     
-    // 데이터 파일 경로
     getFilePath() {
         return `${extensionFolderPath}/data.json`;
     },
     
-    // 데이터 로드
     async load() {
         if (this.cache) return this.cache;
         
@@ -31,19 +39,17 @@ const DataManager = {
             if (response.ok) {
                 const text = await response.text();
                 this.cache = JSON.parse(text);
-                console.log('[SumOne] Data loaded from file');
+                console.log('[Phone] Data loaded from file');
                 return this.cache;
             }
         } catch (e) {
-            console.log('[SumOne] No existing data file, creating new');
+            console.log('[Phone] No existing data file, creating new');
         }
         
-        // 파일 없으면 기본 데이터
         this.cache = { enabledApps: {}, wallpapers: {}, appData: {} };
         
-        // extension_settings에서 마이그레이션 시도
         if (extension_settings[extensionName]?.appData) {
-            console.log('[SumOne] Migrating from extension_settings');
+            console.log('[Phone] Migrating from extension_settings');
             this.cache = JSON.parse(JSON.stringify(extension_settings[extensionName]));
             await this.save();
         }
@@ -51,7 +57,6 @@ const DataManager = {
         return this.cache;
     },
     
-    // 데이터 저장 (디바운스)
     save() {
         if (this.saveTimeout) clearTimeout(this.saveTimeout);
         this.saveTimeout = setTimeout(() => this._doSave(), 1000);
@@ -71,22 +76,19 @@ const DataManager = {
             });
             
             if (response.ok) {
-                console.log('[SumOne] Data saved to file');
+                console.log('[Phone] Data saved to file');
             } else {
-                console.error('[SumOne] Save failed:', response.status);
-                // 폴백: extension_settings에도 저장
+                console.error('[Phone] Save failed:', response.status);
                 extension_settings[extensionName] = this.cache;
                 DataManager.save();
             }
         } catch (e) {
-            console.error('[SumOne] Save error:', e);
-            // 폴백
+            console.error('[Phone] Save error:', e);
             extension_settings[extensionName] = this.cache;
             DataManager.save();
         }
     },
     
-    // 데이터 가져오기 (동기, 캐시에서)
     get() {
         if (!this.cache) {
             this.cache = { enabledApps: {}, wallpapers: {}, appData: {} };
@@ -116,18 +118,35 @@ const Utils = {
     generateId() {
         return Date.now().toString(36) + Math.random().toString(36).substr(2);
     },
-    // 확률 체크 (0~100)
     chance(percent) {
         return Math.random() * 100 < percent;
+    },
+    // 롤플레이 패턴 제거
+    cleanResponse(text) {
+        if (!text) return '';
+        return text
+            .replace(/\*[^*]*\*/g, '')  // *행동*
+            .replace(/\([^)]*\)/g, '')   // (동작)
+            .replace(/「[^」]*」/g, '')  // 「대사」
+            .replace(/『[^』]*』/g, '')  // 『대사』
+            .replace(/"[^"]*"/g, (match) => {
+                // 따옴표 안의 내용이 행동 묘사인지 체크
+                if (match.includes('말했') || match.includes('속삭') || match.includes('중얼')) {
+                    return '';
+                }
+                return match;
+            })
+            .replace(/\s+/g, ' ')
+            .trim();
     },
 };
 
 // ========================================
-// 썸원 앱
+// 문답 앱 (구 썸원)
 // ========================================
-const SumOneApp = {
-    id: 'sumone',
-    name: '썸원',
+const MundapApp = {
+    id: 'mundap',
+    name: '문답',
     icon: '💕',
     
     initialQuestions: [
@@ -159,10 +178,15 @@ const SumOneApp = {
     state: { isGenerating: false, currentQuestion: null, selectedDate: null, calYear: null, calMonth: null },
     
     getData(settings, charId) {
-        const key = `sumone_${charId}`;
+        const key = `mundap_${charId}`;
         if (!settings.appData) settings.appData = {};
         if (!settings.appData[key]) {
             settings.appData[key] = { history: {}, questionPool: [...this.initialQuestions], usedQuestions: [] };
+        }
+        // 기존 sumone 데이터 마이그레이션
+        const oldKey = `sumone_${charId}`;
+        if (settings.appData[oldKey] && !settings.appData[key].history) {
+            settings.appData[key] = settings.appData[oldKey];
         }
         return settings.appData[key];
     },
@@ -187,17 +211,27 @@ const SumOneApp = {
     
     async generateResponse(question, userAnswer, charName, userName) {
         const ctx = getContext();
-        const prompt = `[커플 Q&A "썸원"] 질문: "${question}" / ${userName}: "${userAnswer}"
-${charName}로서 답변(1-2문장)과 코멘트(1문장, 달달하게) 작성.
-형식 - 답변: / 코멘트: / 한국어, 액션(*) 없이:`;
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[커플 Q&A 문답]
+질문: "${question}"
+${userName}의 답변: "${userAnswer}"
+
+${charName}로서 위 질문에 대한 너의 답변을 써줘.
+- 답변: (1-2문장, 질문에 대한 너의 솔직한 대답)
+- 코멘트: (1문장, ${userName}의 답변에 대한 짧은 반응)
+
+형식 그대로 출력:
+답변: 
+코멘트: `;
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             let answer = '', comment = '';
             for (const line of result.split('\n').filter(l => l.trim())) {
-                if (line.match(/^답변?:/)) answer = line.replace(/^답변?:\s*/, '').replace(/\*[^*]*\*/g, '').trim();
-                else if (line.match(/^(코멘트|반응):/)) comment = line.replace(/^(코멘트|반응):\s*/, '').replace(/\*[^*]*\*/g, '').trim();
+                if (line.match(/^답변?:/)) answer = Utils.cleanResponse(line.replace(/^답변?:\s*/, ''));
+                else if (line.match(/^(코멘트|반응):/)) comment = Utils.cleanResponse(line.replace(/^(코멘트|반응):\s*/, ''));
             }
-            if (!answer) answer = result.split('\n')[0]?.replace(/\*[^*]*\*/g, '').trim() || '';
+            if (!answer) answer = Utils.cleanResponse(result.split('\n')[0]) || '';
             return { answer: answer.substring(0, 150), comment: comment.substring(0, 100) };
         } catch (e) { return { answer: null, comment: null }; }
     },
@@ -206,103 +240,110 @@ ${charName}로서 답변(1-2문장)과 코멘트(1문장, 달달하게) 작성.
         return `
         <div class="app-header">
             <button class="app-back-btn" data-back="home">◀</button>
-            <span class="app-title">썸원</span>
-            <button class="app-nav-btn" id="sumone-history-btn">📅</button>
+            <span class="app-title">문답</span>
+            <button class="app-nav-btn" id="mundap-history-btn">📅</button>
         </div>
         <div class="app-content">
-            <div class="card pink"><div class="card-label">오늘의 질문</div><div id="sumone-question">로딩 중...</div></div>
+            <div class="card pink"><div class="card-label">오늘의 질문</div><div id="mundap-question">로딩 중...</div></div>
             <div class="card"><div class="card-label">나의 답변</div>
-                <textarea id="sumone-input" placeholder="답변을 입력하세요..."></textarea>
-                <button id="sumone-submit" class="btn-primary">제출하기</button>
+                <textarea id="mundap-input" placeholder="답변을 입력하세요..."></textarea>
+                <button id="mundap-submit" class="btn-primary">제출하기</button>
             </div>
-            <div class="card" id="sumone-ai-box" style="display:none;"><div class="card-label"><span class="char-name">${charName}</span>의 답변</div><div id="sumone-ai-answer"></div></div>
-            <div class="card pink-light" id="sumone-comment-box" style="display:none;"><div class="card-label">💬 코멘트</div><div id="sumone-comment"></div></div>
-            <div id="sumone-typing" class="typing-box" style="display:none;"><span class="char-name">${charName}</span> 님이 답변 중<span class="dots"><span>.</span><span>.</span><span>.</span></span></div>
+            <div class="card" id="mundap-ai-box" style="display:none;">
+                <div class="card-label"><span class="char-name">${charName}</span>의 답변 <button id="mundap-regen" class="regen-btn">🔄</button></div>
+                <div id="mundap-ai-answer"></div>
+            </div>
+            <div class="card pink-light" id="mundap-comment-box" style="display:none;"><div class="card-label">💬 코멘트</div><div id="mundap-comment"></div></div>
+            <div id="mundap-typing" class="typing-box" style="display:none;"><span class="char-name">${charName}</span> 님이 답변 중<span class="dots"><span>.</span><span>.</span><span>.</span></span></div>
         </div>`;
     },
     
     renderHistory() {
         return `
         <div class="app-header">
-            <button class="app-back-btn" data-back="sumone">◀</button>
+            <button class="app-back-btn" data-back="mundap">◀</button>
             <span class="app-title">히스토리</span><span></span>
         </div>
         <div class="app-content">
-            <div class="calendar-nav"><button id="sumone-cal-prev">◀</button><span id="sumone-cal-title"></span><button id="sumone-cal-next">▶</button></div>
-            <div class="calendar" id="sumone-calendar"></div>
-            <div class="card" id="sumone-history-detail"><div class="empty-state">날짜를 선택하세요</div></div>
+            <div class="calendar-nav"><button id="mundap-cal-prev">◀</button><span id="mundap-cal-title"></span><button id="mundap-cal-next">▶</button></div>
+            <div class="calendar" id="mundap-calendar"></div>
+            <div class="card" id="mundap-history-detail"><div class="empty-state">날짜를 선택하세요</div></div>
         </div>`;
     },
     
     loadUI(settings, charId, charName) {
         const data = this.getTodayData(settings, charId, charName);
         this.state.currentQuestion = data.question;
-        document.getElementById('sumone-question').textContent = data.question;
+        document.getElementById('mundap-question').textContent = data.question;
         
         if (data.revealed) {
-            document.getElementById('sumone-input').value = data.myAnswer || '';
-            document.getElementById('sumone-input').disabled = true;
-            document.getElementById('sumone-submit').disabled = true;
-            document.getElementById('sumone-submit').textContent = '오늘 완료 ✓';
-            document.getElementById('sumone-ai-box').style.display = 'block';
-            document.getElementById('sumone-ai-answer').textContent = data.aiAnswer || '';
+            document.getElementById('mundap-input').value = data.myAnswer || '';
+            document.getElementById('mundap-input').disabled = true;
+            document.getElementById('mundap-submit').disabled = true;
+            document.getElementById('mundap-submit').textContent = '오늘 완료 ✓';
+            document.getElementById('mundap-ai-box').style.display = 'block';
+            document.getElementById('mundap-ai-answer').textContent = data.aiAnswer || '';
             if (data.comment) {
-                document.getElementById('sumone-comment-box').style.display = 'block';
-                document.getElementById('sumone-comment').textContent = data.comment;
+                document.getElementById('mundap-comment-box').style.display = 'block';
+                document.getElementById('mundap-comment').textContent = data.comment;
             }
         } else if (this.state.isGenerating) {
-            document.getElementById('sumone-input').disabled = true;
-            document.getElementById('sumone-submit').disabled = true;
-            document.getElementById('sumone-typing').style.display = 'block';
+            document.getElementById('mundap-input').disabled = true;
+            document.getElementById('mundap-submit').disabled = true;
+            document.getElementById('mundap-typing').style.display = 'block';
         }
     },
     
-    async handleSubmit(Core) {
+    async handleSubmit(Core, isRegen = false) {
         if (this.state.isGenerating) return;
-        const input = document.getElementById('sumone-input');
+        const input = document.getElementById('mundap-input');
         const answer = input?.value.trim();
-        if (!answer) { toastr.warning('답변을 입력해주세요!'); return; }
+        if (!answer && !isRegen) { toastr.warning('답변을 입력해주세요!'); return; }
         
         const ctx = getContext();
         const settings = Core.getSettings();
         const charId = Core.getCharId();
         const charName = ctx.name2 || '캐릭터';
+        const data = this.getData(settings, charId);
+        const todayData = data.history[Utils.getTodayKey()];
+        const userAnswer = isRegen ? todayData.myAnswer : answer;
         
         this.state.isGenerating = true;
-        input.disabled = true;
-        document.getElementById('sumone-submit').disabled = true;
-        document.getElementById('sumone-typing').style.display = 'block';
+        if (!isRegen) input.disabled = true;
+        document.getElementById('mundap-submit').disabled = true;
+        document.getElementById('mundap-typing').style.display = 'block';
+        document.getElementById('mundap-ai-box').style.display = 'none';
+        document.getElementById('mundap-comment-box').style.display = 'none';
         
-        const { answer: aiAnswer, comment } = await this.generateResponse(this.state.currentQuestion, answer, charName, ctx.name1 || '나');
+        const { answer: aiAnswer, comment } = await this.generateResponse(this.state.currentQuestion, userAnswer, charName, ctx.name1 || '나');
         this.state.isGenerating = false;
         
         if (!aiAnswer) {
             toastr.error('생성 실패');
-            input.disabled = false;
-            document.getElementById('sumone-submit').disabled = false;
-            document.getElementById('sumone-typing').style.display = 'none';
+            if (!isRegen) input.disabled = false;
+            document.getElementById('mundap-submit').disabled = false;
+            document.getElementById('mundap-typing').style.display = 'none';
             return;
         }
         
-        const data = this.getData(settings, charId);
-        data.history[Utils.getTodayKey()] = { question: this.state.currentQuestion, myAnswer: answer, aiAnswer, comment, revealed: true, charName };
+        data.history[Utils.getTodayKey()] = { question: this.state.currentQuestion, myAnswer: userAnswer, aiAnswer, comment, revealed: true, charName };
         Core.saveSettings();
         
-        document.getElementById('sumone-typing').style.display = 'none';
-        document.getElementById('sumone-ai-box').style.display = 'block';
-        document.getElementById('sumone-ai-answer').textContent = aiAnswer;
+        document.getElementById('mundap-typing').style.display = 'none';
+        document.getElementById('mundap-ai-box').style.display = 'block';
+        document.getElementById('mundap-ai-answer').textContent = aiAnswer;
         if (comment) {
-            document.getElementById('sumone-comment-box').style.display = 'block';
-            document.getElementById('sumone-comment').textContent = comment;
+            document.getElementById('mundap-comment-box').style.display = 'block';
+            document.getElementById('mundap-comment').textContent = comment;
         }
-        document.getElementById('sumone-submit').textContent = '오늘 완료 ✓';
-        toastr.success('💕 답변이 도착했습니다!');
+        document.getElementById('mundap-submit').textContent = '오늘 완료 ✓';
+        toastr.success(isRegen ? '🔄 재생성 완료!' : '💕 답변이 도착했습니다!');
     },
     
     renderCalendar(settings, charId, year, month) {
         this.state.calYear = year;
         this.state.calMonth = month;
-        document.getElementById('sumone-cal-title').textContent = `${year}년 ${month + 1}월`;
+        document.getElementById('mundap-cal-title').textContent = `${year}년 ${month + 1}월`;
         const data = this.getData(settings, charId);
         const startDay = new Date(year, month, 1).getDay();
         const totalDays = new Date(year, month + 1, 0).getDate();
@@ -315,14 +356,14 @@ ${charName}로서 답변(1-2문장)과 코멘트(1문장, 달달하게) 작성.
             const cls = ['cal-day', data.history[key]?.revealed ? 'has-data' : '', key === today ? 'today' : '', key === this.state.selectedDate ? 'selected' : ''].filter(Boolean).join(' ');
             html += `<span class="${cls}" data-date="${key}">${d}</span>`;
         }
-        document.getElementById('sumone-calendar').innerHTML = html + '</div>';
+        document.getElementById('mundap-calendar').innerHTML = html + '</div>';
     },
     
     showDetail(settings, charId, dateKey) {
         this.state.selectedDate = dateKey;
         const data = this.getData(settings, charId);
         const record = data.history[dateKey];
-        const detail = document.getElementById('sumone-history-detail');
+        const detail = document.getElementById('mundap-history-detail');
         
         if (!record?.revealed) {
             detail.innerHTML = `<div class="detail-date">${Utils.formatDate(dateKey)}</div><div class="empty-state">기록이 없습니다</div>`;
@@ -337,10 +378,11 @@ ${charName}로서 답변(1-2문장)과 코멘트(1문장, 달달하게) 작성.
     },
     
     bindEvents(Core) {
-        document.getElementById('sumone-submit')?.addEventListener('click', () => this.handleSubmit(Core));
-        document.getElementById('sumone-input')?.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.handleSubmit(Core); } });
-        document.getElementById('sumone-history-btn')?.addEventListener('click', () => {
-            Core.openPage('sumone-history', this.renderHistory());
+        document.getElementById('mundap-submit')?.addEventListener('click', () => this.handleSubmit(Core));
+        document.getElementById('mundap-input')?.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.handleSubmit(Core); } });
+        document.getElementById('mundap-regen')?.addEventListener('click', () => this.handleSubmit(Core, true));
+        document.getElementById('mundap-history-btn')?.addEventListener('click', () => {
+            Core.openPage('mundap-history', this.renderHistory());
             const now = new Date();
             this.renderCalendar(Core.getSettings(), Core.getCharId(), now.getFullYear(), now.getMonth());
             this.state.selectedDate = Utils.getTodayKey();
@@ -351,12 +393,12 @@ ${charName}로서 답변(1-2문장)과 코멘트(1문장, 달달하게) 작성.
     
     bindHistoryEvents(Core) {
         const settings = Core.getSettings(), charId = Core.getCharId();
-        document.getElementById('sumone-cal-prev')?.addEventListener('click', () => {
+        document.getElementById('mundap-cal-prev')?.addEventListener('click', () => {
             if (--this.state.calMonth < 0) { this.state.calMonth = 11; this.state.calYear--; }
             this.renderCalendar(settings, charId, this.state.calYear, this.state.calMonth);
             this.bindCalendarDays(Core);
         });
-        document.getElementById('sumone-cal-next')?.addEventListener('click', () => {
+        document.getElementById('mundap-cal-next')?.addEventListener('click', () => {
             if (++this.state.calMonth > 11) { this.state.calMonth = 0; this.state.calYear++; }
             this.renderCalendar(settings, charId, this.state.calYear, this.state.calMonth);
             this.bindCalendarDays(Core);
@@ -365,7 +407,7 @@ ${charName}로서 답변(1-2문장)과 코멘트(1문장, 달달하게) 작성.
     },
     
     bindCalendarDays(Core) {
-        document.querySelectorAll('#sumone-calendar .cal-day:not(.empty)').forEach(el => {
+        document.querySelectorAll('#mundap-calendar .cal-day:not(.empty)').forEach(el => {
             el.onclick = () => {
                 this.showDetail(Core.getSettings(), Core.getCharId(), el.dataset.date);
                 this.renderCalendar(Core.getSettings(), Core.getCharId(), this.state.calYear, this.state.calMonth);
@@ -376,7 +418,7 @@ ${charName}로서 답변(1-2문장)과 코멘트(1문장, 달달하게) 작성.
 };
 
 // ========================================
-// 편지 앱 (캐릭터가 먼저 보내기 기능)
+// 편지 앱
 // ========================================
 const LetterApp = {
     id: 'letter',
@@ -391,28 +433,28 @@ const LetterApp = {
         return settings.appData[key];
     },
     
-    // 캐릭터가 먼저 편지 보내기 (30% 확률, 하루 1번)
     async tryCharacterLetter(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const today = Utils.getTodayKey();
         
-        // 오늘 이미 캐릭터 편지 있으면 스킵
         if (data.lastCharLetterDate === today) return null;
-        
-        // 30% 확률
         if (!Utils.chance(30)) {
-            data.lastCharLetterDate = today; // 확률 실패해도 오늘은 더 이상 시도 안 함
+            data.lastCharLetterDate = today;
             return null;
         }
         
         const ctx = getContext();
-        const prompt = `[편지 쓰기] ${charName}가 ${userName}에게 보내는 짧은 편지를 써줘.
-일상적인 안부, 보고싶다는 말, 오늘 있었던 일, 고마운 마음 중 하나를 골라서.
-2-4문장, 한국어, 자연스럽게, 액션(*) 없이:`;
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[편지 쓰기]
+${charName}가 ${userName}에게 보내는 짧은 편지야.
+일상적인 안부, 보고싶다는 말, 오늘 있었던 일, 고마운 마음 중 하나를 골라서 2-4문장으로 써줘.
+
+편지 내용만 출력:`;
         
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
-            const content = result.replace(/\*[^*]*\*/g, '').trim().substring(0, 300);
+            const content = Utils.cleanResponse(result).substring(0, 300);
             
             if (content && content.length > 10) {
                 data.letters.push({
@@ -476,24 +518,35 @@ const LetterApp = {
         </div>`;
     },
     
-    renderView(letter, charName, isFromChar) {
+    renderView(letter, charName, isFromChar, idx) {
         return `
         <div class="letter-paper ${isFromChar ? 'received' : ''}">
             <div class="letter-to">${letter.fromMe ? `To. ${charName}` : 'To. 나'}</div>
             <div class="letter-body">${Utils.escapeHtml(letter.content)}</div>
             <div class="letter-from">${letter.fromMe ? 'From. 나' : `From. ${letter.charName || charName}`}</div>
-            ${letter.reply ? `<div class="letter-reply"><div class="reply-label">💕 답장</div><div class="reply-content">${Utils.escapeHtml(letter.reply)}</div></div>` : ''}
+            ${letter.reply ? `
+                <div class="letter-reply">
+                    <div class="reply-label">💕 답장 <button class="regen-btn" id="letter-regen-reply" data-idx="${idx}">🔄</button></div>
+                    <div class="reply-content">${Utils.escapeHtml(letter.reply)}</div>
+                </div>
+            ` : ''}
             <button id="letter-back-list" class="btn-secondary">목록으로</button>
         </div>`;
     },
     
     async generateReply(content, charName) {
         const ctx = getContext();
-        const prompt = `[편지 답장] ${ctx.name1 || '나'}가 보낸 편지: "${content}"
-${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 없이):`;
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[편지 답장]
+${ctx.name1 || '나'}가 보낸 편지: "${content}"
+
+${charName}로서 진심어린 답장을 2-3문장으로 써줘.
+
+답장 내용만 출력:`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
-            return result.replace(/\*[^*]*\*/g, '').trim().substring(0, 200);
+            return Utils.cleanResponse(result).substring(0, 200);
         } catch { return null; }
     },
     
@@ -501,7 +554,6 @@ ${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 
         const data = this.getData(settings, charId);
         const userName = getContext().name1 || '나';
         
-        // 캐릭터 편지 시도
         if (!this.state.isGenerating) {
             this.state.isGenerating = true;
             document.getElementById('letter-content').innerHTML = '<div class="loading-state">💌 우편함 확인 중...</div>';
@@ -509,7 +561,7 @@ ${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 
             const charLetter = await this.tryCharacterLetter(settings, charId, charName, userName);
             if (charLetter) {
                 DataManager.save();
-                toastr.info(`💌 ${charName}에게서 편지가 도착했어요!`);
+                toastr.info(`💌 ${charName}에게서 편지가 왔어요!`);
             }
             this.state.isGenerating = false;
         }
@@ -521,7 +573,6 @@ ${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 
     bindEvents(Core) {
         document.getElementById('letter-write-btn')?.addEventListener('click', () => {
             const charName = getContext().name2 || '캐릭터';
-            this.state.viewMode = 'write';
             document.getElementById('letter-content').innerHTML = this.renderWrite(charName);
             this.bindWriteEvents(Core);
         });
@@ -534,20 +585,45 @@ ${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 
                 const idx = parseInt(el.dataset.idx);
                 const letter = data.letters[idx];
                 
-                // 읽음 처리
                 if (!letter.fromMe && !letter.read) {
                     letter.read = true;
                     DataManager.save();
                 }
                 
-                this.state.viewMode = 'view';
-                document.getElementById('letter-content').innerHTML = this.renderView(letter, charName, !letter.fromMe);
-                document.getElementById('letter-back-list')?.addEventListener('click', () => {
-                    this.state.viewMode = 'list';
-                    document.getElementById('letter-content').innerHTML = this.renderList(data, charName);
-                    this.bindListEvents(settings, charId, charName);
-                });
+                const isFromChar = !letter.fromMe;
+                document.getElementById('letter-content').innerHTML = this.renderView(letter, charName, isFromChar, idx);
+                this.bindViewEvents(settings, charId, charName, idx);
             };
+        });
+    },
+    
+    bindViewEvents(settings, charId, charName, idx) {
+        document.getElementById('letter-back-list')?.addEventListener('click', () => {
+            const data = this.getData(settings, charId);
+            document.getElementById('letter-content').innerHTML = this.renderList(data, charName);
+            this.bindListEvents(settings, charId, charName);
+        });
+        
+        document.getElementById('letter-regen-reply')?.addEventListener('click', async () => {
+            const data = this.getData(settings, charId);
+            const letter = data.letters[idx];
+            
+            const btn = document.getElementById('letter-regen-reply');
+            btn.disabled = true;
+            btn.textContent = '⏳';
+            
+            const reply = await this.generateReply(letter.content, charName);
+            if (reply) {
+                letter.reply = reply;
+                DataManager.save();
+                document.getElementById('letter-content').innerHTML = this.renderView(letter, charName, !letter.fromMe, idx);
+                this.bindViewEvents(settings, charId, charName, idx);
+                toastr.success('🔄 답장 재생성 완료!');
+            } else {
+                btn.disabled = false;
+                btn.textContent = '🔄';
+                toastr.error('재생성 실패');
+            }
         });
     },
     
@@ -556,22 +632,27 @@ ${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 
             const content = document.getElementById('letter-textarea')?.value.trim();
             if (!content) { toastr.warning('편지 내용을 입력해주세요!'); return; }
             
-            const ctx = getContext();
             const settings = Core.getSettings();
             const charId = Core.getCharId();
-            const charName = ctx.name2 || '캐릭터';
+            const charName = getContext().name2 || '캐릭터';
             const data = this.getData(settings, charId);
             
-            document.getElementById('letter-send').disabled = true;
-            document.getElementById('letter-send').textContent = `${charName} 님이 읽는 중...`;
+            const btn = document.getElementById('letter-send');
+            btn.disabled = true;
+            btn.textContent = `${charName} 님이 읽는 중...`;
             
             const reply = await this.generateReply(content, charName);
             
-            data.letters.push({ id: Utils.generateId(), date: Utils.getTodayKey(), content, reply, fromMe: true });
+            data.letters.push({
+                id: Utils.generateId(),
+                date: Utils.getTodayKey(),
+                content: content,
+                fromMe: true,
+                reply: reply,
+            });
             Core.saveSettings();
             
             toastr.success('💌 편지를 보냈습니다!');
-            this.state.viewMode = 'list';
             document.getElementById('letter-content').innerHTML = this.renderList(data, charName);
             this.bindListEvents(settings, charId, charName);
         });
@@ -579,7 +660,7 @@ ${charName}(으)로서 진심어린 답장 작성 (2-3문장, 한국어, 액션 
 };
 
 // ========================================
-// 독서기록 앱 (캐릭터 추천 기능)
+// 독서기록 앱
 // ========================================
 const BookApp = {
     id: 'book',
@@ -594,7 +675,6 @@ const BookApp = {
         return settings.appData[key];
     },
     
-    // 캐릭터가 책 추천 (25% 확률)
     async tryCharacterRecommend(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const today = Utils.getTodayKey();
@@ -606,20 +686,23 @@ const BookApp = {
         }
         
         const ctx = getContext();
-        const prompt = `[책 추천] ${charName}가 ${userName}에게 책을 추천해줘.
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[책 추천]
+${charName}가 ${userName}에게 책을 추천해줘.
+
 형식:
 제목: (책 제목)
-이유: (왜 추천하는지 1-2문장)
-한국어로, 실제 존재하거나 그럴듯한 책으로:`;
+이유: (왜 추천하는지 1-2문장)`;
         
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             let title = '', reason = '';
             for (const line of result.split('\n')) {
-                if (line.includes('제목:')) title = line.replace(/.*제목:\s*/, '').trim();
-                if (line.includes('이유:')) reason = line.replace(/.*이유:\s*/, '').trim();
+                if (line.includes('제목:')) title = Utils.cleanResponse(line.replace(/.*제목:\s*/, ''));
+                if (line.includes('이유:')) reason = Utils.cleanResponse(line.replace(/.*이유:\s*/, ''));
             }
-            if (!title) title = result.split('\n')[0]?.trim() || '추천 도서';
+            if (!title) title = Utils.cleanResponse(result.split('\n')[0]) || '추천 도서';
             
             if (title) {
                 data.books.push({
@@ -687,24 +770,34 @@ const BookApp = {
         </div>`;
     },
     
-    renderView(book, charName) {
+    renderView(book, charName, idx) {
         return `
         <div class="detail-card">
             <div class="detail-header">${book.fromChar ? '🎁 ' : '📖 '}${Utils.escapeHtml(book.title)}</div>
             <div class="detail-sub">${Utils.escapeHtml(book.author)} ${book.rating ? '· ' + '⭐'.repeat(book.rating) : ''}</div>
             ${book.review ? `<div class="detail-body">${Utils.escapeHtml(book.review)}</div>` : ''}
-            ${book.charComment ? `<div class="char-comment"><span class="char-name">${charName}</span>의 한마디<br>"${Utils.escapeHtml(book.charComment)}"</div>` : ''}
+            ${book.charComment ? `
+                <div class="char-comment">
+                    <span class="char-name">${charName}</span>의 한마디 <button class="regen-btn" id="book-regen" data-idx="${idx}">🔄</button>
+                    <br>"${Utils.escapeHtml(book.charComment)}"
+                </div>
+            ` : ''}
             <button id="book-back-list" class="btn-secondary">목록으로</button>
         </div>`;
     },
     
     async getRecommendation(title, charName) {
         const ctx = getContext();
-        const prompt = `[독서 토크] ${ctx.name1}가 "${title}" 책 읽는다고 함.
-${charName}(으)로서 이 책에 대한 생각이나 반응 (1-2문장, 한국어):`;
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[독서 토크]
+${ctx.name1}가 "${title}" 책 읽는다고 해.
+${charName}로서 이 책에 대한 생각이나 반응을 1-2문장으로 말해줘.
+
+반응만 출력:`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
-            return result.replace(/\*[^*]*\*/g, '').trim().substring(0, 150);
+            return Utils.cleanResponse(result).substring(0, 150);
         } catch { return null; }
     },
     
@@ -747,12 +840,39 @@ ${charName}(으)로서 이 책에 대한 생각이나 반응 (1-2문장, 한국�
                     DataManager.save();
                 }
                 
-                document.getElementById('book-content').innerHTML = this.renderView(book, charName);
-                document.getElementById('book-back-list')?.addEventListener('click', () => {
-                    document.getElementById('book-content').innerHTML = this.renderList(data, charName);
-                    this.bindListEvents(settings, charId, charName);
-                });
+                document.getElementById('book-content').innerHTML = this.renderView(book, charName, idx);
+                this.bindViewEvents(settings, charId, charName, idx);
             };
+        });
+    },
+    
+    bindViewEvents(settings, charId, charName, idx) {
+        document.getElementById('book-back-list')?.addEventListener('click', () => {
+            const data = this.getData(settings, charId);
+            document.getElementById('book-content').innerHTML = this.renderList(data, charName);
+            this.bindListEvents(settings, charId, charName);
+        });
+        
+        document.getElementById('book-regen')?.addEventListener('click', async () => {
+            const data = this.getData(settings, charId);
+            const book = data.books[idx];
+            
+            const btn = document.getElementById('book-regen');
+            btn.disabled = true;
+            btn.textContent = '⏳';
+            
+            const comment = await this.getRecommendation(book.title, charName);
+            if (comment) {
+                book.charComment = comment;
+                DataManager.save();
+                document.getElementById('book-content').innerHTML = this.renderView(book, charName, idx);
+                this.bindViewEvents(settings, charId, charName, idx);
+                toastr.success('🔄 재생성 완료!');
+            } else {
+                btn.disabled = false;
+                btn.textContent = '🔄';
+                toastr.error('재생성 실패');
+            }
         });
     },
     
@@ -796,7 +916,7 @@ ${charName}(으)로서 이 책에 대한 생각이나 반응 (1-2문장, 한국�
 };
 
 // ========================================
-// 영화기록 앱 (캐릭터 추천 기능)
+// 영화기록 앱
 // ========================================
 const MovieApp = {
     id: 'movie',
@@ -811,7 +931,6 @@ const MovieApp = {
         return settings.appData[key];
     },
     
-    // 캐릭터가 영화 추천 (25% 확률)
     async tryCharacterRecommend(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const today = Utils.getTodayKey();
@@ -823,22 +942,25 @@ const MovieApp = {
         }
         
         const ctx = getContext();
-        const prompt = `[영화 추천] ${charName}가 ${userName}에게 같이 보고 싶은 영화를 추천해줘.
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[영화 추천]
+${charName}가 ${userName}에게 같이 보고 싶은 영화를 추천해줘.
+
 형식:
 제목: (영화 제목)
 장르: (장르)
-이유: (왜 같이 보고 싶은지 1문장)
-한국어로:`;
+이유: (왜 같이 보고 싶은지 1문장)`;
         
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             let title = '', genre = '', reason = '';
             for (const line of result.split('\n')) {
-                if (line.includes('제목:')) title = line.replace(/.*제목:\s*/, '').trim();
-                if (line.includes('장르:')) genre = line.replace(/.*장르:\s*/, '').trim();
-                if (line.includes('이유:')) reason = line.replace(/.*이유:\s*/, '').trim();
+                if (line.includes('제목:')) title = Utils.cleanResponse(line.replace(/.*제목:\s*/, ''));
+                if (line.includes('장르:')) genre = Utils.cleanResponse(line.replace(/.*장르:\s*/, ''));
+                if (line.includes('이유:')) reason = Utils.cleanResponse(line.replace(/.*이유:\s*/, ''));
             }
-            if (!title) title = result.split('\n')[0]?.trim() || '추천 영화';
+            if (!title) title = Utils.cleanResponse(result.split('\n')[0]) || '추천 영화';
             
             if (title) {
                 data.movies.push({
@@ -906,24 +1028,34 @@ const MovieApp = {
         </div>`;
     },
     
-    renderView(movie, charName) {
+    renderView(movie, charName, idx) {
         return `
         <div class="detail-card">
             <div class="detail-header">${movie.fromChar ? '🎁 ' : '🎬 '}${Utils.escapeHtml(movie.title)}</div>
             <div class="detail-sub">${movie.genre || ''} ${movie.rating ? '· ' + '⭐'.repeat(movie.rating) : ''}</div>
             ${movie.review ? `<div class="detail-body">${Utils.escapeHtml(movie.review)}</div>` : ''}
-            ${movie.charComment ? `<div class="char-comment"><span class="char-name">${charName}</span>의 한마디<br>"${Utils.escapeHtml(movie.charComment)}"</div>` : ''}
+            ${movie.charComment ? `
+                <div class="char-comment">
+                    <span class="char-name">${charName}</span>의 한마디 <button class="regen-btn" id="movie-regen" data-idx="${idx}">🔄</button>
+                    <br>"${Utils.escapeHtml(movie.charComment)}"
+                </div>
+            ` : ''}
             <button id="movie-back-list" class="btn-secondary">목록으로</button>
         </div>`;
     },
     
     async getDiscussion(title, charName) {
         const ctx = getContext();
-        const prompt = `[영화 감상] ${ctx.name1}와 "${title}" 영화를 같이 봤어.
-${charName}(으)로서 이 영화 감상 (1-2문장, 한국어):`;
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[영화 감상]
+${ctx.name1}와 "${title}" 영화를 같이 봤어.
+${charName}로서 이 영화에 대한 감상을 1-2문장으로 말해줘.
+
+감상만 출력:`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
-            return result.replace(/\*[^*]*\*/g, '').trim().substring(0, 150);
+            return Utils.cleanResponse(result).substring(0, 150);
         } catch { return null; }
     },
     
@@ -966,12 +1098,39 @@ ${charName}(으)로서 이 영화 감상 (1-2문장, 한국어):`;
                     DataManager.save();
                 }
                 
-                document.getElementById('movie-content').innerHTML = this.renderView(movie, charName);
-                document.getElementById('movie-back-list')?.addEventListener('click', () => {
-                    document.getElementById('movie-content').innerHTML = this.renderList(data, charName);
-                    this.bindListEvents(settings, charId, charName);
-                });
+                document.getElementById('movie-content').innerHTML = this.renderView(movie, charName, idx);
+                this.bindViewEvents(settings, charId, charName, idx);
             };
+        });
+    },
+    
+    bindViewEvents(settings, charId, charName, idx) {
+        document.getElementById('movie-back-list')?.addEventListener('click', () => {
+            const data = this.getData(settings, charId);
+            document.getElementById('movie-content').innerHTML = this.renderList(data, charName);
+            this.bindListEvents(settings, charId, charName);
+        });
+        
+        document.getElementById('movie-regen')?.addEventListener('click', async () => {
+            const data = this.getData(settings, charId);
+            const movie = data.movies[idx];
+            
+            const btn = document.getElementById('movie-regen');
+            btn.disabled = true;
+            btn.textContent = '⏳';
+            
+            const comment = await this.getDiscussion(movie.title, charName);
+            if (comment) {
+                movie.charComment = comment;
+                DataManager.save();
+                document.getElementById('movie-content').innerHTML = this.renderView(movie, charName, idx);
+                this.bindViewEvents(settings, charId, charName, idx);
+                toastr.success('🔄 재생성 완료!');
+            } else {
+                btn.disabled = false;
+                btn.textContent = '🔄';
+                toastr.error('재생성 실패');
+            }
         });
     },
     
@@ -1015,7 +1174,7 @@ ${charName}(으)로서 이 영화 감상 (1-2문장, 한국어):`;
 };
 
 // ========================================
-// 일기장 앱 (캐릭터 일기 기능)
+// 일기장 앱
 // ========================================
 const DiaryApp = {
     id: 'diary',
@@ -1030,13 +1189,12 @@ const DiaryApp = {
         return settings.appData[key];
     },
     
-    // 캐릭터가 일기 쓰기 (20% 확률)
     async tryCharacterDiary(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const today = Utils.getTodayKey();
         
         if (data.lastCharDiaryDate === today) return null;
-        if (data.entries[today]?.charDiary) return null; // 이미 있으면 스킵
+        if (data.entries[today]?.charDiary) return null;
         if (!Utils.chance(20)) {
             data.lastCharDiaryDate = today;
             return null;
@@ -1046,13 +1204,17 @@ const DiaryApp = {
         const moods = ['😊', '🥰', '😴', '🤔', '😎'];
         const mood = moods[Math.floor(Math.random() * moods.length)];
         
-        const prompt = `[일기 쓰기] ${charName}가 오늘 하루를 일기로 써줘.
-${userName}에 대한 이야기나 오늘 있었던 일, 생각 등.
-2-3문장, 한국어, 자연스럽게, 액션(*) 없이:`;
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[일기 쓰기]
+${charName}가 오늘 하루를 일기로 써줘.
+${userName}에 대한 이야기나 오늘 있었던 일, 생각 등을 2-3문장으로.
+
+일기 내용만 출력:`;
         
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
-            const content = result.replace(/\*[^*]*\*/g, '').trim().substring(0, 300);
+            const content = Utils.cleanResponse(result).substring(0, 300);
             
             if (content && content.length > 10) {
                 if (!data.entries[today]) data.entries[today] = {};
@@ -1085,13 +1247,12 @@ ${userName}에 대한 이야기나 오늘 있었던 일, 생각 등.
         </div>`;
     },
     
-    renderEntry(entry, dateKey, charName, userName) {
+    renderEntry(entry, dateKey, charName, userName, settings, charId) {
         const hasMyEntry = entry?.content;
         const hasCharEntry = entry?.charDiary;
         
         let html = '';
         
-        // 캐릭터 일기 (있으면)
         if (hasCharEntry) {
             const charEntry = entry.charDiary;
             html += `
@@ -1101,16 +1262,19 @@ ${userName}에 대한 이야기나 오늘 있었던 일, 생각 등.
             </div>`;
         }
         
-        // 내 일기
         if (hasMyEntry) {
             html += `
             <div class="card">
                 <div class="card-label">📔 나의 일기 ${entry.mood || ''}</div>
                 <div class="diary-content">${Utils.escapeHtml(entry.content)}</div>
-                ${entry.charReply ? `<div class="char-comment"><span class="char-name">${charName}</span>의 답장<br>"${Utils.escapeHtml(entry.charReply)}"</div>` : ''}
+                ${entry.charReply ? `
+                    <div class="char-comment">
+                        <span class="char-name">${charName}</span>의 답장 <button class="regen-btn" id="diary-regen-reply">🔄</button>
+                        <br>"${Utils.escapeHtml(entry.charReply)}"
+                    </div>
+                ` : ''}
             </div>`;
         } else {
-            // 일기 쓰기 폼
             html += `
             <div class="card">
                 <div class="card-label">${Utils.formatDate(dateKey)} 일기</div>
@@ -1125,11 +1289,17 @@ ${userName}에 대한 이야기나 오늘 있었던 일, 생각 등.
     
     async generateReply(content, mood, charName) {
         const ctx = getContext();
-        const prompt = `[일기 답장] ${ctx.name1}의 오늘 일기 (기분: ${mood}): "${content}"
-${charName}(으)로서 따뜻한 답장 (1-2문장, 한국어, 위로/응원/공감):`;
+        const prompt = `${SYSTEM_INSTRUCTION}
+
+[일기 답장]
+${ctx.name1}의 오늘 일기 (기분: ${mood}): "${content}"
+
+${charName}로서 따뜻한 답장을 1-2문장으로 써줘. 위로, 응원, 공감 중 하나로.
+
+답장만 출력:`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
-            return result.replace(/\*[^*]*\*/g, '').trim().substring(0, 150);
+            return Utils.cleanResponse(result).substring(0, 150);
         } catch { return null; }
     },
     
@@ -1142,7 +1312,6 @@ ${charName}(으)로서 따뜻한 답장 (1-2문장, 한국어, 위로/응원/공
         const data = this.getData(settings, charId);
         const userName = getContext().name1 || '나';
         
-        // 캐릭터 일기 시도
         if (!this.state.isGenerating) {
             this.state.isGenerating = true;
             
@@ -1187,15 +1356,18 @@ ${charName}(으)로서 따뜻한 답장 (1-2문장, 한국어, 위로/응원/공
         const entry = data.entries[this.state.selectedDate];
         const userName = getContext().name1 || '나';
         
-        // 캐릭터 일기 읽음 처리
         if (entry?.charDiary && !entry.charDiary.read) {
             entry.charDiary.read = true;
             DataManager.save();
         }
         
-        document.getElementById('diary-entry-area').innerHTML = this.renderEntry(entry, this.state.selectedDate, charName, userName);
+        document.getElementById('diary-entry-area').innerHTML = this.renderEntry(entry, this.state.selectedDate, charName, userName, settings, charId);
         
-        if (!entry?.content) this.bindEntryEvents(settings, charId, charName);
+        if (!entry?.content) {
+            this.bindEntryEvents(settings, charId, charName);
+        } else {
+            this.bindRegenEvents(settings, charId, charName);
+        }
     },
     
     bindEvents(Core) {
@@ -1230,6 +1402,29 @@ ${charName}(으)로서 따뜻한 답장 (1-2문장, 한국어, 위로/응원/공
                 this.renderCalendar(settings, charId, charName);
                 this.showEntry(settings, charId, charName);
             };
+        });
+    },
+    
+    bindRegenEvents(settings, charId, charName) {
+        document.getElementById('diary-regen-reply')?.addEventListener('click', async () => {
+            const data = this.getData(settings, charId);
+            const entry = data.entries[this.state.selectedDate];
+            
+            const btn = document.getElementById('diary-regen-reply');
+            btn.disabled = true;
+            btn.textContent = '⏳';
+            
+            const charReply = await this.generateReply(entry.content, entry.mood, charName);
+            if (charReply) {
+                entry.charReply = charReply;
+                DataManager.save();
+                this.showEntry(settings, charId, charName);
+                toastr.success('🔄 답장 재생성 완료!');
+            } else {
+                btn.disabled = false;
+                btn.textContent = '🔄';
+                toastr.error('재생성 실패');
+            }
         });
     },
     
@@ -1272,7 +1467,7 @@ ${charName}(으)로서 따뜻한 답장 (1-2문장, 한국어, 위로/응원/공
 // Phone Core
 // ========================================
 const PhoneCore = {
-    apps: { sumone: SumOneApp, letter: LetterApp, book: BookApp, movie: MovieApp, diary: DiaryApp },
+    apps: { mundap: MundapApp, letter: LetterApp, book: BookApp, movie: MovieApp, diary: DiaryApp },
     pageHistory: [],
     currentPage: 'home',
     initialized: false,
@@ -1416,9 +1611,9 @@ const PhoneCore = {
         const html = `
         <div class="sumone-phone-settings">
             <div class="inline-drawer">
-                <div class="inline-drawer-toggle inline-drawer-header"><b>📱 썸원 폰</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
+                <div class="inline-drawer-toggle inline-drawer-header"><b>📱 폰</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
                 <div class="inline-drawer-content">
-                    <p style="margin:10px 0;opacity:0.7;">v1.8.0 - 캐릭터 자동 생성</p>
+                    <p style="margin:10px 0;opacity:0.7;">v2.0.0 - 프롬프트 강화 & 재생성</p>
                     <div style="margin:15px 0;"><b>앱 표시</b>
                         ${Object.entries(this.apps).map(([id, app]) => `<label style="display:flex;align-items:center;gap:8px;margin:8px 0;"><input type="checkbox" class="phone-app-toggle" data-app="${id}" ${settings.enabledApps?.[id] !== false ? 'checked' : ''}><span>${app.icon} ${app.name}</span></label>`).join('')}
                     </div>
@@ -1440,14 +1635,13 @@ const PhoneCore = {
     
     addMenuButton() {
         $('#sumone-phone-btn-container').remove();
-        $('#extensionsMenu').prepend(`<div id="sumone-phone-btn-container" class="extension_container interactable"><div id="sumone-phone-btn" class="list-group-item flex-container flexGap5 interactable"><div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton" style="color:#ff6b9d;"></div><span>썸원 폰</span></div></div>`);
+        $('#extensionsMenu').prepend(`<div id="sumone-phone-btn-container" class="extension_container interactable"><div id="sumone-phone-btn" class="list-group-item flex-container flexGap5 interactable"><div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton" style="color:#ff6b9d;"></div><span>폰</span></div></div>`);
         $('#sumone-phone-btn').on('click', () => this.openModal());
     },
     
     async init() {
-        console.log('[SumOne Phone] v1.9.0 로딩...');
+        console.log('[Phone] v2.0.0 로딩...');
         
-        // 데이터 먼저 로드
         await DataManager.load();
         this.initialized = true;
         
@@ -1456,7 +1650,7 @@ const PhoneCore = {
         this.setupEvents();
         setTimeout(() => this.addMenuButton(), 1000);
         eventSource.on(event_types.CHAT_CHANGED, () => this.applyWallpaper());
-        console.log('[SumOne Phone] 로딩 완료!');
+        console.log('[Phone] 로딩 완료!');
     },
 };
 
