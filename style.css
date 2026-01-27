@@ -743,7 +743,58 @@
     color: white;
 }
 
-/* 상세 피드 */
+/* 상세 피드 - 전체화면 */
+.phone-container .insta-fullscreen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #0a0a0a;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    border-radius: 32px;
+    overflow: hidden;
+}
+.phone-container .insta-fullscreen .insta-detail-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    background: #0a0a0a;
+}
+.phone-container .insta-fullscreen .insta-detail-body {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+.phone-container .insta-fullscreen .insta-detail-image {
+    width: 100%;
+    max-height: 300px;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.phone-container .insta-fullscreen .insta-detail-image img {
+    max-width: 100%;
+    max-height: 300px;
+    object-fit: contain;
+}
+.phone-container .insta-fullscreen .insta-comments {
+    flex: 1;
+    min-height: 100px;
+}
+.phone-container .insta-fullscreen .insta-comment-input {
+    flex-shrink: 0;
+    background: rgba(0,0,0,0.5);
+}
+
 .phone-container .insta-detail {
     display: flex;
     flex-direction: column;

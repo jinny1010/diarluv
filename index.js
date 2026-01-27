@@ -4,8 +4,7 @@ import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.j
 
 const extensionName = 'sumone-phone';
 const extensionFolderPath = `scripts/extensions/third_party/${extensionName}`;
-const getContext = () => SillyTavern.getContext();
-const ctx = getContext(); 
+const getContext = () => SillyTavern.getContext(); 
 
 // ========================================
 // System Prompt (Top Priority)
@@ -184,6 +183,20 @@ const Utils = {
         if (current.trim()) messages.push(current.trim());
         
         return messages.length > 0 ? messages : [text];
+    },
+    
+    bindLongPress(element, callback) {
+        let pressTimer;
+        const startPress = (e) => {
+            pressTimer = setTimeout(() => callback(e), 800);
+        };
+        const cancelPress = () => clearTimeout(pressTimer);
+        element.addEventListener('mousedown', startPress);
+        element.addEventListener('mouseup', cancelPress);
+        element.addEventListener('mouseleave', cancelPress);
+        element.addEventListener('touchstart', startPress);
+        element.addEventListener('touchend', cancelPress);
+        element.addEventListener('touchcancel', cancelPress);
     },
 };
 
@@ -724,6 +737,10 @@ Write only the message content:`;
     },
     
     bindEvents(Core) {
+        const settings = Core.getSettings();
+        const charId = Core.getCharId();
+        const charName = getContext().name2 || '캐릭터';
+        
         document.getElementById('msg-send')?.addEventListener('click', () => this.sendMessage(Core));
         document.getElementById('msg-input')?.addEventListener('keydown', e => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -733,44 +750,17 @@ Write only the message content:`;
         });
 
         document.querySelectorAll('.msg-bubble').forEach(bubble => {
-            let pressTimer;
-            
-            bubble.addEventListener('mousedown', (e) => {
-                pressTimer = setTimeout(() => {
-                    const msgId = bubble.dataset.msgId;
-                    if (confirm('이 메시지를 삭제할까요?')) {
-                        const settings = Core.getSettings();
-                        const charId = Core.getCharId();
-                        const data = this.getData(settings, charId);
-                        data.conversations = data.conversations.filter(m => m.id !== msgId);
-                        Core.saveSettings();
-                        document.getElementById('msg-container').innerHTML = this.renderMessages(data, ctx.name2 || '캐릭터');
-                        this.bindEvents(Core);
-                        toastr.success('메시지가 삭제되었어요');
-                    }
-                }, 800); // 0.8초 꾹 누르기
+            Utils.bindLongPress(bubble, () => {
+                const msgId = bubble.dataset.msgId;
+                if (confirm('이 메시지를 삭제할까요?')) {
+                    const data = this.getData(settings, charId);
+                    data.conversations = data.conversations.filter(m => m.id !== msgId);
+                    Core.saveSettings();
+                    document.getElementById('msg-container').innerHTML = this.renderMessages(data, charName);
+                    this.bindEvents(Core);
+                    toastr.success('메시지가 삭제되었어요');
+                }
             });
-            
-            bubble.addEventListener('mouseup', () => clearTimeout(pressTimer));
-            bubble.addEventListener('mouseleave', () => clearTimeout(pressTimer));
-            
-            bubble.addEventListener('touchstart', (e) => {
-                pressTimer = setTimeout(() => {
-                    const msgId = bubble.dataset.msgId;
-                    if (confirm('이 메시지를 삭제할까요?')) {
-                        const settings = Core.getSettings();
-                        const charId = Core.getCharId();
-                        const data = this.getData(settings, charId);
-                        data.conversations = data.conversations.filter(m => m.id !== msgId);
-                        Core.saveSettings();
-                        document.getElementById('msg-container').innerHTML = this.renderMessages(data, ctx.name2 || '캐릭터');
-                        this.bindEvents(Core);
-                        toastr.success('메시지가 삭제되었어요');
-                    }
-                }, 800);
-            });
-            
-            bubble.addEventListener('touchend', () => clearTimeout(pressTimer));
         });
     },
 
@@ -974,51 +964,27 @@ Write only the reply content:`;
     },
     
     bindEvents(Core) {
+        const settings = Core.getSettings();
+        const charId = Core.getCharId();
+        const charName = getContext().name2 || '캐릭터';
+        
         document.getElementById('letter-write-btn')?.addEventListener('click', () => {
-            const charName = getContext().name2 || '캐릭터';
             document.getElementById('letter-content').innerHTML = this.renderWrite(charName);
             this.bindWriteEvents(Core);
         });
 
         document.querySelectorAll('#letter-content .list-item').forEach(item => {
-            let pressTimer;
-            
-            item.addEventListener('mousedown', (e) => {
-                pressTimer = setTimeout(() => {
-                    const idx = parseInt(item.dataset.idx);
-                    if (confirm('이 편지를 삭제할까요?')) {
-                        const settings = Core.getSettings();
-                        const charId = Core.getCharId();
-                        const data = this.getData(settings, charId);
-                        data.letters.splice(idx, 1);
-                        Core.saveSettings();
-                        document.getElementById('letter-content').innerHTML = this.renderList(data, ctx.name2 || '캐릭터');
-                        this.bindEvents(Core);
-                        toastr.success('편지가 삭제되었어요');
-                    }
-                }, 800);
+            Utils.bindLongPress(item, () => {
+                const idx = parseInt(item.dataset.idx);
+                if (confirm('이 편지를 삭제할까요?')) {
+                    const data = this.getData(settings, charId);
+                    data.letters.splice(idx, 1);
+                    Core.saveSettings();
+                    document.getElementById('letter-content').innerHTML = this.renderList(data, charName);
+                    this.bindListEvents(settings, charId, charName);
+                    toastr.success('편지가 삭제되었어요');
+                }
             });
-            
-            item.addEventListener('mouseup', () => clearTimeout(pressTimer));
-            item.addEventListener('mouseleave', () => clearTimeout(pressTimer));
-            
-            item.addEventListener('touchstart', (e) => {
-                pressTimer = setTimeout(() => {
-                    const idx = parseInt(item.dataset.idx);
-                    if (confirm('이 편지를 삭제할까요?')) {
-                        const settings = Core.getSettings();
-                        const charId = Core.getCharId();
-                        const data = this.getData(settings, charId);
-                        data.letters.splice(idx, 1);
-                        Core.saveSettings();
-                        document.getElementById('letter-content').innerHTML = this.renderList(data, ctx.name2 || '캐릭터');
-                        this.bindEvents(Core);
-                        toastr.success('편지가 삭제되었어요');
-                    }
-                }, 800);
-            });
-            
-            item.addEventListener('touchend', () => clearTimeout(pressTimer));
         });
     },
     
@@ -2213,12 +2179,13 @@ Write only the prompt:`;
         }
     },
     
-    async generateCharacterComment(postCaption, charName) {
+    async generateCharacterComment(postCaption, charName, imageUrl = null) {
         const ctx = getContext();
-        const prompt = `${getSystemInstruction()}
+        let prompt = `${getSystemInstruction()}
 
 [Instagram Comment]
 ${ctx.name1 || 'User'} posted on Instagram: "${postCaption}"
+${imageUrl ? '(Photo attached)' : ''}
 
 As ${charName}, write a short comment (1-2 sentences).
 Stay in character based on your personality and relationship.
@@ -2355,7 +2322,7 @@ Write only the comment:`;
         }
         
         return `
-        <div class="insta-detail">
+        <div class="insta-fullscreen">
             <div class="insta-detail-header">
                 <button class="app-back-btn" id="insta-back-feed">◀</button>
                 <div class="insta-detail-author">
@@ -2367,24 +2334,26 @@ Write only the comment:`;
                 </div>
                 <span></span>
             </div>
-            <div class="insta-detail-image">
-                ${post.imageUrl 
-                    ? `<img src="${post.imageUrl}" alt="">`
-                    : `<div class="insta-image-placeholder">📷</div>`
-                }
-            </div>
-            <div class="insta-detail-actions">
-                <button class="insta-like-btn ${isLiked ? 'liked' : ''}" data-post-id="${post.id}">
-                    ${isLiked ? '❤️' : '🤍'} ${post.likes?.length || 0}
-                </button>
-                <span class="insta-date">${Utils.formatDate(post.date)}</span>
-            </div>
-            <div class="insta-detail-caption">
-                <span class="insta-caption-name">${authorName}</span>
-                ${Utils.escapeHtml(post.caption)}
-            </div>
-            <div class="insta-comments" id="insta-comments">
-                ${commentsHtml || '<div class="insta-no-comments">아직 댓글이 없어요</div>'}
+            <div class="insta-detail-body">
+                <div class="insta-detail-image">
+                    ${post.imageUrl 
+                        ? `<img src="${post.imageUrl}" alt="">`
+                        : `<div class="insta-image-placeholder">📷</div>`
+                    }
+                </div>
+                <div class="insta-detail-actions">
+                    <button class="insta-like-btn ${isLiked ? 'liked' : ''}" data-post-id="${post.id}">
+                        ${isLiked ? '❤️' : '🤍'} ${post.likes?.length || 0}
+                    </button>
+                    <span class="insta-date">${Utils.formatDate(post.date)}</span>
+                </div>
+                <div class="insta-detail-caption">
+                    <span class="insta-caption-name">${authorName}</span>
+                    ${Utils.escapeHtml(post.caption)}
+                </div>
+                <div class="insta-comments" id="insta-comments">
+                    ${commentsHtml || '<div class="insta-no-comments">아직 댓글이 없어요</div>'}
+                </div>
             </div>
             <div class="insta-comment-input">
                 <input type="text" id="insta-comment-text" placeholder="댓글 달기...">
@@ -2663,21 +2632,19 @@ Write only the comment:`;
             
             toastr.success('📸 게시물이 업로드되었어요!');
             
-            if (caption) {
-                const charName = ctx.name2 || '캐릭터';
-                const comment = await this.generateCharacterComment(caption, charName);
-                if (comment) {
-                    post.comments.push({
-                        id: Utils.generateId(),
-                        text: comment,
-                        isUser: false,
-                        charId: ctx.characterId,
-                        charName: charName,
-                        timestamp: Date.now()
-                    });
-                    Core.saveSettings();
-                    toastr.info(`💬 ${charName}님이 댓글을 달았어요!`);
-                }
+            const charName = ctx.name2 || '캐릭터';
+            const comment = await this.generateCharacterComment(caption || '사진을 올렸어요', charName, selectedImage);
+            if (comment) {
+                post.comments.push({
+                    id: Utils.generateId(),
+                    text: comment,
+                    isUser: false,
+                    charId: ctx.characterId,
+                    charName: charName,
+                    timestamp: Date.now()
+                });
+                Core.saveSettings();
+                toastr.info(`💬 ${charName}님이 댓글을 달았어요!`);
             }
             
             document.getElementById('insta-content').innerHTML = this.renderMyPosts(data);
