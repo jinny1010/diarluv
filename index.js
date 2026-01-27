@@ -610,7 +610,7 @@ Write only the message content:`;
                 const isLast = i === bubbles.length - 1;
                 html += `
                     <div class="msg-bubble-wrap ${msg.fromMe ? 'sent' : 'received'}">
-                        <div class="msg-bubble ${msg.fromMe ? 'sent' : 'received'}">${Utils.escapeHtml(bubbles[i])}</div>
+                        <div class="msg-bubble ${msg.fromMe ? 'sent' : 'received'}" data-msg-id="${msg.id}">${Utils.escapeHtml(bubbles[i])}</div>
                         ${isLast ? `<div class="msg-time">${time}</div>` : ''}
                     </div>`;
             }
@@ -729,6 +729,47 @@ Write only the message content:`;
                 e.preventDefault();
                 this.sendMessage(Core);
             }
+        });
+
+        document.querySelectorAll('.msg-bubble').forEach(bubble => {
+            let pressTimer;
+            
+            bubble.addEventListener('mousedown', (e) => {
+                pressTimer = setTimeout(() => {
+                    const msgId = bubble.dataset.msgId;
+                    if (confirm('이 메시지를 삭제할까요?')) {
+                        const settings = Core.getSettings();
+                        const charId = Core.getCharId();
+                        const data = this.getData(settings, charId);
+                        data.conversations = data.conversations.filter(m => m.id !== msgId);
+                        Core.saveSettings();
+                        document.getElementById('msg-container').innerHTML = this.renderMessages(data, ctx.name2 || '캐릭터');
+                        this.bindEvents(Core);
+                        toastr.success('메시지가 삭제되었어요');
+                    }
+                }, 800); // 0.8초 꾹 누르기
+            });
+            
+            bubble.addEventListener('mouseup', () => clearTimeout(pressTimer));
+            bubble.addEventListener('mouseleave', () => clearTimeout(pressTimer));
+            
+            bubble.addEventListener('touchstart', (e) => {
+                pressTimer = setTimeout(() => {
+                    const msgId = bubble.dataset.msgId;
+                    if (confirm('이 메시지를 삭제할까요?')) {
+                        const settings = Core.getSettings();
+                        const charId = Core.getCharId();
+                        const data = this.getData(settings, charId);
+                        data.conversations = data.conversations.filter(m => m.id !== msgId);
+                        Core.saveSettings();
+                        document.getElementById('msg-container').innerHTML = this.renderMessages(data, ctx.name2 || '캐릭터');
+                        this.bindEvents(Core);
+                        toastr.success('메시지가 삭제되었어요');
+                    }
+                }, 800);
+            });
+            
+            bubble.addEventListener('touchend', () => clearTimeout(pressTimer));
         });
     },
 
@@ -936,6 +977,47 @@ Write only the reply content:`;
             const charName = getContext().name2 || '캐릭터';
             document.getElementById('letter-content').innerHTML = this.renderWrite(charName);
             this.bindWriteEvents(Core);
+        });
+
+        document.querySelectorAll('#letter-content .list-item').forEach(item => {
+            let pressTimer;
+            
+            item.addEventListener('mousedown', (e) => {
+                pressTimer = setTimeout(() => {
+                    const idx = parseInt(item.dataset.idx);
+                    if (confirm('이 편지를 삭제할까요?')) {
+                        const settings = Core.getSettings();
+                        const charId = Core.getCharId();
+                        const data = this.getData(settings, charId);
+                        data.letters.splice(idx, 1);
+                        Core.saveSettings();
+                        document.getElementById('letter-content').innerHTML = this.renderList(data, ctx.name2 || '캐릭터');
+                        this.bindEvents(Core);
+                        toastr.success('편지가 삭제되었어요');
+                    }
+                }, 800);
+            });
+            
+            item.addEventListener('mouseup', () => clearTimeout(pressTimer));
+            item.addEventListener('mouseleave', () => clearTimeout(pressTimer));
+            
+            item.addEventListener('touchstart', (e) => {
+                pressTimer = setTimeout(() => {
+                    const idx = parseInt(item.dataset.idx);
+                    if (confirm('이 편지를 삭제할까요?')) {
+                        const settings = Core.getSettings();
+                        const charId = Core.getCharId();
+                        const data = this.getData(settings, charId);
+                        data.letters.splice(idx, 1);
+                        Core.saveSettings();
+                        document.getElementById('letter-content').innerHTML = this.renderList(data, ctx.name2 || '캐릭터');
+                        this.bindEvents(Core);
+                        toastr.success('편지가 삭제되었어요');
+                    }
+                }, 800);
+            });
+            
+            item.addEventListener('touchend', () => clearTimeout(pressTimer));
         });
     },
     
