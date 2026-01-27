@@ -2765,6 +2765,7 @@ Write only the prompt:`;
         const data = this.getData(settings, charId);
         const charList = this.getCharacterList();
         const ctx = getContext();
+        const charName = ctx.name2 || '캐릭터';
         
         let selectedImage = null;
         
