@@ -465,9 +465,6 @@
     .phone-modal { padding: 0; align-items: flex-start; padding-top: 5vh; }
 }
 
-/* ========================================
-   문자 앱 (iMessage Style)
-   ======================================== */
 .phone-container .msg-header {
     display: flex;
     align-items: center;
@@ -587,6 +584,14 @@
 }
 .phone-container .msg-send-btn:hover {
     filter: brightness(1.1);
+}
+
+.phone-container .msg-avatar img,
+.phone-container img.msg-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
 }
 
 /* 타이핑 인디케이터 */
