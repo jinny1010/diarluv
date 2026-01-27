@@ -149,12 +149,15 @@ const Utils = {
         text = text.replace(/<think>[\s\S]*/gi, '');
         
         return text
-            .replace(/\*[^*]*\*/g, '')
+            .replace(/```[\w]*\n?/g, '')
+            .replace(/'''[\w]*\n?/g, '')
+            .replace(/\*\*([^*]+)\*\*/g, '$1')
+            .replace(/\*([^*]+)\*/g, '$1')
             .replace(/「[^」]*」/g, '')
             .replace(/『[^』]*』/g, '')
             .replace(/^\s*["']|["']\s*$/g, '')
-            .replace(/[ \t]+/g, ' ')  
-            .replace(/\n{3,}/g, '\n\n')  
+            .replace(/[ \t]+/g, ' ')
+            .replace(/\n{3,}/g, '\n\n')
             .trim();
     },
 
@@ -2366,22 +2369,23 @@ Write only the prompt:`;
         }
     },
 
-    // NPC 댓글 생성 (poster와 commenter 모두 고려)
     async generateNPCComment(postCaption, posterName, commenterName, commenterDesc) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
-
-[Instagram Comment]
-${posterName} posted a photo on Instagram.
-${postCaption ? `Caption: "${postCaption}"` : '(No caption)'}
-
-As ${commenterName}, write a short comment (1-2 sentences).
-${commenterDesc ? `Your character: ${commenterDesc.substring(0, 200)}` : ''}
-React naturally based on your personality and your relationship with ${posterName}.
-Can include emojis.
-
-Write only the comment:`;
-
+    
+    [Instagram Comment]
+    ${posterName} posted a photo on Instagram.
+    ${postCaption ? `Caption: "${postCaption}"` : '(No caption)'}
+    
+    As ${commenterName}, write a short comment (1-2 sentences).
+    ${commenterDesc ? `Your character: ${commenterDesc.substring(0, 200)}` : ''}
+    React naturally based on your personality and your relationship with ${posterName}.
+    Can include emojis.
+    
+    IMPORTANT: Write ONLY the comment text. No markdown, no formatting, no quotes.
+    
+    Write only the comment:`;
+    
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             return Utils.cleanResponse(result).substring(0, 200);
@@ -2389,8 +2393,7 @@ Write only the comment:`;
             return null;
         }
     },
-
-    // 인기도 기반 좋아요 개수 계산
+    
     async calculateLikes(posterName, posterDesc, isUser = false) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
@@ -2429,26 +2432,20 @@ Answer with ONLY a number 1-5:`;
         }
     },
 
-    // NPC 자동 참여 (좋아요 + 댓글) 생성
     async generateNPCEngagement(post, posterName, posterDesc, isUserPost = false) {
         const ctx = getContext();
         
-        // NPC 목록 가져오기 (1:1이면 디스크립션에서 추출, 그룹이면 멤버 목록)
         const npcList = await this.getNPCList();
         
-        // 좋아요 개수 계산
         const likeCount = await this.calculateLikes(posterName, posterDesc, isUserPost);
         
-        // 좋아요 리스트 생성 (익명 NPC + 실제 캐릭터/NPC)
         const likes = [];
         
         if (isUserPost) {
-            // 유저 포스트면 모든 NPC가 좋아요
             npcList.forEach(npc => {
                 likes.push({ type: 'npc', id: npc.id, name: npc.name });
             });
         } else {
-            // 캐릭터/NPC 포스트면 유저 + 다른 NPC들이 좋아요 (포스터 제외)
             likes.push({ type: 'user', name: ctx.name1 || 'User' });
             npcList.forEach(npc => {
                 if (npc.name !== posterName) {
@@ -2457,7 +2454,6 @@ Answer with ONLY a number 1-5:`;
             });
         }
         
-        // 나머지는 익명 NPC로 채우기
         const anonymousCount = Math.max(0, likeCount - likes.length);
         for (let i = 0; i < anonymousCount; i++) {
             likes.push({ type: 'anonymous' });
@@ -2466,8 +2462,6 @@ Answer with ONLY a number 1-5:`;
         post.likes = likes;
         post.likeCount = likeCount;
         
-        // NPC 댓글 생성 (1-3개)
-        // 포스터를 제외한 NPC들 중에서 선택
         const availableCommenters = npcList.filter(npc => npc.name !== posterName);
         const commentCount = Math.min(availableCommenters.length, Math.floor(Math.random() * 3) + 1);
         const commenters = [...availableCommenters].sort(() => Math.random() - 0.5).slice(0, commentCount);
@@ -2481,7 +2475,7 @@ Answer with ONLY a number 1-5:`;
             );
             
             if (comment) {
-                post.comments.push({
+                const commentObj = {
                     id: Utils.generateId(),
                     text: comment,
                     isUser: false,
@@ -2489,12 +2483,51 @@ Answer with ONLY a number 1-5:`;
                     npcId: commenter.id,
                     charName: commenter.name,
                     timestamp: Date.now() + Math.random() * 60000,
-                    replies: [] // 답글 지원
-                });
+                    replies: []
+                };
+                
+                if (!isUserPost && Utils.chance(50)) {
+                    const replyText = await this.generatePosterReply(post.caption, posterName, commenter.name, comment);
+                    if (replyText) {
+                        commentObj.replies.push({
+                            id: Utils.generateId(),
+                            text: replyText,
+                            charName: posterName,
+                            isUser: false,
+                            timestamp: Date.now() + Math.random() * 120000
+                        });
+                    }
+                }
+                
+                post.comments.push(commentObj);
             }
         }
         
         return post;
+    },
+    
+    async generatePosterReply(postCaption, posterName, commenterName, commentText) {
+        const ctx = getContext();
+        const prompt = `${getSystemInstruction()}
+    
+    [Instagram Reply]
+    ${commenterName} commented on ${posterName}'s post: "${commentText}"
+    Original post caption: "${postCaption}"
+    
+    As ${posterName}, write a short reply (1 sentence).
+    React naturally to the comment.
+    Can include emojis.
+    
+    IMPORTANT: Write ONLY the reply text. No markdown, no formatting.
+    
+    Write only the reply:`;
+    
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            return Utils.cleanResponse(result).substring(0, 150);
+        } catch {
+            return null;
+        }
     },
     
     // 메인 render
@@ -2532,7 +2565,6 @@ Answer with ONLY a number 1-5:`;
             return `<div class="empty-state">📸<br>아직 게시물이 없어요<br><small style="opacity:0.6;">캐릭터가 인스타를 올리면 여기에 표시돼요</small></div>`;
         }
         
-        // NPC 프로필 표시 (포스트가 있는 NPC만)
         let profilesHtml = `<div class="insta-profiles">`;
         const postersWithPosts = new Set(Object.keys(data.charPosts).filter(k => data.charPosts[k]?.length > 0));
         
@@ -2597,13 +2629,11 @@ Answer with ONLY a number 1-5:`;
             authorAvatar = userAvatar;
             authorName = userName;
         } else {
-            // NPC 목록에서 찾기
             const npcInfo = npcList.find(c => c.id == post.posterId || c.name == post.charName);
             authorAvatar = npcInfo?.avatar || '';
             authorName = post.charName || npcInfo?.name || '캐릭터';
         }
         
-        // 유저 좋아요 여부 확인 (새 구조와 구 구조 모두 지원)
         const isLiked = post.likes?.some(l => 
             l === 'user' || (typeof l === 'object' && l.type === 'user')
         );
@@ -2627,7 +2657,6 @@ Answer with ONLY a number 1-5:`;
                     `).join('');
                 }
                 
-                // NPC 댓글에만 답글 버튼 표시 (유저 포스트가 아니고, NPC 댓글인 경우)
                 const showReplyBtn = !isUserPost && !isUserComment && !comment.replies?.length;
                 
                 return `
@@ -2807,7 +2836,6 @@ Answer with ONLY a number 1-5:`;
             });
         });
         
-        // NPC 프로필 클릭
         document.querySelectorAll('.insta-profile').forEach(profile => {
             profile.addEventListener('click', () => {
                 const npcId = profile.dataset.npcId || profile.dataset.charId;
@@ -2898,7 +2926,6 @@ Answer with ONLY a number 1-5:`;
             Core.saveSettings();
         });
         
-        // NPC 댓글에 답글 버튼 이벤트
         document.querySelectorAll('.insta-reply-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 const commentId = btn.dataset.commentId;
@@ -2907,7 +2934,6 @@ Answer with ONLY a number 1-5:`;
                 
                 if (!comment) return;
                 
-                // 답글 생성 (포스터가 답글)
                 const posterName = post.charName;
                 const commenterName = comment.charName;
                 
@@ -2941,7 +2967,6 @@ Write only the reply:`;
                     Core.saveSettings();
                     toastr.success(`💬 ${posterName}님이 답글을 달았어요!`);
                     
-                    // UI 갱신
                     document.getElementById('insta-content').innerHTML = this.renderPostDetail(post, isUser, npcList);
                     this.bindDetailEvents(Core);
                 } catch (err) {
@@ -2969,7 +2994,6 @@ Write only the reply:`;
             input.value = '';
             Core.saveSettings();
             
-            // 캐릭터/NPC 포스트에 유저가 댓글 달면 포스터가 답글
             if (!isUser) {
                 const posterName = post.charName;
                 const reply = await this.generateCharacterComment(text, posterName);
