@@ -1,8 +1,3 @@
-// ========================================
-// Phone v2.1.0
-// 문자 앱, 색상 커스터마이징, 프롬프트 영어화
-// ========================================
-
 import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 
@@ -496,9 +491,10 @@ const MessageApp = {
 
 [Text Message]
 ${charName} is sending a casual text message to ${userName}.
-Write a natural, warm text message like you would send to someone you love.
-Topics: missing them, asking about their day, sharing something funny, sending love, random cute thought.
-Keep it natural and sweet, 2-4 sentences.
+Write a natural text message to ${userName}.
+Topics: asking about their day, sharing something, random thought, or anything fitting your character.
+Stay in character based on your personality and relationship.
+2-4 sentences.
 
 Write only the message content:`;
         
@@ -555,7 +551,8 @@ Write only the message content:`;
     
     As ${charName}, reply to this text message naturally.
     Be aware of the current time when replying.
-    Be warm, loving, and conversational. 1-3 sentences.
+    Stay in character based on your personality and relationship with ${userName}.
+    1-3 sentences.
     
     Write only the reply:`;
         
@@ -772,12 +769,13 @@ const LetterApp = {
     [Love Letter Writing]
     ${charName} is writing a heartfelt letter to ${userName}.
     
-    Write a warm, emotional letter filled with genuine feelings. Express:
-    - Deep affection and love
-    - Specific memories or moments you cherish together  
-    - How they make you feel special
-    - Hopes and dreams for your future together
-    - Words you find hard to say in person
+   Write a letter that fits your character and relationship with ${userName}. Express:
+    - Your honest thoughts and feelings
+    - Memories or moments you remember
+    - Things you want to say to them
+    - Your perspective on your relationship
+    
+    Stay in character. Write authentically based on your personality.
     
     IMPORTANT: Separate each paragraph with a blank line for readability.
     Write 3-4 paragraphs. Pour your heart out.
@@ -892,9 +890,10 @@ const LetterApp = {
 [Love Letter Reply]
 ${ctx.name1 || '나'} sent this heartfelt letter: "${content}"
 
-As ${charName}, write a warm, emotional reply.
-Express your genuine feelings, appreciation, and love.
-Make it personal and touching, 3-5 sentences.
+As ${charName}, write a reply to this letter.
+Express your honest feelings and thoughts.
+Stay in character based on your personality and relationship.
+3-5 sentences.
 
 Write only the reply content:`;
         try {
