@@ -2803,6 +2803,23 @@ Write only the prompt:`;
             const likes = await this.generateLikes(true);
             const npcComments = await this.generateNPCComments(caption, charName, true);
             
+            const charComment = await this.generateCharacterComment(caption || '사진을 올렸어요', charName, selectedImage);
+            
+            let allComments = [...npcComments];
+            if (charComment) {
+                const charCommentObj = {
+                    id: Utils.generateId(),
+                    text: charComment,
+                    isUser: false,
+                    charId: ctx.characterId,
+                    charName: charName,
+                    timestamp: Date.now()
+                };
+                
+                const insertIdx = Math.floor(Math.random() * (allComments.length + 1));
+                allComments.splice(insertIdx, 0, charCommentObj);
+            }
+            
             const post = {
                 id: Utils.generateId(),
                 date: Utils.getTodayKey(),
@@ -2810,26 +2827,14 @@ Write only the prompt:`;
                 caption: caption,
                 imageUrl: selectedImage,
                 likes: likes,
-                comments: npcComments
+                comments: allComments
             };
             
             data.userPosts.unshift(post);
             Core.saveSettings();
             
             toastr.success('📸 게시물이 업로드되었어요!');
-            
-            const charName = ctx.name2 || '캐릭터';
-            const comment = await this.generateCharacterComment(caption || '사진을 올렸어요', charName, selectedImage);
-            if (comment) {
-                post.comments.push({
-                    id: Utils.generateId(),
-                    text: comment,
-                    isUser: false,
-                    charId: ctx.characterId,
-                    charName: charName,
-                    timestamp: Date.now()
-                });
-                Core.saveSettings();
+            if (charComment) {
                 toastr.info(`💬 ${charName}님이 댓글을 달았어요!`);
             }
             
