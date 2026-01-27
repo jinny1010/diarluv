@@ -614,3 +614,360 @@
     0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
     30% { transform: translateY(-4px); opacity: 1; }
 }
+
+/* ========================================
+   인스타 앱 (Instagram Style)
+   ======================================== */
+
+/* 탭 */
+.phone-container .insta-tabs {
+    display: flex;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    flex-shrink: 0;
+}
+.phone-container .insta-tab {
+    flex: 1;
+    padding: 12px;
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.5);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.phone-container .insta-tab.active {
+    color: var(--phone-primary);
+    border-bottom: 2px solid var(--phone-primary);
+}
+
+/* 프로필 목록 (스토리처럼) */
+.phone-container .insta-profiles {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    overflow-x: auto;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.phone-container .insta-profiles::-webkit-scrollbar {
+    display: none;
+}
+.phone-container .insta-profile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.phone-container .insta-profile-img {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 2px solid var(--phone-primary);
+    padding: 2px;
+    object-fit: cover;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(var(--phone-primary-rgb), 0.2);
+    color: var(--phone-primary);
+    font-weight: bold;
+    font-size: 18px;
+}
+.phone-container .insta-profile-img img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+.phone-container .insta-profile-name {
+    font-size: 11px;
+    color: white;
+    max-width: 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.phone-container .insta-profile-count {
+    font-size: 10px;
+    color: rgba(255,255,255,0.5);
+}
+
+/* 3열 그리드 */
+.phone-container .insta-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2px;
+    padding: 2px;
+}
+.phone-container .insta-thumb {
+    aspect-ratio: 1;
+    background: rgba(255,255,255,0.05);
+    cursor: pointer;
+    overflow: hidden;
+}
+.phone-container .insta-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.2s;
+}
+.phone-container .insta-thumb:hover img {
+    transform: scale(1.05);
+}
+.phone-container .insta-thumb-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: rgba(255,255,255,0.3);
+}
+
+/* 캐릭터 피드 헤더 */
+.phone-container .insta-char-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    font-weight: 600;
+    color: white;
+}
+
+/* 상세 피드 */
+.phone-container .insta-detail {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+.phone-container .insta-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.phone-container .insta-detail-author {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.phone-container .insta-author-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: rgba(var(--phone-primary-rgb), 0.2);
+    color: var(--phone-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 14px;
+}
+.phone-container .insta-author-name {
+    font-weight: 600;
+    color: white;
+    font-size: 14px;
+}
+.phone-container .insta-detail-image {
+    width: 100%;
+    aspect-ratio: 1;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.phone-container .insta-detail-image img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+.phone-container .insta-image-placeholder {
+    font-size: 48px;
+    color: rgba(255,255,255,0.3);
+}
+.phone-container .insta-detail-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+}
+.phone-container .insta-like-btn {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.phone-container .insta-like-btn.liked {
+    color: #ff3b5c;
+}
+.phone-container .insta-date {
+    font-size: 12px;
+    color: rgba(255,255,255,0.5);
+}
+.phone-container .insta-detail-caption {
+    padding: 0 12px 12px;
+    font-size: 14px;
+    color: rgba(255,255,255,0.9);
+    line-height: 1.4;
+}
+.phone-container .insta-caption-name {
+    font-weight: 600;
+    margin-right: 6px;
+    color: white;
+}
+
+/* 댓글 */
+.phone-container .insta-comments {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+.phone-container .insta-no-comments {
+    text-align: center;
+    color: rgba(255,255,255,0.4);
+    font-size: 13px;
+    padding: 20px;
+}
+.phone-container .insta-comment {
+    display: flex;
+    gap: 10px;
+}
+.phone-container .insta-comment-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: rgba(var(--phone-primary-rgb), 0.2);
+    color: var(--phone-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+.phone-container .insta-comment-content {
+    flex: 1;
+    font-size: 13px;
+    line-height: 1.4;
+}
+.phone-container .insta-comment-name {
+    font-weight: 600;
+    color: white;
+    margin-right: 6px;
+}
+.phone-container .insta-comment-text {
+    color: rgba(255,255,255,0.85);
+}
+
+/* 댓글 입력 */
+.phone-container .insta-comment-input {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    background: rgba(0,0,0,0.3);
+}
+.phone-container .insta-comment-input input {
+    flex: 1;
+    background: rgba(255,255,255,0.1);
+    border: none;
+    border-radius: 20px;
+    padding: 10px 14px;
+    color: white;
+    font-size: 14px;
+}
+.phone-container .insta-comment-input input::placeholder {
+    color: rgba(255,255,255,0.4);
+}
+.phone-container .insta-comment-input input:focus {
+    outline: none;
+    background: rgba(255,255,255,0.15);
+}
+.phone-container #insta-comment-send {
+    background: var(--phone-primary);
+    border: none;
+    border-radius: 20px;
+    padding: 10px 16px;
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.phone-container #insta-comment-send:hover {
+    filter: brightness(1.1);
+}
+
+/* 업로드 */
+.phone-container .insta-upload {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+.phone-container .insta-upload-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.phone-container .insta-upload-preview {
+    width: 100%;
+    aspect-ratio: 1;
+    background: rgba(255,255,255,0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.phone-container .insta-upload-preview img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+.phone-container .insta-upload-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    color: rgba(255,255,255,0.4);
+    font-size: 14px;
+}
+.phone-container .insta-upload-placeholder span:first-child {
+    font-size: 48px;
+}
+.phone-container .insta-upload textarea {
+    flex: 1;
+    margin: 12px;
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    color: white;
+    font-size: 14px;
+    resize: none;
+    min-height: 80px;
+}
+.phone-container .insta-upload textarea::placeholder {
+    color: rgba(255,255,255,0.4);
+}
+.phone-container .insta-upload textarea:focus {
+    outline: none;
+    border-color: var(--phone-primary);
+}
+.phone-container .insta-upload .btn-secondary {
+    margin: 0 12px;
+}
