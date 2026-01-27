@@ -5,6 +5,7 @@ import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.j
 const extensionName = 'sumone-phone';
 const extensionFolderPath = `scripts/extensions/third_party/${extensionName}`;
 const getContext = () => SillyTavern.getContext();
+const ctx = getContext(); 
 
 // ========================================
 // System Prompt (Top Priority)
