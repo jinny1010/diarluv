@@ -314,6 +314,12 @@
 /* Diary */
 .phone-container .diary-content { font-size: 14px; line-height: 1.7; color: rgba(255,255,255,0.85); white-space: pre-wrap; }
 
+.phone-container #diary-today-btn {
+    width: auto;
+    padding: 0 12px;
+    font-size: 13px;
+}
+
 /* Notification & Unread */
 .phone-container .notification-banner {
     background: linear-gradient(135deg, var(--phone-primary), var(--phone-primary-dark));
