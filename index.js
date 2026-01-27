@@ -2181,17 +2181,18 @@ Write only the prompt:`;
     
     async generateCharacterComment(postCaption, charName, imageUrl = null) {
         const ctx = getContext();
-        let prompt = `${getSystemInstruction()}
-
-[Instagram Comment]
-${ctx.name1 || 'User'} posted on Instagram: "${postCaption}"
-${imageUrl ? '(Photo attached)' : ''}
-
-As ${charName}, write a short comment (1-2 sentences).
-Stay in character based on your personality and relationship.
-Can include emojis.
-
-Write only the comment:`;
+        const prompt = `${getSystemInstruction()}
+    
+    [Instagram Comment]
+    ${ctx.name1 || 'User'} posted a photo on Instagram.
+    ${postCaption ? `Caption: "${postCaption}"` : '(No caption)'}
+    
+    As ${charName}, write a short comment (1-2 sentences).
+    React naturally as if you saw a nice photo.
+    Stay in character based on your personality and relationship.
+    Can include emojis.
+    
+    Write only the comment:`;
 
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
@@ -2368,7 +2369,7 @@ Write only the comment:`;
             <div class="insta-upload-header">
                 <button class="app-back-btn" id="insta-upload-cancel">✕</button>
                 <span class="app-title">새 게시물</span>
-                <button class="app-nav-btn" id="insta-upload-submit">공유</button>
+                <button class="app-nav-btn" id="insta-upload-submit" style="padding:0 12px;">공유</button>
             </div>
             <div class="insta-upload-preview" id="insta-upload-preview">
                 <div class="insta-upload-placeholder">
