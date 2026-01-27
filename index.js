@@ -2015,68 +2015,145 @@ const InstaApp = {
         return settings.appData[key];
     },
     
-    // 디스크립션/로어북에서 NPC 목록 추출
     async extractNPCs(forceRefresh = false) {
         const ctx = getContext();
         const settings = PhoneCore.getSettings();
         const charId = PhoneCore.getCharId();
         const data = this.getData(settings, charId);
         
-        // 캐시가 있고 강제 새로고침이 아니면 캐시 반환
         if (data.npcList && !forceRefresh) {
             return data.npcList;
         }
         
         const charData = ctx.characters?.[ctx.characterId];
+        const mainCharName = charData?.name || ctx.name2 || '';
+        const userName = ctx.name1 || 'User';
         const description = charData?.description || '';
         const personality = charData?.personality || '';
         const scenario = charData?.scenario || '';
         const mesExamples = charData?.mes_example || '';
         
-        // 로어북 정보 가져오기
         let lorebookInfo = '';
         try {
             const lorebook = ctx.chat_metadata?.world_info || [];
             if (Array.isArray(lorebook)) {
                 lorebookInfo = lorebook.map(entry => entry.content || '').join('\n').substring(0, 1000);
             }
-        } catch (e) {
-            console.log('[Insta] Lorebook fetch failed:', e);
-        }
+        } catch (e) {}
         
-        const combinedContext = `${description}\n${personality}\n${scenario}\n${mesExamples}\n${lorebookInfo}`.substring(0, 3000);
+        let historyInfo = '';
+        try {
+            const recentChat = ctx.chat?.slice(-20) || [];
+            const names = new Set();
+            recentChat.forEach(msg => {
+                if (msg.name && msg.name !== userName && msg.name !== mainCharName) {
+                    names.add(msg.name);
+                }
+            });
+            if (names.size > 0) {
+                historyInfo = `Characters mentioned in chat: ${[...names].join(', ')}`;
+            }
+        } catch (e) {}
+        
+        const combinedContext = `${description}\n${personality}\n${scenario}\n${mesExamples}\n${lorebookInfo}\n${historyInfo}`.substring(0, 3000);
         
         const prompt = `${getSystemInstruction()}
-
-[NPC Extraction Task]
-Extract all named characters/people from this character description.
-These are NPCs who might interact on social media.
-
-Context:
-${combinedContext}
-
-List all named characters with brief descriptions.
-Format each as: NAME | BRIEF_DESCRIPTION (personality, relationship to main character)
-
-Rules:
-- Include the main character(s) too
-- Only real named characters, not generic terms
-- Maximum 10 characters
-- If no clear characters found, list at least the main character name
-
-Example output:
-John Price | Team leader, serious but caring, mentor figure
-Simon "Ghost" Riley | Mysterious, wears skull mask, loyal teammate
-Kyle "Gaz" Garrick | Young soldier, optimistic, skilled
-
-List the characters:`;
-
+    
+    [NPC Extraction Task]
+    Extract supporting characters (NPCs) from this context.
+    EXCLUDE: Main character "${mainCharName}" and user "${userName}"
+    
+    Context:
+    ${combinedContext}
+    
+    List only SUPPORTING characters with brief descriptions.
+    Format: NAME | BRIEF_DESCRIPTION
+    
+    Rules:
+    - Do NOT include "${mainCharName}" or "${userName}"
+    - Only named characters, not generic terms
+    - Maximum 8 characters
+    - If description contains multiple main characters (like A, B, C format), list ALL of them
+    
+    List:`;
+    
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             const cleaned = Utils.cleanResponse(result);
             
-            // 파싱: NAME | DESCRIPTION 형식
             const npcs = cleaned.split('\n')
+                .map(line => {
+                    const match = line.match(/^([^|]+)\|(.+)$/);
+                    if (match) {
+                        const name = match[1].trim();
+                        if (name.toLowerCase() === mainCharName.toLowerCase() || 
+                            name.toLowerCase() === userName.toLowerCase()) {
+                            return null;
+                        }
+                        return {
+                            id: Utils.generateId(),
+                            name: name,
+                            description: match[2].trim(),
+                            avatar: null,
+                            isMainChar: false
+                        };
+                    }
+                    const name = line.replace(/^[-*•]\s*/, '').trim();
+                    if (name && name.length > 1 && name.length < 50 &&
+                        name.toLowerCase() !== mainCharName.toLowerCase() &&
+                        name.toLowerCase() !== userName.toLowerCase()) {
+                        return {
+                            id: Utils.generateId(),
+                            name: name,
+                            description: '',
+                            avatar: null,
+                            isMainChar: false
+                        };
+                    }
+                    return null;
+                })
+                .filter(Boolean)
+                .slice(0, 8);
+            
+            data.npcList = npcs;
+            DataManager.save();
+            
+            return npcs;
+        } catch (e) {
+            return [];
+        }
+    },
+    
+    async extractMainCharacters() {
+        const ctx = getContext();
+        const charData = ctx.characters?.[ctx.characterId];
+        const mainCharName = charData?.name || ctx.name2 || '';
+        const description = charData?.description || '';
+        const personality = charData?.personality || '';
+        
+        const combinedContext = `${description}\n${personality}`.substring(0, 2000);
+        
+        const prompt = `${getSystemInstruction()}
+    
+    [Main Character Detection]
+    Analyze this character description. Is this a SINGLE character or MULTIPLE main characters?
+    
+    Description:
+    ${combinedContext}
+    
+    If SINGLE: Output just the name "${mainCharName}"
+    If MULTIPLE (like characters A, B, C sharing one card): List all main character names
+    
+    Format each as: NAME | BRIEF_DESCRIPTION
+    Only main/protagonist characters, not supporting roles.
+    
+    List:`;
+    
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const cleaned = Utils.cleanResponse(result);
+            
+            const chars = cleaned.split('\n')
                 .map(line => {
                     const match = line.match(/^([^|]+)\|(.+)$/);
                     if (match) {
@@ -2084,48 +2161,42 @@ List the characters:`;
                             id: Utils.generateId(),
                             name: match[1].trim(),
                             description: match[2].trim(),
-                            avatar: null // 아바타 없음 (이니셜 표시)
+                            avatar: charData?.avatar ? `/characters/${charData.avatar}` : null,
+                            isMainChar: true
                         };
                     }
-                    // | 없이 이름만 있는 경우
                     const name = line.replace(/^[-*•]\s*/, '').trim();
                     if (name && name.length > 1 && name.length < 50) {
                         return {
                             id: Utils.generateId(),
                             name: name,
                             description: '',
-                            avatar: null
+                            avatar: charData?.avatar ? `/characters/${charData.avatar}` : null,
+                            isMainChar: true
                         };
                     }
                     return null;
                 })
-                .filter(Boolean)
-                .slice(0, 10);
+                .filter(Boolean);
             
-            // 최소 1개는 있어야 함
-            if (npcs.length === 0) {
-                npcs.push({
-                    id: Utils.generateId(),
-                    name: charData?.name || '캐릭터',
-                    description: 'Main character',
-                    avatar: charData?.avatar ? `/characters/${charData.avatar}` : null
-                });
+            if (chars.length === 0) {
+                return [{
+                    id: ctx.characterId,
+                    name: mainCharName,
+                    description: '',
+                    avatar: charData?.avatar ? `/characters/${charData.avatar}` : null,
+                    isMainChar: true
+                }];
             }
             
-            // 캐시에 저장
-            data.npcList = npcs;
-            DataManager.save();
-            
-            console.log('[Insta] Extracted NPCs:', npcs);
-            return npcs;
+            return chars;
         } catch (e) {
-            console.error('[Insta] NPC extraction failed:', e);
-            // 실패 시 기본값
             return [{
-                id: Utils.generateId(),
-                name: charData?.name || '캐릭터',
-                description: 'Main character',
-                avatar: charData?.avatar ? `/characters/${charData.avatar}` : null
+                id: ctx.characterId,
+                name: mainCharName,
+                description: '',
+                avatar: charData?.avatar ? `/characters/${charData.avatar}` : null,
+                isMainChar: true
             }];
         }
     },
@@ -2471,21 +2542,36 @@ Answer with ONLY a number 1-5:`;
 
     async generateNPCEngagement(post, posterName, posterDesc, isUserPost = false) {
         const ctx = getContext();
+        const userName = ctx.name1 || 'User';
         
-        const npcList = await this.getNPCList();
+        const npcs = await this.extractNPCs(false);
+        const mainChars = await this.extractMainCharacters();
+        const isMultiChar = mainChars.length > 1;
         
         const likeCount = await this.calculateLikes(posterName, posterDesc, isUserPost);
         
         const likes = [];
         
         if (isUserPost) {
-            npcList.forEach(npc => {
+            mainChars.forEach(char => {
+                likes.push({ type: 'mainChar', id: char.id, name: char.name });
+            });
+            npcs.forEach(npc => {
                 likes.push({ type: 'npc', id: npc.id, name: npc.name });
             });
         } else {
-            likes.push({ type: 'user', name: ctx.name1 || 'User' });
-            npcList.forEach(npc => {
-                if (npc.name !== posterName) {
+            likes.push({ type: 'user', name: userName });
+            
+            if (isMultiChar) {
+                mainChars.forEach(char => {
+                    if (char.name.toLowerCase() !== posterName.toLowerCase()) {
+                        likes.push({ type: 'mainChar', id: char.id, name: char.name });
+                    }
+                });
+            }
+            
+            npcs.forEach(npc => {
+                if (npc.name.toLowerCase() !== posterName.toLowerCase()) {
                     likes.push({ type: 'npc', id: npc.id, name: npc.name });
                 }
             });
@@ -2499,7 +2585,21 @@ Answer with ONLY a number 1-5:`;
         post.likes = likes;
         post.likeCount = likeCount;
         
-        const availableCommenters = npcList.filter(npc => npc.name !== posterName);
+        let availableCommenters = [];
+        
+        if (isUserPost) {
+            availableCommenters = [...mainChars, ...npcs];
+        } else {
+            if (isMultiChar) {
+                availableCommenters = mainChars.filter(c => 
+                    c.name.toLowerCase() !== posterName.toLowerCase()
+                );
+            }
+            availableCommenters = [...availableCommenters, ...npcs.filter(n => 
+                n.name.toLowerCase() !== posterName.toLowerCase()
+            )];
+        }
+        
         const commentCount = Math.min(availableCommenters.length, Math.floor(Math.random() * 3) + 1);
         const commenters = [...availableCommenters].sort(() => Math.random() - 0.5).slice(0, commentCount);
         
@@ -2516,7 +2616,8 @@ Answer with ONLY a number 1-5:`;
                     id: Utils.generateId(),
                     text: comment,
                     isUser: false,
-                    isNPC: true,
+                    isNPC: !commenter.isMainChar,
+                    isMainChar: commenter.isMainChar || false,
                     npcId: commenter.id,
                     charName: commenter.name,
                     timestamp: Date.now() + Math.random() * 60000,
@@ -2541,6 +2642,50 @@ Answer with ONLY a number 1-5:`;
         }
         
         return post;
+    },
+
+    async handleUserComment(post, commentText, Core) {
+        const ctx = getContext();
+        const settings = Core.getSettings();
+        const charId = Core.getCharId();
+        
+        if (!post.comments) post.comments = [];
+        
+        const userComment = {
+            id: Utils.generateId(),
+            text: commentText,
+            isUser: true,
+            timestamp: Date.now(),
+            replies: []
+        };
+        
+        post.comments.push(userComment);
+        Core.saveSettings();
+        
+        let replierName;
+        let replierDesc = '';
+        
+        if (post.isUserPost) {
+            return;
+        }
+        
+        replierName = post.charName;
+        replierDesc = post.posterDesc || '';
+        
+        const replyText = await this.generatePosterReply(post.caption, replierName, ctx.name1 || 'User', commentText);
+        
+        if (replyText) {
+            userComment.replies.push({
+                id: Utils.generateId(),
+                text: replyText,
+                charName: replierName,
+                isUser: false,
+                timestamp: Date.now()
+            });
+            Core.saveSettings();
+        }
+        
+        return userComment;
     },
     
     async generatePosterReply(postCaption, posterName, commenterName, commentText) {
@@ -3019,48 +3164,36 @@ Write only the reply:`;
             if (!text) return;
             
             const { post, isUser, posterId } = this.state.selectedPost;
-            if (!post.comments) post.comments = [];
-            
-            post.comments.push({
-                id: Utils.generateId(),
-                text: text,
-                isUser: true,
-                timestamp: Date.now()
-            });
             
             input.value = '';
-            Core.saveSettings();
             
             if (!isUser) {
-                const posterName = post.charName;
-                const reply = await this.generateCharacterComment(text, posterName);
-                if (reply) {
-                    post.comments.push({
-                        id: Utils.generateId(),
-                        text: reply,
-                        isUser: false,
-                        isNPC: true,
-                        charName: posterName,
-                        timestamp: Date.now()
-                    });
-                    Core.saveSettings();
-                }
-            }
-            
-            // 유저 포스트에 첫 댓글이면 NPC들이 댓글
-            if (isUser && post.comments.filter(c => !c.isUser).length === 0) {
-                const npc = npcList[0];
-                if (npc) {
-                    const npcComment = await this.generateNPCComment(post.caption, ctx.name1 || 'User', npc.name, npc.description);
+                await this.handleUserComment(post, text, Core);
+            } else {
+                if (!post.comments) post.comments = [];
+                post.comments.push({
+                    id: Utils.generateId(),
+                    text: text,
+                    isUser: true,
+                    timestamp: Date.now(),
+                    replies: []
+                });
+                Core.saveSettings();
+                
+                const mainChars = await this.extractMainCharacters();
+                if (mainChars.length > 0) {
+                    const responder = mainChars[0];
+                    const npcComment = await this.generateNPCComment(post.caption, ctx.name1 || 'User', responder.name, responder.description);
                     if (npcComment) {
                         post.comments.push({
                             id: Utils.generateId(),
                             text: npcComment,
                             isUser: false,
-                            isNPC: true,
-                            npcId: npc.id,
-                            charName: npc.name,
-                            timestamp: Date.now()
+                            isMainChar: true,
+                            npcId: responder.id,
+                            charName: responder.name,
+                            timestamp: Date.now(),
+                            replies: []
                         });
                         Core.saveSettings();
                     }
