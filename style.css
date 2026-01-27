@@ -22,6 +22,12 @@
 }
 @keyframes phoneSlideIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
 
+.phone-container .msg-bubble:active,
+.phone-container .list-item:active {
+    opacity: 0.7;
+    transform: scale(0.98);
+}
+
 /* Status Bar */
 .phone-container .phone-status-bar {
     height: 44px; display: flex; justify-content: space-between; align-items: center;
