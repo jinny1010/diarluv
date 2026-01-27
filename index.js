@@ -2390,7 +2390,7 @@ Write only the prompt:`;
             <div class="insta-upload-header">
                 <button class="app-back-btn" id="insta-upload-cancel">✕</button>
                 <span class="app-title">새 게시물</span>
-                <button class="app-nav-btn" id="insta-upload-submit" style="padding:0 12px;">공유</button>
+                <button class="app-nav-btn" id="insta-upload-submit" style="min-width:auto;padding:4px 12px;">공유</button>
             </div>
             <div class="insta-upload-preview" id="insta-upload-preview">
                 <div class="insta-upload-placeholder">
@@ -2450,6 +2450,23 @@ Write only the prompt:`;
         const data = this.getData(settings, charId);
         
         document.querySelectorAll('.insta-thumb').forEach(thumb => {
+            Utils.bindLongPress(thumb, () => {
+                const postId = thumb.dataset.postId;
+                const isUser = thumb.dataset.isUser === 'true';
+                const postCharId = thumb.dataset.charId;
+                if (confirm('이 게시물을 삭제할까요?')) {
+                    if (isUser) {
+                        data.userPosts = data.userPosts.filter(p => p.id !== postId);
+                    } else {
+                        data.charPosts[postCharId] = data.charPosts[postCharId].filter(p => p.id !== postId);
+                    }
+                    Core.saveSettings();
+                    document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
+                    this.bindGridEvents(Core);
+                    toastr.success('게시물이 삭제되었어요');
+                }
+            });
+            
             thumb.addEventListener('click', () => {
                 const postId = thumb.dataset.postId;
                 const isUser = thumb.dataset.isUser === 'true';
@@ -2645,7 +2662,7 @@ Write only the prompt:`;
                 timestamp: Date.now(),
                 caption: caption,
                 imageUrl: selectedImage,
-                likes: [],
+                likes: ['char'],
                 comments: []
             };
             
@@ -2900,7 +2917,7 @@ const PhoneCore = {
                                     <span>${app.icon} ${app.name}</span>
                                 </label>
                                 ${id === 'message' ? `
-                                    <select id="msg-lang-select" style="padding:2px 6px;font-size:12px;border-radius:4px;">
+                                    <select id="msg-lang-select" style="padding:2px 6px;font-size:11px;border-radius:4px;width:50px;">
                                         <option value="ko" ${(settings.msgLanguage || 'ko') === 'ko' ? 'selected' : ''}>한글</option>
                                         <option value="en" ${settings.msgLanguage === 'en' ? 'selected' : ''}>ENG</option>
                                     </select>
