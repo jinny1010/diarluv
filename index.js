@@ -1997,7 +1997,7 @@ const InstaApp = {
     id: 'insta',
     name: '인스타',
     icon: '📸',
-    state: { currentView: 'feed', selectedPost: null, isGenerating: false },
+    state: { currentView: 'feed', selectedPost: null, isGenerating: false, npcCache: null },
     
     getData(settings, charId) {
         const key = `insta_${charId}`;
@@ -2006,9 +2006,138 @@ const InstaApp = {
             userPosts: [],      
             charPosts: {},     
             lastAutoPost: null, 
-            language: 'ko'
+            language: 'ko',
+            npcList: null  // NPC 캐시 저장
         };
         return settings.appData[key];
+    },
+    
+    // 디스크립션/로어북에서 NPC 목록 추출
+    async extractNPCs(forceRefresh = false) {
+        const ctx = getContext();
+        const settings = PhoneCore.getSettings();
+        const charId = PhoneCore.getCharId();
+        const data = this.getData(settings, charId);
+        
+        // 캐시가 있고 강제 새로고침이 아니면 캐시 반환
+        if (data.npcList && !forceRefresh) {
+            return data.npcList;
+        }
+        
+        const charData = ctx.characters?.[ctx.characterId];
+        const description = charData?.description || '';
+        const personality = charData?.personality || '';
+        const scenario = charData?.scenario || '';
+        const mesExamples = charData?.mes_example || '';
+        
+        // 로어북 정보 가져오기
+        let lorebookInfo = '';
+        try {
+            const lorebook = ctx.chat_metadata?.world_info || [];
+            if (Array.isArray(lorebook)) {
+                lorebookInfo = lorebook.map(entry => entry.content || '').join('\n').substring(0, 1000);
+            }
+        } catch (e) {
+            console.log('[Insta] Lorebook fetch failed:', e);
+        }
+        
+        const combinedContext = `${description}\n${personality}\n${scenario}\n${mesExamples}\n${lorebookInfo}`.substring(0, 3000);
+        
+        const prompt = `${getSystemInstruction()}
+
+[NPC Extraction Task]
+Extract all named characters/people from this character description.
+These are NPCs who might interact on social media.
+
+Context:
+${combinedContext}
+
+List all named characters with brief descriptions.
+Format each as: NAME | BRIEF_DESCRIPTION (personality, relationship to main character)
+
+Rules:
+- Include the main character(s) too
+- Only real named characters, not generic terms
+- Maximum 10 characters
+- If no clear characters found, list at least the main character name
+
+Example output:
+John Price | Team leader, serious but caring, mentor figure
+Simon "Ghost" Riley | Mysterious, wears skull mask, loyal teammate
+Kyle "Gaz" Garrick | Young soldier, optimistic, skilled
+
+List the characters:`;
+
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const cleaned = Utils.cleanResponse(result);
+            
+            // 파싱: NAME | DESCRIPTION 형식
+            const npcs = cleaned.split('\n')
+                .map(line => {
+                    const match = line.match(/^([^|]+)\|(.+)$/);
+                    if (match) {
+                        return {
+                            id: Utils.generateId(),
+                            name: match[1].trim(),
+                            description: match[2].trim(),
+                            avatar: null // 아바타 없음 (이니셜 표시)
+                        };
+                    }
+                    // | 없이 이름만 있는 경우
+                    const name = line.replace(/^[-*•]\s*/, '').trim();
+                    if (name && name.length > 1 && name.length < 50) {
+                        return {
+                            id: Utils.generateId(),
+                            name: name,
+                            description: '',
+                            avatar: null
+                        };
+                    }
+                    return null;
+                })
+                .filter(Boolean)
+                .slice(0, 10);
+            
+            // 최소 1개는 있어야 함
+            if (npcs.length === 0) {
+                npcs.push({
+                    id: Utils.generateId(),
+                    name: charData?.name || '캐릭터',
+                    description: 'Main character',
+                    avatar: charData?.avatar ? `/characters/${charData.avatar}` : null
+                });
+            }
+            
+            // 캐시에 저장
+            data.npcList = npcs;
+            DataManager.save();
+            
+            console.log('[Insta] Extracted NPCs:', npcs);
+            return npcs;
+        } catch (e) {
+            console.error('[Insta] NPC extraction failed:', e);
+            // 실패 시 기본값
+            return [{
+                id: Utils.generateId(),
+                name: charData?.name || '캐릭터',
+                description: 'Main character',
+                avatar: charData?.avatar ? `/characters/${charData.avatar}` : null
+            }];
+        }
+    },
+    
+    // NPC 목록 가져오기 (캐시 우선)
+    async getNPCList() {
+        const ctx = getContext();
+        
+        // 실제 그룹챗이면 기존 로직 사용
+        if (ctx.groupId && ctx.groups) {
+            return this.getCharacterList();
+        }
+        
+        // 1:1이면 NPC 추출
+        return await this.extractNPCs();
     },
     
     getCharacterAvatar(charId) {
@@ -2087,14 +2216,20 @@ Answer only: SELFIE or SCENERY`;
         }
     },
     
-    async generateCharacterPost(charName, charId, settings) {
+    async generateCharacterPost(charName, charId, settings, posterNPC = null) {
         const ctx = getContext();
         const data = this.getData(settings, PhoneCore.getCharId());
+        
+        // NPC 정보 사용
+        const posterName = posterNPC?.name || charName;
+        const posterDesc = posterNPC?.description || '';
+        const posterId = posterNPC?.id || charId;
         
         const contentPrompt = `${getSystemInstruction()}
 
 [Instagram Post]
-${charName} is posting on Instagram.
+${posterName} is posting on Instagram.
+${posterDesc ? `Character info: ${posterDesc}` : ''}
 
 Write a short Instagram caption (1-3 sentences).
 Include appropriate emojis.
@@ -2106,19 +2241,20 @@ Write only the caption:`;
             const caption = await ctx.generateQuietPrompt(contentPrompt, false, false);
             const cleanCaption = Utils.cleanResponse(caption).substring(0, 300);
             
-            const imageType = await this.getImageType(cleanCaption, charName);
+            const imageType = await this.getImageType(cleanCaption, posterName);
             
             let imageUrl = '';
             
             if (imageType === 'selfie') {
-                const imagePrompt = await this.generateImagePrompt(cleanCaption, charName, 'selfie');
+                const imagePrompt = await this.generateImagePrompt(cleanCaption, posterName, 'selfie', posterDesc);
                 imageUrl = await this.generateNovelAIImage(imagePrompt);
             } else {
-                const imagePrompt = await this.generateImagePrompt(cleanCaption, charName, 'scenery');
+                const imagePrompt = await this.generateImagePrompt(cleanCaption, posterName, 'scenery');
                 imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?nologo=true`;
             }
             
-            if (!data.charPosts[charId]) data.charPosts[charId] = [];
+            // NPC별로 포스트 저장 (posterId 사용)
+            if (!data.charPosts[posterId]) data.charPosts[posterId] = [];
             
             const post = {
                 id: Utils.generateId(),
@@ -2130,16 +2266,16 @@ Write only the caption:`;
                 likes: [],
                 likeCount: 0,
                 comments: [],
-                charId: charId,
-                charName: charName
+                charId: charId,  // 원본 캐릭터 ID (컨텍스트용)
+                posterId: posterId,  // 실제 포스터 NPC ID
+                charName: posterName,
+                posterDesc: posterDesc
             };
             
-            // 캐릭터 디스크립션 기반 NPC 자동 참여 (좋아요 + 댓글)
-            const charData = ctx.characters?.[charId];
-            const charDesc = charData?.description || charData?.personality || '';
-            await this.generateNPCEngagement(post, charName, charDesc, false);
+            // NPC 자동 참여 (좋아요 + 댓글)
+            await this.generateNPCEngagement(post, posterName, posterDesc, false);
             
-            data.charPosts[charId].unshift(post);
+            data.charPosts[posterId].unshift(post);
             data.lastAutoPost = Utils.getTodayKey();
             DataManager.save();
             
@@ -2150,11 +2286,12 @@ Write only the caption:`;
         }
     },
     
-    async generateImagePrompt(caption, charName, imageType) {
+    async generateImagePrompt(caption, charName, imageType, npcDescription = '') {
         const ctx = getContext();
         
         if (imageType === 'selfie') {
-            const charDescription = ctx.characters?.[ctx.characterId]?.description || '';
+            // NPC description이 있으면 사용, 없으면 캐릭터 description 사용
+            const charDescription = npcDescription || ctx.characters?.[ctx.characterId]?.description || '';
             const prompt = `${getSystemInstruction()}
 
 Create a short image generation prompt for NovelAI.
@@ -2295,26 +2432,27 @@ Answer with ONLY a number 1-5:`;
     // NPC 자동 참여 (좋아요 + 댓글) 생성
     async generateNPCEngagement(post, posterName, posterDesc, isUserPost = false) {
         const ctx = getContext();
-        const charList = this.getCharacterList();
+        
+        // NPC 목록 가져오기 (1:1이면 디스크립션에서 추출, 그룹이면 멤버 목록)
+        const npcList = await this.getNPCList();
         
         // 좋아요 개수 계산
         const likeCount = await this.calculateLikes(posterName, posterDesc, isUserPost);
         
-        // 좋아요 리스트 생성 (익명 NPC + 실제 캐릭터)
+        // 좋아요 리스트 생성 (익명 NPC + 실제 캐릭터/NPC)
         const likes = [];
         
-        // 그룹 캐릭터들은 무조건 좋아요 (유저 포스트면)
         if (isUserPost) {
-            charList.forEach(char => {
-                likes.push({ type: 'char', id: char.id, name: char.name });
+            // 유저 포스트면 모든 NPC가 좋아요
+            npcList.forEach(npc => {
+                likes.push({ type: 'npc', id: npc.id, name: npc.name });
             });
         } else {
-            // 캐릭터 포스트면 유저가 좋아요
+            // 캐릭터/NPC 포스트면 유저 + 다른 NPC들이 좋아요 (포스터 제외)
             likes.push({ type: 'user', name: ctx.name1 || 'User' });
-            // 다른 그룹 캐릭터들도 좋아요 (포스터 제외)
-            charList.forEach(char => {
-                if (char.id !== post.charId) {
-                    likes.push({ type: 'char', id: char.id, name: char.name });
+            npcList.forEach(npc => {
+                if (npc.name !== posterName) {
+                    likes.push({ type: 'npc', id: npc.id, name: npc.name });
                 }
             });
         }
@@ -2329,38 +2467,31 @@ Answer with ONLY a number 1-5:`;
         post.likeCount = likeCount;
         
         // NPC 댓글 생성 (1-3개)
-        const commentCount = Math.min(charList.length, Math.floor(Math.random() * 3) + 1);
-        const commenters = [...charList].sort(() => Math.random() - 0.5).slice(0, commentCount);
+        // 포스터를 제외한 NPC들 중에서 선택
+        const availableCommenters = npcList.filter(npc => npc.name !== posterName);
+        const commentCount = Math.min(availableCommenters.length, Math.floor(Math.random() * 3) + 1);
+        const commenters = [...availableCommenters].sort(() => Math.random() - 0.5).slice(0, commentCount);
         
         for (const commenter of commenters) {
-            // 유저 포스트거나, 캐릭터 포스트인데 댓글러가 포스터가 아닌 경우
-            if (isUserPost || commenter.id !== post.charId) {
-                const charData = ctx.characters?.[commenter.id];
-                const commenterDesc = charData?.description || charData?.personality || '';
-                
-                const comment = await this.generateNPCComment(
-                    post.caption, 
-                    posterName, 
-                    commenter.name,
-                    commenterDesc
-                );
-                
-                if (comment) {
-                    post.comments.push({
-                        id: Utils.generateId(),
-                        text: comment,
-                        isUser: false,
-                        charId: commenter.id,
-                        charName: commenter.name,
-                        timestamp: Date.now() + Math.random() * 60000 // 약간의 시간차
-                    });
-                }
+            const comment = await this.generateNPCComment(
+                post.caption, 
+                posterName, 
+                commenter.name,
+                commenter.description || ''
+            );
+            
+            if (comment) {
+                post.comments.push({
+                    id: Utils.generateId(),
+                    text: comment,
+                    isUser: false,
+                    isNPC: true,
+                    npcId: commenter.id,
+                    charName: commenter.name,
+                    timestamp: Date.now() + Math.random() * 60000,
+                    replies: [] // 답글 지원
+                });
             }
-        }
-        
-        // 유저 포스트가 아니면 유저도 댓글 달 확률 (30%)
-        if (!isUserPost && Utils.chance(30)) {
-            // 유저 자동 댓글은 생략 (유저가 직접 달도록)
         }
         
         return post;
@@ -2381,42 +2512,50 @@ Answer with ONLY a number 1-5:`;
         <div class="app-content" id="insta-content"></div>`;
     },
     
-    renderFeed(data, charList) {
+    renderFeed(data, npcList) {
         let allPosts = [];
-        for (const charId in data.charPosts) {
-            const charInfo = charList.find(c => c.id == charId);
-            if (charInfo) {
-                allPosts = allPosts.concat(
-                    data.charPosts[charId].map(p => ({ ...p, charInfo }))
-                );
-            }
+        for (const posterId in data.charPosts) {
+            // NPC 목록에서 찾기 (id 또는 name으로)
+            const npcInfo = npcList.find(c => c.id == posterId || c.name == posterId);
+            const posts = data.charPosts[posterId] || [];
+            posts.forEach(p => {
+                allPosts.push({ 
+                    ...p, 
+                    npcInfo: npcInfo || { id: posterId, name: p.charName || '캐릭터', avatar: null }
+                });
+            });
         }
         
         allPosts.sort((a, b) => b.timestamp - a.timestamp);
         
         if (allPosts.length === 0) {
-            return `<div class="empty-state">📸<br>아직 게시물이 없어요</div>`;
+            return `<div class="empty-state">📸<br>아직 게시물이 없어요<br><small style="opacity:0.6;">캐릭터가 인스타를 올리면 여기에 표시돼요</small></div>`;
         }
         
+        // NPC 프로필 표시 (포스트가 있는 NPC만)
         let profilesHtml = `<div class="insta-profiles">`;
-        charList.forEach(char => {
-            const postCount = data.charPosts[char.id]?.length || 0;
-            profilesHtml += `
-                <div class="insta-profile" data-char-id="${char.id}">
-                    ${char.avatar 
-                        ? `<img src="${char.avatar}" class="insta-profile-img">`
-                        : `<div class="insta-profile-img">${char.name.charAt(0)}</div>`
-                    }
-                    <span class="insta-profile-name">${char.name}</span>
-                    <span class="insta-profile-count">${postCount}</span>
-                </div>`;
+        const postersWithPosts = new Set(Object.keys(data.charPosts).filter(k => data.charPosts[k]?.length > 0));
+        
+        npcList.forEach(npc => {
+            const postCount = data.charPosts[npc.id]?.length || 0;
+            if (postCount > 0 || postersWithPosts.size === 0) {
+                profilesHtml += `
+                    <div class="insta-profile" data-npc-id="${npc.id}">
+                        ${npc.avatar 
+                            ? `<img src="${npc.avatar}" class="insta-profile-img">`
+                            : `<div class="insta-profile-img" style="background:linear-gradient(135deg,var(--phone-primary),var(--phone-primary-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;">${npc.name.charAt(0)}</div>`
+                        }
+                        <span class="insta-profile-name">${npc.name.length > 8 ? npc.name.substring(0,7) + '..' : npc.name}</span>
+                        ${postCount > 0 ? `<span class="insta-profile-count">${postCount}</span>` : ''}
+                    </div>`;
+            }
         });
         profilesHtml += `</div>`;
         
         let gridHtml = `<div class="insta-grid">`;
         allPosts.forEach(post => {
             gridHtml += `
-                <div class="insta-thumb" data-post-id="${post.id}" data-char-id="${post.charId}">
+                <div class="insta-thumb" data-post-id="${post.id}" data-poster-id="${post.posterId || post.charId}">
                     ${post.imageUrl 
                         ? `<img src="${post.imageUrl}" alt="">`
                         : `<div class="insta-thumb-placeholder">📷</div>`
@@ -2448,7 +2587,7 @@ Answer with ONLY a number 1-5:`;
         return gridHtml;
     },
     
-    renderPostDetail(post, isUserPost, charList) {
+    renderPostDetail(post, isUserPost, npcList) {
         const ctx = getContext();
         const userName = ctx.name1 || 'User';
         const userAvatar = this.getUserAvatar();
@@ -2458,9 +2597,10 @@ Answer with ONLY a number 1-5:`;
             authorAvatar = userAvatar;
             authorName = userName;
         } else {
-            const charInfo = charList.find(c => c.id == post.charId);
-            authorAvatar = charInfo?.avatar || '';
-            authorName = post.charName || charInfo?.name || '캐릭터';
+            // NPC 목록에서 찾기
+            const npcInfo = npcList.find(c => c.id == post.posterId || c.name == post.charName);
+            authorAvatar = npcInfo?.avatar || '';
+            authorName = post.charName || npcInfo?.name || '캐릭터';
         }
         
         // 유저 좋아요 여부 확인 (새 구조와 구 구조 모두 지원)
@@ -2472,18 +2612,40 @@ Answer with ONLY a number 1-5:`;
         if (post.comments && post.comments.length > 0) {
             commentsHtml = post.comments.map(comment => {
                 const isUserComment = comment.isUser;
-                const commentAvatar = isUserComment ? userAvatar : (charList.find(c => c.id == comment.charId)?.avatar || '');
+                const commentNpc = npcList.find(c => c.id == comment.npcId || c.id == comment.charId || c.name == comment.charName);
+                const commentAvatar = isUserComment ? userAvatar : (commentNpc?.avatar || '');
                 const commentName = isUserComment ? userName : comment.charName;
+                
+                // 답글 렌더링
+                let repliesHtml = '';
+                if (comment.replies && comment.replies.length > 0) {
+                    repliesHtml = comment.replies.map(reply => `
+                        <div class="insta-reply" style="margin-left:40px;margin-top:8px;padding:8px;background:rgba(255,255,255,0.05);border-radius:8px;">
+                            <span class="insta-comment-name" style="color:var(--phone-primary);">${reply.charName}</span>
+                            <span class="insta-comment-text">${Utils.escapeHtml(reply.text)}</span>
+                        </div>
+                    `).join('');
+                }
+                
+                // NPC 댓글에만 답글 버튼 표시 (유저 포스트가 아니고, NPC 댓글인 경우)
+                const showReplyBtn = !isUserPost && !isUserComment && !comment.replies?.length;
                 
                 return `
                     <div class="insta-comment">
                         ${commentAvatar 
                             ? `<img src="${commentAvatar}" class="insta-comment-avatar">`
-                            : `<div class="insta-comment-avatar">${commentName.charAt(0)}</div>`
+                            : `<div class="insta-comment-avatar" style="background:linear-gradient(135deg,var(--phone-primary),var(--phone-primary-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;">${commentName.charAt(0)}</div>`
                         }
-                        <div class="insta-comment-content">
+                        <div class="insta-comment-content" style="flex:1;">
                             <span class="insta-comment-name">${commentName}</span>
                             <span class="insta-comment-text">${Utils.escapeHtml(comment.text)}</span>
+                            ${showReplyBtn ? `
+                                <button class="insta-reply-btn" data-comment-id="${comment.id}" style="
+                                    background:none;border:none;color:var(--phone-primary);font-size:11px;
+                                    cursor:pointer;margin-top:4px;padding:0;opacity:0.8;
+                                ">↩️ ${authorName} 답글 생성</button>
+                            ` : ''}
+                            ${repliesHtml}
                         </div>
                     </div>`;
             }).join('');
@@ -2496,7 +2658,7 @@ Answer with ONLY a number 1-5:`;
                 <div class="insta-detail-author">
                     ${authorAvatar 
                         ? `<img src="${authorAvatar}" class="insta-author-avatar">`
-                        : `<div class="insta-author-avatar">${authorName.charAt(0)}</div>`
+                        : `<div class="insta-author-avatar" style="background:linear-gradient(135deg,var(--phone-primary),var(--phone-primary-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;">${authorName.charAt(0)}</div>`
                     }
                     <span class="insta-author-name">${authorName}</span>
                 </div>
@@ -2552,16 +2714,19 @@ Answer with ONLY a number 1-5:`;
     
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
-        const charList = this.getCharacterList();
+        
+        // NPC 목록 가져오기 (1:1이면 디스크립션에서 추출)
+        const npcList = await this.getNPCList();
         
         this.state.currentView = 'feed';
-        document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
+        this.state.npcCache = npcList;  // 캐시 저장
+        document.getElementById('insta-content').innerHTML = this.renderFeed(data, npcList);
     },
     
     bindEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
-        const charList = this.getCharacterList();
+        const npcList = this.state.npcCache || this.getCharacterList();  // 캐시된 NPC 목록 사용
         const data = this.getData(settings, charId);
         const ctx = getContext();
         const charName = ctx.name2 || '캐릭터';
@@ -2573,7 +2738,7 @@ Answer with ONLY a number 1-5:`;
                 
                 const tabType = tab.dataset.tab;
                 if (tabType === 'feed') {
-                    document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
+                    document.getElementById('insta-content').innerHTML = this.renderFeed(data, npcList);
                 } else {
                     document.getElementById('insta-content').innerHTML = this.renderMyPosts(data);
                 }
@@ -2592,22 +2757,24 @@ Answer with ONLY a number 1-5:`;
     bindGridEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
-        const charList = this.getCharacterList();
+        const npcList = this.state.npcCache || this.getCharacterList();
         const data = this.getData(settings, charId);
         
         document.querySelectorAll('.insta-thumb').forEach(thumb => {
             Utils.bindLongPress(thumb, () => {
                 const postId = thumb.dataset.postId;
                 const isUser = thumb.dataset.isUser === 'true';
-                const postCharId = thumb.dataset.charId;
+                const posterId = thumb.dataset.posterId || thumb.dataset.charId;
                 if (confirm('이 게시물을 삭제할까요?')) {
                     if (isUser) {
                         data.userPosts = data.userPosts.filter(p => p.id !== postId);
                     } else {
-                        data.charPosts[postCharId] = data.charPosts[postCharId].filter(p => p.id !== postId);
+                        if (data.charPosts[posterId]) {
+                            data.charPosts[posterId] = data.charPosts[posterId].filter(p => p.id !== postId);
+                        }
                     }
                     Core.saveSettings();
-                    document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
+                    document.getElementById('insta-content').innerHTML = this.renderFeed(data, npcList);
                     this.bindGridEvents(Core);
                     toastr.success('게시물이 삭제되었어요');
                 }
@@ -2616,32 +2783,41 @@ Answer with ONLY a number 1-5:`;
             thumb.addEventListener('click', () => {
                 const postId = thumb.dataset.postId;
                 const isUser = thumb.dataset.isUser === 'true';
-                const postCharId = thumb.dataset.charId;
+                const posterId = thumb.dataset.posterId || thumb.dataset.charId;
                 
                 let post;
                 if (isUser) {
                     post = data.userPosts.find(p => p.id === postId);
                 } else {
-                    post = data.charPosts[postCharId]?.find(p => p.id === postId);
+                    // posterId로 찾기
+                    for (const key in data.charPosts) {
+                        const found = data.charPosts[key]?.find(p => p.id === postId);
+                        if (found) {
+                            post = found;
+                            break;
+                        }
+                    }
                 }
                 
                 if (post) {
-                    this.state.selectedPost = { post, isUser, postCharId };
-                    document.getElementById('insta-content').innerHTML = this.renderPostDetail(post, isUser, charList);
+                    this.state.selectedPost = { post, isUser, posterId };
+                    document.getElementById('insta-content').innerHTML = this.renderPostDetail(post, isUser, npcList);
                     this.bindDetailEvents(Core);
                 }
             });
         });
         
+        // NPC 프로필 클릭
         document.querySelectorAll('.insta-profile').forEach(profile => {
             profile.addEventListener('click', () => {
-                const clickedCharId = profile.dataset.charId;
-                const posts = data.charPosts[clickedCharId] || [];
+                const npcId = profile.dataset.npcId || profile.dataset.charId;
+                const npc = npcList.find(n => n.id == npcId);
+                const posts = data.charPosts[npcId] || [];
                 
                 let gridHtml = `
                     <div class="insta-char-header">
                         <button class="app-back-btn" id="insta-back-main">◀</button>
-                        <span>${profile.querySelector('.insta-profile-name').textContent}</span>
+                        <span>${npc?.name || profile.querySelector('.insta-profile-name').textContent}</span>
                     </div>`;
                 
                 if (posts.length === 0) {
@@ -2650,7 +2826,7 @@ Answer with ONLY a number 1-5:`;
                     gridHtml += `<div class="insta-grid">`;
                     posts.forEach(post => {
                         gridHtml += `
-                            <div class="insta-thumb" data-post-id="${post.id}" data-char-id="${clickedCharId}">
+                            <div class="insta-thumb" data-post-id="${post.id}" data-poster-id="${npcId}">
                                 ${post.imageUrl 
                                     ? `<img src="${post.imageUrl}" alt="">`
                                     : `<div class="insta-thumb-placeholder">📷</div>`
@@ -2663,7 +2839,7 @@ Answer with ONLY a number 1-5:`;
                 document.getElementById('insta-content').innerHTML = gridHtml;
                 
                 document.getElementById('insta-back-main')?.addEventListener('click', () => {
-                    document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
+                    document.getElementById('insta-content').innerHTML = this.renderFeed(data, npcList);
                     this.bindGridEvents(Core);
                 });
                 
@@ -2675,7 +2851,7 @@ Answer with ONLY a number 1-5:`;
     bindDetailEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
-        const charList = this.getCharacterList();
+        const npcList = this.state.npcCache || this.getCharacterList();
         const data = this.getData(settings, charId);
         const ctx = getContext();
         
@@ -2686,7 +2862,7 @@ Answer with ONLY a number 1-5:`;
                 document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
                 document.querySelector('.insta-tab[data-tab="my"]')?.classList.add('active');
             } else {
-                document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
+                document.getElementById('insta-content').innerHTML = this.renderFeed(data, npcList);
                 document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
                 document.querySelector('.insta-tab[data-tab="feed"]')?.classList.add('active');
             }
@@ -2696,7 +2872,7 @@ Answer with ONLY a number 1-5:`;
         document.querySelector('.insta-like-btn')?.addEventListener('click', (e) => {
             const btn = e.currentTarget;
             const postId = btn.dataset.postId;
-            const { post, isUser, postCharId } = this.state.selectedPost;
+            const { post, isUser, posterId } = this.state.selectedPost;
             
             if (!post.likes) post.likes = [];
             if (!post.likeCount) post.likeCount = post.likes.length || 0;
@@ -2722,12 +2898,65 @@ Answer with ONLY a number 1-5:`;
             Core.saveSettings();
         });
         
+        // NPC 댓글에 답글 버튼 이벤트
+        document.querySelectorAll('.insta-reply-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const commentId = btn.dataset.commentId;
+                const { post, isUser } = this.state.selectedPost;
+                const comment = post.comments?.find(c => c.id === commentId);
+                
+                if (!comment) return;
+                
+                // 답글 생성 (포스터가 답글)
+                const posterName = post.charName;
+                const commenterName = comment.charName;
+                
+                toastr.info(`💬 ${posterName}님이 답글 작성 중...`);
+                
+                const replyPrompt = `${getSystemInstruction()}
+
+[Instagram Reply]
+${commenterName} commented on ${posterName}'s post: "${comment.text}"
+Original post caption: "${post.caption}"
+
+As ${posterName}, write a short reply (1 sentence).
+React naturally to the comment.
+Can include emojis.
+
+Write only the reply:`;
+
+                try {
+                    const result = await ctx.generateQuietPrompt(replyPrompt, false, false);
+                    const replyText = Utils.cleanResponse(result).substring(0, 150);
+                    
+                    if (!comment.replies) comment.replies = [];
+                    comment.replies.push({
+                        id: Utils.generateId(),
+                        text: replyText,
+                        charName: posterName,
+                        isUser: false,
+                        timestamp: Date.now()
+                    });
+                    
+                    Core.saveSettings();
+                    toastr.success(`💬 ${posterName}님이 답글을 달았어요!`);
+                    
+                    // UI 갱신
+                    document.getElementById('insta-content').innerHTML = this.renderPostDetail(post, isUser, npcList);
+                    this.bindDetailEvents(Core);
+                } catch (err) {
+                    console.error('[Insta] Reply generation failed:', err);
+                    toastr.error('답글 생성에 실패했어요');
+                }
+            });
+        });
+        
         document.getElementById('insta-comment-send')?.addEventListener('click', async () => {
             const input = document.getElementById('insta-comment-text');
             const text = input.value.trim();
             if (!text) return;
             
-            const { post, isUser, postCharId } = this.state.selectedPost;
+            const { post, isUser, posterId } = this.state.selectedPost;
             if (!post.comments) post.comments = [];
             
             post.comments.push({
@@ -2740,40 +2969,44 @@ Answer with ONLY a number 1-5:`;
             input.value = '';
             Core.saveSettings();
             
+            // 캐릭터/NPC 포스트에 유저가 댓글 달면 포스터가 답글
             if (!isUser) {
-                const charName = post.charName;
-                const reply = await this.generateCharacterComment(text, charName);
+                const posterName = post.charName;
+                const reply = await this.generateCharacterComment(text, posterName);
                 if (reply) {
                     post.comments.push({
                         id: Utils.generateId(),
                         text: reply,
                         isUser: false,
-                        charId: postCharId,
-                        charName: charName,
+                        isNPC: true,
+                        charName: posterName,
                         timestamp: Date.now()
                     });
                     Core.saveSettings();
                 }
             }
             
+            // 유저 포스트에 첫 댓글이면 NPC들이 댓글
             if (isUser && post.comments.filter(c => !c.isUser).length === 0) {
-                // 첫 댓글이면 캐릭터도 댓글
-                const charName = ctx.name2 || '캐릭터';
-                const charComment = await this.generateCharacterComment(post.caption, charName);
-                if (charComment) {
-                    post.comments.push({
-                        id: Utils.generateId(),
-                        text: charComment,
-                        isUser: false,
-                        charId: ctx.characterId,
-                        charName: charName,
-                        timestamp: Date.now()
-                    });
-                    Core.saveSettings();
+                const npc = npcList[0];
+                if (npc) {
+                    const npcComment = await this.generateNPCComment(post.caption, ctx.name1 || 'User', npc.name, npc.description);
+                    if (npcComment) {
+                        post.comments.push({
+                            id: Utils.generateId(),
+                            text: npcComment,
+                            isUser: false,
+                            isNPC: true,
+                            npcId: npc.id,
+                            charName: npc.name,
+                            timestamp: Date.now()
+                        });
+                        Core.saveSettings();
+                    }
                 }
             }
             
-            document.getElementById('insta-content').innerHTML = this.renderPostDetail(post, isUser, charList);
+            document.getElementById('insta-content').innerHTML = this.renderPostDetail(post, isUser, npcList);
             this.bindDetailEvents(Core);
         });
     },
@@ -2782,7 +3015,7 @@ Answer with ONLY a number 1-5:`;
         const settings = Core.getSettings();
         const charId = Core.getCharId();
         const data = this.getData(settings, charId);
-        const charList = this.getCharacterList();
+        const npcList = this.state.npcCache || this.getCharacterList();
         const ctx = getContext();
         
         let selectedImage = null;
@@ -2850,29 +3083,112 @@ Answer with ONLY a number 1-5:`;
         });
     },
     
-    async triggerCharacterPost() {
+    async triggerCharacterPost(selectedNPC = null) {
         if (this.state.isGenerating) {
             toastr.warning('이미 생성 중이에요...');
             return;
         }
         
         const ctx = getContext();
-        const charName = ctx.name2 || '캐릭터';
-        const charId = ctx.characterId;
         const settings = PhoneCore.getSettings();
         
-        this.state.isGenerating = true;
-        toastr.info('📸 인스타 올리는 중...');
+        // NPC 목록 가져오기
+        const npcList = await this.getNPCList();
         
-        const post = await this.generateCharacterPost(charName, charId, settings);
+        // 선택된 NPC가 없고, NPC가 여러 명이면 선택 모달 띄우기
+        if (!selectedNPC && npcList.length > 1) {
+            this.showNPCSelectionModal(npcList, 'post');
+            return;
+        }
+        
+        // 선택된 NPC 또는 첫 번째 NPC 사용
+        const poster = selectedNPC || npcList[0];
+        const charId = ctx.characterId;
+        
+        this.state.isGenerating = true;
+        toastr.info(`📸 ${poster.name}님이 인스타 올리는 중...`);
+        
+        const post = await this.generateCharacterPost(poster.name, charId, settings, poster);
         
         this.state.isGenerating = false;
         
         if (post) {
-            toastr.success(`📸 ${charName}님이 인스타를 올렸어요!`);
+            const likeText = post.likeCount ? ` ❤️ ${post.likeCount}` : '';
+            const commentText = post.comments?.length ? ` 💬 ${post.comments.length}` : '';
+            toastr.success(`📸 ${poster.name}님이 인스타를 올렸어요!${likeText}${commentText}`);
         } else {
             toastr.error('포스트 생성에 실패했어요');
         }
+    },
+    
+    // NPC 선택 모달
+    showNPCSelectionModal(npcList, action = 'post') {
+        // 기존 모달 제거
+        $('#npc-select-modal').remove();
+        
+        const title = action === 'post' ? '누가 인스타를 올릴까요?' : 'NPC 선택';
+        
+        const modalHtml = `
+        <div id="npc-select-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:10001;">
+            <div style="background:#1a1a2e;border-radius:16px;padding:20px;max-width:350px;width:90%;max-height:70vh;overflow-y:auto;">
+                <h3 style="margin:0 0 15px;color:#fff;text-align:center;">${title}</h3>
+                <div class="npc-select-list" style="display:flex;flex-direction:column;gap:10px;">
+                    ${npcList.map((npc, idx) => `
+                        <button class="npc-select-btn" data-npc-idx="${idx}" style="
+                            display:flex;align-items:center;gap:12px;padding:12px 16px;
+                            background:rgba(255,255,255,0.1);border:none;border-radius:12px;
+                            cursor:pointer;transition:all 0.2s;text-align:left;
+                        ">
+                            <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--phone-primary),var(--phone-primary-dark));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;">
+                                ${npc.name.charAt(0)}
+                            </div>
+                            <div style="flex:1;">
+                                <div style="color:#fff;font-weight:600;">${npc.name}</div>
+                                ${npc.description ? `<div style="color:#aaa;font-size:11px;margin-top:2px;">${npc.description.substring(0, 40)}${npc.description.length > 40 ? '...' : ''}</div>` : ''}
+                            </div>
+                        </button>
+                    `).join('')}
+                </div>
+                <button id="npc-select-cancel" style="width:100%;margin-top:15px;padding:10px;background:rgba(255,255,255,0.1);border:none;border-radius:8px;color:#888;cursor:pointer;">취소</button>
+                <button id="npc-refresh-btn" style="width:100%;margin-top:8px;padding:8px;background:transparent;border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#666;cursor:pointer;font-size:11px;">🔄 NPC 목록 새로고침</button>
+            </div>
+        </div>`;
+        
+        $('body').append(modalHtml);
+        
+        // 스타일 호버 효과
+        $('.npc-select-btn').hover(
+            function() { $(this).css('background', 'rgba(255,255,255,0.2)'); },
+            function() { $(this).css('background', 'rgba(255,255,255,0.1)'); }
+        );
+        
+        // 선택 이벤트
+        $('.npc-select-btn').on('click', async (e) => {
+            const idx = $(e.currentTarget).data('npc-idx');
+            const selectedNPC = npcList[idx];
+            $('#npc-select-modal').remove();
+            
+            if (action === 'post') {
+                await this.triggerCharacterPost(selectedNPC);
+            }
+        });
+        
+        // 취소
+        $('#npc-select-cancel, #npc-select-modal').on('click', (e) => {
+            if (e.target.id === 'npc-select-modal' || e.target.id === 'npc-select-cancel') {
+                $('#npc-select-modal').remove();
+            }
+        });
+        
+        // NPC 새로고침
+        $('#npc-refresh-btn').on('click', async (e) => {
+            e.stopPropagation();
+            toastr.info('🔄 NPC 목록 새로고침 중...');
+            const newList = await this.extractNPCs(true);
+            $('#npc-select-modal').remove();
+            this.showNPCSelectionModal(newList, action);
+            toastr.success(`${newList.length}명의 NPC를 찾았어요!`);
+        });
     },
     
     async checkAutoPost(recentMessage) {
