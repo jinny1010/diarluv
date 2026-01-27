@@ -502,7 +502,18 @@ const MessageApp = {
         }
         
         const ctx = getContext();
-        const prompt = `${getSystemInstruction()}
+        const data = this.getData(settings, charId);
+        const msgLang = PhoneCore.getSettings().msgLanguage || 'ko'; 
+        const langInstruction = msgLang === 'ko' 
+            ? '- MUST respond in Korean (한국어).'
+            : '- MUST respond in English.';
+
+        const prompt = `[HIGHEST PRIORITY SYSTEM INSTRUCTION]
+        - NO roleplay (RP). NO character acting.
+        - NO actions like *action*, (action), or narrative descriptions.
+        - DO NOT write like a novel or screenplay.
+        - Respond naturally as if chatting.
+        ${langInstruction}
 
 [Text Message]
 ${charName} is sending a casual text message to ${userName}.
@@ -558,7 +569,18 @@ Write only the message content:`;
             conversationHistory = `[Previous messages]\n${conversationHistory}\n\n`;
         }
         
-        const prompt = `${getSystemInstruction()}
+        const data = this.getData(settings, charId);
+        const msgLang = PhoneCore.getSettings().msgLanguage || 'ko'; 
+        const langInstruction = msgLang === 'ko' 
+            ? '- MUST respond in Korean (한국어).'
+            : '- MUST respond in English.';
+        
+        const prompt = `[HIGHEST PRIORITY SYSTEM INSTRUCTION]
+        - NO roleplay (RP). NO character acting.
+        - NO actions like *action*, (action), or narrative descriptions.
+        - DO NOT write like a novel or screenplay.
+        - Respond naturally as if chatting.
+        ${langInstruction}
     
     [Text Message Reply]
     Current time: ${timeStr} (${timeInfo})
@@ -1985,7 +2007,8 @@ const InstaApp = {
         if (!settings.appData[key]) settings.appData[key] = { 
             userPosts: [],      
             charPosts: {},     
-            lastAutoPost: null 
+            lastAutoPost: null, 
+            language: 'ko'
         };
         return settings.appData[key];
     },
@@ -2872,7 +2895,20 @@ const PhoneCore = {
                 <div class="inline-drawer-content">
                     <p style="margin:10px 0;opacity:0.7;">v2.1.0 - 문자 앱 & 색상 커스터마이징</p>
                     <div style="margin:15px 0;"><b>앱 표시</b>
-                        ${Object.entries(this.apps).map(([id, app]) => `<label style="display:flex;align-items:center;gap:8px;margin:8px 0;"><input type="checkbox" class="phone-app-toggle" data-app="${id}" ${settings.enabledApps?.[id] !== false ? 'checked' : ''}><span>${app.icon} ${app.name}</span></label>`).join('')}
+                        ${Object.entries(this.apps).map(([id, app]) => `
+                            <div style="display:flex;align-items:center;gap:8px;margin:8px 0;">
+                                <label style="display:flex;align-items:center;gap:8px;flex:1;">
+                                    <input type="checkbox" class="phone-app-toggle" data-app="${id}" ${settings.enabledApps?.[id] !== false ? 'checked' : ''}>
+                                    <span>${app.icon} ${app.name}</span>
+                                </label>
+                                ${id === 'message' ? `
+                                    <select id="msg-lang-select" style="padding:2px 6px;font-size:12px;border-radius:4px;">
+                                        <option value="ko" ${(settings.msgLanguage || 'ko') === 'ko' ? 'selected' : ''}>한글</option>
+                                        <option value="en" ${settings.msgLanguage === 'en' ? 'selected' : ''}>ENG</option>
+                                    </select>
+                                ` : ''}
+                            </div>
+                        `).join('')}
                     </div>
                     <div style="margin:15px 0;"><b>배경화면</b> <small>(캐릭터별)</small>
                         <input type="file" id="phone-wp-input" accept="image/*" style="display:none;">
@@ -2915,6 +2951,13 @@ const PhoneCore = {
             s.language = this.value;
             PhoneCore.saveSettings();
             toastr.success(this.value === 'ko' ? '한국어로 설정됨' : 'Set to English');
+        });
+
+        $('#msg-lang-select').on('change', function() {
+            const s = PhoneCore.getSettings();
+            s.msgLanguage = this.value;
+            PhoneCore.saveSettings();
+            toastr.success(this.value === 'ko' ? '문자: 한국어' : 'Message: English');
         });
     },
     
