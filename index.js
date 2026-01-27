@@ -155,16 +155,24 @@ const Utils = {
     },
     // Split text into sentences for message bubbles
     splitIntoMessages(text) {
-        const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+        if (!text) return [text];
+        
+        const sentences = text.split(/(?<=[.!?])\s*/).filter(s => s.trim());
+        
+        if (sentences.length === 0) return [text];
+        
         const messages = [];
         let current = '';
         
         for (const sentence of sentences) {
-            if (current && (current + sentence).length > 80) {
+            const trimmed = sentence.trim();
+            if (!trimmed) continue;
+            
+            if (current && (current + ' ' + trimmed).length > 80) {
                 messages.push(current.trim());
-                current = sentence;
+                current = trimmed;
             } else {
-                current += sentence;
+                current = current ? current + ' ' + trimmed : trimmed;
             }
         }
         if (current.trim()) messages.push(current.trim());
@@ -510,34 +518,43 @@ Write only the message content:`;
     },
     
     async generateReply(userMessage, charName, userName, settings, charId) {
-    const ctx = getContext();
-    const data = this.getData(settings, charId);
+        const ctx = getContext();
+        const data = this.getData(settings, charId);
+        
+        const now = new Date();
+        const hour = now.getHours();
+        const timeInfo = hour < 6 ? 'late night/early morning' : 
+                         hour < 12 ? 'morning' : 
+                         hour < 18 ? 'afternoon' : 'evening/night';
+        const timeStr = `${hour}:${String(now.getMinutes()).padStart(2, '0')}`;
+        
+        let conversationHistory = '';
+        if (data.conversations.length > 1) {
+            const recent = data.conversations.slice(-11, -1);
+            conversationHistory = recent.map(msg => {
+                const sender = msg.fromMe ? userName : charName;
+                return `${sender}: ${msg.content}`;
+            }).join('\n');
+            conversationHistory = `[Previous messages]\n${conversationHistory}\n\n`;
+        }
+        
+        const prompt = `${SYSTEM_INSTRUCTION}
     
-    let conversationHistory = '';
-    if (data.conversations.length > 1) {
-        const recent = data.conversations.slice(-11, -1); 
-        conversationHistory = recent.map(msg => {
-            const sender = msg.fromMe ? userName : charName;
-            return `${sender}: ${msg.content}`;
-        }).join('\n');
-        conversationHistory = `[Previous messages]\n${conversationHistory}\n\n`;
-    }
+    [Text Message Reply]
+    Current time: ${timeStr} (${timeInfo})
+    ${conversationHistory}${userName} sent: "${userMessage}"
     
-    const prompt = `${SYSTEM_INSTRUCTION}
-
-[Text Message Reply]
-${conversationHistory}${userName} sent: "${userMessage}"
-
-As ${charName}, reply to this text message naturally.
-Be warm, loving, and conversational. 1-3 sentences.
-
-Write only the reply:`;
+    As ${charName}, reply to this text message naturally.
+    Be aware of the current time when replying.
+    Be warm, loving, and conversational. 1-3 sentences.
     
-    try {
-        const result = await ctx.generateQuietPrompt(prompt, false, false);
-        return Utils.cleanResponse(result).substring(0, 250);
-    } catch { return null; }
-},
+    Write only the reply:`;
+        
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            return Utils.cleanResponse(result).substring(0, 250);
+        } catch { return null; }
+    },
     
     render(charName) {
         return `
@@ -686,6 +703,8 @@ Write only the reply:`;
         Core.saveSettings();
         document.getElementById('msg-container').innerHTML = this.renderMessages(data, charName);
         this.scrollToBottom();
+
+        this.injectToContext(settings, charId, charName);
     },
     
     bindEvents(Core) {
@@ -697,7 +716,29 @@ Write only the reply:`;
             }
         });
     },
+
+    injectToContext(settings, charId, charName) {
+        const data = this.getData(settings, charId);
+        if (data.conversations.length === 0) return;
+        
+        const recent = data.conversations.slice(-10);
+        const summary = recent.map(msg => {
+            const sender = msg.fromMe ? '{{user}}' : '{{char}}';
+            const time = msg.timestamp ? Utils.formatTime(new Date(msg.timestamp)) : '';
+            return `[${time}] ${sender}: ${msg.content}`;
+        }).join('\n');
+        
+        const injection = `[Recent text messages between {{user}} and {{char}}]\n${summary}`;
+        
+        // SillyTavern 확장 데이터에 저장 (Author's Note 영역)
+        const ctx = getContext();
+        if (ctx.setExtensionPrompt) {
+            ctx.setExtensionPrompt('phone_messages', injection, 1, 0);
+        }
+    },  
 };
+
+
 
 // ========================================
 // 편지 앱 (Letter)
@@ -748,7 +789,7 @@ Write only the letter content (no greeting/signature):`;
         const today = Utils.getTodayKey();
         
         if (data.lastCharLetterDate === today) return null;
-        if (!Utils.chance(30)) {
+        if (!Utils.chance(10)) {
             data.lastCharLetterDate = today;
             return null;
         }
