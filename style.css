@@ -621,11 +621,7 @@
     30% { transform: translateY(-4px); opacity: 1; }
 }
 
-/* ========================================
-   인스타 앱 (Instagram Style)
-   ======================================== */
 
-/* 탭 */
 .phone-container .insta-tabs {
     display: flex;
     border-bottom: 1px solid rgba(255,255,255,0.1);
@@ -647,7 +643,6 @@
     border-bottom: 2px solid var(--phone-primary);
 }
 
-/* 프로필 목록 (스토리처럼) */
 .phone-container .insta-profiles {
     display: flex;
     gap: 12px;
@@ -698,6 +693,26 @@
 .phone-container .insta-profile-count {
     font-size: 10px;
     color: rgba(255,255,255,0.5);
+}
+
+.insta-comment-reply {
+    margin-left: 32px;
+    padding-left: 12px;
+    border-left: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.insta-comment-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    color: white;
+    flex-shrink: 0;
 }
 
 /* 3열 그리드 */
