@@ -2223,26 +2223,36 @@ Answer only: SELFIE or SCENERY`;
         const ctx = getContext();
         const data = this.getData(settings, PhoneCore.getCharId());
         
-        // NPC 정보 사용
         const posterName = posterNPC?.name || charName;
         const posterDesc = posterNPC?.description || '';
         const posterId = posterNPC?.id || charId;
         
-        const contentPrompt = `${getSystemInstruction()}
-
-[Instagram Post]
-${posterName} is posting on Instagram.
-${posterDesc ? `Character info: ${posterDesc}` : ''}
-
-Write a short Instagram caption (1-3 sentences).
-Include appropriate emojis.
-Stay in character based on personality and current situation.
-
-Write only the caption:`;
-
+        const contentPrompt = `You are writing an Instagram caption for ${posterName}.
+    
+    RULES:
+    - Write ONLY 1-3 short sentences
+    - Use casual social media language
+    - Can include emojis
+    - NO roleplay, NO narrative, NO actions
+    - NO asterisks, NO quotes, NO markdown
+    - NO "he/she said", NO third person narration
+    - Write as if ${posterName} is typing on their phone RIGHT NOW
+    
+    BAD examples (DO NOT write like this):
+    - "He smiled as he posted the photo"
+    - "*takes a selfie* Having fun!"
+    - "She thought about her day..."
+    
+    GOOD examples:
+    - "오늘 날씨 최고 ☀️"
+    - "MVP 받았다!! 🏆"
+    - "카페에서 힐링중 ☕"
+    
+    Write the caption:`;
+    
         try {
             const caption = await ctx.generateQuietPrompt(contentPrompt, false, false);
-            const cleanCaption = Utils.cleanResponse(caption).substring(0, 300);
+            const cleanCaption = Utils.cleanResponse(caption).substring(0, 200);
             
             const imageType = await this.getImageType(cleanCaption, posterName);
             
@@ -2256,7 +2266,6 @@ Write only the caption:`;
                 imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?nologo=true`;
             }
             
-            // NPC별로 포스트 저장 (posterId 사용)
             if (!data.charPosts[posterId]) data.charPosts[posterId] = [];
             
             const post = {
@@ -2269,13 +2278,12 @@ Write only the caption:`;
                 likes: [],
                 likeCount: 0,
                 comments: [],
-                charId: charId,  // 원본 캐릭터 ID (컨텍스트용)
-                posterId: posterId,  // 실제 포스터 NPC ID
+                charId: charId,
+                posterId: posterId,
                 charName: posterName,
                 posterDesc: posterDesc
             };
             
-            // NPC 자동 참여 (좋아요 + 댓글)
             await this.generateNPCEngagement(post, posterName, posterDesc, false);
             
             data.charPosts[posterId].unshift(post);
@@ -2370,29 +2378,58 @@ Write only the prompt:`;
     },
 
     async generateNPCComment(postCaption, posterName, commenterName, commenterDesc) {
-        const ctx = getContext();
-        const prompt = `${getSystemInstruction()}
-    
-    [Instagram Comment]
-    ${posterName} posted a photo on Instagram.
-    ${postCaption ? `Caption: "${postCaption}"` : '(No caption)'}
-    
-    As ${commenterName}, write a short comment (1-2 sentences).
-    ${commenterDesc ? `Your character: ${commenterDesc.substring(0, 200)}` : ''}
-    React naturally based on your personality and your relationship with ${posterName}.
-    Can include emojis.
-    
-    IMPORTANT: Write ONLY the comment text. No markdown, no formatting, no quotes.
-    
-    Write only the comment:`;
-    
-        try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
-            return Utils.cleanResponse(result).substring(0, 200);
-        } catch {
-            return null;
-        }
-    },
+    const ctx = getContext();
+    const prompt = `You are ${commenterName} commenting on ${posterName}'s Instagram post.
+Post caption: "${postCaption}"
+
+RULES:
+- Write ONLY 1-2 short sentences
+- Casual comment like a real friend would write
+- Can include emojis
+- NO roleplay, NO narrative, NO actions
+- NO asterisks, NO quotes, NO markdown
+- NO "I think", just write the comment directly
+
+BAD: "*smiles* Great photo!"
+BAD: "She commented: Nice!"
+GOOD: "대박 ㅋㅋㅋ 👍"
+GOOD: "우와 진짜 예쁘다!"
+
+Write the comment:`;
+
+    try {
+        const result = await ctx.generateQuietPrompt(prompt, false, false);
+        return Utils.cleanResponse(result).substring(0, 150);
+    } catch {
+        return null;
+    }
+},
+
+async generatePosterReply(postCaption, posterName, commenterName, commentText) {
+    const ctx = getContext();
+    const prompt = `You are ${posterName} replying to ${commenterName}'s comment on your Instagram.
+Their comment: "${commentText}"
+
+RULES:
+- Write ONLY 1 short sentence
+- Casual reply like texting a friend
+- Can include emojis
+- NO roleplay, NO narrative, NO actions
+- NO asterisks, NO quotes, NO markdown
+
+BAD: "*laughs* Thanks!"
+GOOD: "ㅋㅋㅋ 고마워~"
+GOOD: "그치?? 😆"
+
+Write the reply:`;
+
+    try {
+        const result = await ctx.generateQuietPrompt(prompt, false, false);
+        return Utils.cleanResponse(result).substring(0, 100);
+    } catch {
+        return null;
+    }
+},
     
     async calculateLikes(posterName, posterDesc, isUser = false) {
         const ctx = getContext();
