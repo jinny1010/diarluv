@@ -13,12 +13,21 @@ const getContext = () => SillyTavern.getContext();
 // ========================================
 // System Prompt (Top Priority)
 // ========================================
-const SYSTEM_INSTRUCTION = `[HIGHEST PRIORITY SYSTEM INSTRUCTION]
+function getSystemInstruction() {
+    const settings = DataManager.get();
+    const lang = settings.language || 'ko';
+    
+    const langInstruction = lang === 'ko' 
+        ? '- MUST respond in Korean (한국어).'
+        : '- MUST respond in English.';
+    
+    return `[HIGHEST PRIORITY SYSTEM INSTRUCTION]
 - NO roleplay (RP). NO character acting.
 - NO actions like *action*, (action), or narrative descriptions.
 - DO NOT write like a novel or screenplay.
 - Respond naturally as if chatting.
-- MUST respond in Korean (한국어).`;
+${langInstruction}`;
+}
 
 // ========================================
 // Default Colors
@@ -132,7 +141,6 @@ const Utils = {
     cleanResponse(text) {
         if (!text) return '';
         
-        // Gemini 응답 형식 처리 (parts 배열에서 <think> 아닌 text 추출)
         if (text.includes('parts:') && text.includes("finishReason:")) {
             const matches = [...text.matchAll(/\{\s*text:\s*'([^']+)'\s*\}/g)];
             const realText = matches.find(m => !m[1].includes('<think>'));
@@ -141,7 +149,6 @@ const Utils = {
             }
         }
         
-        // <think> 태그 제거 (혹시 남아있으면)
         text = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
         text = text.replace(/<think>[\s\S]*/gi, '');
         
@@ -150,9 +157,11 @@ const Utils = {
             .replace(/「[^」]*」/g, '')
             .replace(/『[^』]*』/g, '')
             .replace(/^\s*["']|["']\s*$/g, '')
-            .replace(/\s+/g, ' ')
+            .replace(/[ \t]+/g, ' ')  
+            .replace(/\n{3,}/g, '\n\n')  
             .trim();
     },
+
     // Split text into sentences for message bubbles
     splitIntoMessages(text) {
         if (!text) return [text];
@@ -250,7 +259,7 @@ const MundapApp = {
     
     async generateResponse(question, userAnswer, charName, userName) {
         const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
+        const prompt = `${getSystemInstruction()}
 
 [Couple Q&A Game]
 Question: "${question}"
@@ -483,7 +492,7 @@ const MessageApp = {
         }
         
         const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
+        const prompt = `${getSystemInstruction()}
 
 [Text Message]
 ${charName} is sending a casual text message to ${userName}.
@@ -538,7 +547,7 @@ Write only the message content:`;
             conversationHistory = `[Previous messages]\n${conversationHistory}\n\n`;
         }
         
-        const prompt = `${SYSTEM_INSTRUCTION}
+        const prompt = `${getSystemInstruction()}
     
     [Text Message Reply]
     Current time: ${timeStr} (${timeInfo})
@@ -758,22 +767,22 @@ const LetterApp = {
     
     async generateCharacterLetter(charName, userName) {
         const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
-
-[Love Letter Writing]
-${charName} is writing a heartfelt letter to ${userName}.
-
-Write a warm, emotional letter filled with genuine feelings. Express:
-- Deep affection and love
-- Specific memories or moments you cherish together  
-- How they make you feel special
-- Hopes and dreams for your future together
-- Words you find hard to say in person
-
-Make it personal, touching, and full of that warm fuzzy feeling of being in love.
-Write at least 3 paragraphs. Pour your heart out with deep emotions, memories, and sincere feelings that are hard to say in person.
-
-Write only the letter content (no greeting/signature):`;
+        const prompt = `${getSystemInstruction()}
+    
+    [Love Letter Writing]
+    ${charName} is writing a heartfelt letter to ${userName}.
+    
+    Write a warm, emotional letter filled with genuine feelings. Express:
+    - Deep affection and love
+    - Specific memories or moments you cherish together  
+    - How they make you feel special
+    - Hopes and dreams for your future together
+    - Words you find hard to say in person
+    
+    IMPORTANT: Separate each paragraph with a blank line for readability.
+    Write 3-4 paragraphs. Pour your heart out.
+    
+    Write only the letter content (no greeting/signature):`;
         
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
@@ -876,7 +885,7 @@ Write only the letter content (no greeting/signature):`;
     
     async generateReply(content, charName) {
         const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
+        const prompt = `${getSystemInstruction()}
 
 [Love Letter Reply]
 ${ctx.name1 || '나'} sent this heartfelt letter: "${content}"
@@ -1041,7 +1050,7 @@ const BookApp = {
     
     async generateCharacterRecommend(charName, userName) {
         const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
+        const prompt = `${getSystemInstruction()}
 
 [Book Recommendation]
 ${charName} wants to recommend a book to ${userName}.
@@ -1162,7 +1171,7 @@ Reason: (why you recommend it, 1-2 sentences, make it personal)`;
     
     async getRecommendation(title, charName) {
         const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
+        const prompt = `${getSystemInstruction()}
 
 [Book Discussion]
 ${ctx.name1} says they're reading "${title}".
@@ -1314,7 +1323,7 @@ const MovieApp = {
     
     async generateCharacterRecommend(charName, userName) {
         const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
+        const prompt = `${getSystemInstruction()}
 
 [Movie Recommendation]
 ${charName} wants to recommend a movie to watch together with ${userName}.
@@ -1440,7 +1449,7 @@ Reason: (why you want to watch it together, 1 sentence)`;
     
     async getDiscussion(title, charName) {
     const ctx = getContext();
-    const prompt = `${SYSTEM_INSTRUCTION}
+    const prompt = `${getSystemInstruction()}
 
 [Movie Discussion]
 ${ctx.name1} watched "${title}" together with you.
@@ -1597,7 +1606,7 @@ const DiaryApp = {
     
     async generateCharacterDiary(charName, userName, mood) {
         const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
+        const prompt = `${getSystemInstruction()}
 
 [Diary Entry]
 ${charName} is writing a diary entry for today.
@@ -1708,7 +1717,7 @@ Write only the diary content:`;
     
     async generateReply(content, mood, charName) {
         const ctx = getContext();
-        const prompt = `${SYSTEM_INSTRUCTION}
+        const prompt = `${getSystemInstruction()}
 
 [Diary Reply]
 ${ctx.name1}'s diary entry (mood: ${mood}): "${content}"
@@ -2040,6 +2049,7 @@ const PhoneCore = {
         this.switchPage('home');
         this.pageHistory = [];
         this.renderAppGrid();
+        this.applyThemeColor();
     },
     closeModal() { document.getElementById('phone-modal').style.display = 'none'; },
     
@@ -2064,6 +2074,21 @@ const PhoneCore = {
                         <button id="phone-wp-btn" class="menu_button" style="width:100%;margin-top:5px;">🖼️ 이미지 선택</button>
                         <button id="phone-wp-reset" class="menu_button" style="width:100%;margin-top:5px;">↩️ 기본으로</button>
                     </div>
+                    <div style="margin:15px 0;"><b>테마 색상</b> <small>(캐릭터별)</small>
+                        <input type="color" id="phone-theme-color" value="${this.getThemeColor()}" style="width:100%;height:40px;margin-top:5px;border:none;cursor:pointer;">
+                    </div>
+                    <div style="margin:15px 0;"><b>응답 언어</b>
+                        <div style="display:flex;gap:15px;margin-top:8px;">
+                            <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+                                <input type="radio" name="phone-lang" value="ko" ${(settings.language || 'ko') === 'ko' ? 'checked' : ''}>
+                                <span>한국어</span>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+                                <input type="radio" name="phone-lang" value="en" ${settings.language === 'en' ? 'checked' : ''}>
+                                <span>English</span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>`;
@@ -2074,6 +2099,18 @@ const PhoneCore = {
         $('#phone-wp-btn').on('click', () => $('#phone-wp-input').click());
         $('#phone-wp-input').on('change', function() { if (this.files[0]) { const r = new FileReader(); r.onload = e => { PhoneCore.setWallpaper(e.target.result); toastr.success('배경 변경!'); }; r.readAsDataURL(this.files[0]); } });
         $('#phone-wp-reset').on('click', () => { PhoneCore.setWallpaper(''); toastr.info('기본으로'); });
+
+        $('#phone-theme-color').on('change', function() {
+            PhoneCore.setThemeColor(this.value);
+            toastr.success('테마 색상 변경!');
+        });
+
+        $('input[name="phone-lang"]').on('change', function() {
+            const s = PhoneCore.getSettings();
+            s.language = this.value;
+            PhoneCore.saveSettings();
+            toastr.success(this.value === 'ko' ? '한국어로 설정됨' : 'Set to English');
+        });
     },
     
     addMenuButton() {
@@ -2086,6 +2123,7 @@ const PhoneCore = {
         console.log('[Phone] v2.1.0 로딩...');
         
         await DataManager.load();
+        this.applyThemeColor();
         this.initialized = true;
         
         this.createSettingsUI();
@@ -2096,6 +2134,30 @@ const PhoneCore = {
             this.applyWallpaper();
         });
         console.log('[Phone] 로딩 완료!');
+    },
+
+    setThemeColor(color) {
+        const s = this.getSettings();
+        if (!s.themeColors) s.themeColors = {};
+        s.themeColors[this.getCharId()] = color;
+        this.saveSettings();
+        this.applyThemeColor();
+    },
+    
+    getThemeColor() {
+        return this.getSettings().themeColors?.[this.getCharId()] || '#ff6b9d';
+    },
+    
+    applyThemeColor() {
+        const color = this.getThemeColor();
+        const r = parseInt(color.slice(1,3), 16);
+        const g = parseInt(color.slice(3,5), 16);
+        const b = parseInt(color.slice(5,7), 16);
+        const dark = `#${Math.round(r*0.8).toString(16).padStart(2,'0')}${Math.round(g*0.8).toString(16).padStart(2,'0')}${Math.round(b*0.8).toString(16).padStart(2,'0')}`;
+        
+        document.documentElement.style.setProperty('--phone-primary', color);
+        document.documentElement.style.setProperty('--phone-primary-dark', dark);
+        document.documentElement.style.setProperty('--phone-primary-rgb', `${r}, ${g}, ${b}`);
     },
 };
 
