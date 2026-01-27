@@ -149,15 +149,12 @@ const Utils = {
         text = text.replace(/<think>[\s\S]*/gi, '');
         
         return text
-            .replace(/```[\w]*\n?/g, '')
-            .replace(/'''[\w]*\n?/g, '')
-            .replace(/\*\*([^*]+)\*\*/g, '$1')
-            .replace(/\*([^*]+)\*/g, '$1')
+            .replace(/\*[^*]*\*/g, '')
             .replace(/「[^」]*」/g, '')
             .replace(/『[^』]*』/g, '')
             .replace(/^\s*["']|["']\s*$/g, '')
-            .replace(/[ \t]+/g, ' ')
-            .replace(/\n{3,}/g, '\n\n')
+            .replace(/[ \t]+/g, ' ')  
+            .replace(/\n{3,}/g, '\n\n')  
             .trim();
     },
 
@@ -2000,7 +1997,7 @@ const InstaApp = {
     id: 'insta',
     name: '인스타',
     icon: '📸',
-    state: { currentView: 'feed', selectedPost: null, isGenerating: false, npcCache: null },
+    state: { currentView: 'feed', selectedPost: null, isGenerating: false },
     
     getData(settings, charId) {
         const key = `insta_${charId}`;
@@ -2009,209 +2006,9 @@ const InstaApp = {
             userPosts: [],      
             charPosts: {},     
             lastAutoPost: null, 
-            language: 'ko',
-            npcList: null  // NPC 캐시 저장
+            language: 'ko'
         };
         return settings.appData[key];
-    },
-    
-    async extractNPCs(forceRefresh = false) {
-        const ctx = getContext();
-        const settings = PhoneCore.getSettings();
-        const charId = PhoneCore.getCharId();
-        const data = this.getData(settings, charId);
-        
-        if (data.npcList && !forceRefresh) {
-            return data.npcList;
-        }
-        
-        const charData = ctx.characters?.[ctx.characterId];
-        const mainCharName = charData?.name || ctx.name2 || '';
-        const userName = ctx.name1 || 'User';
-        const description = charData?.description || '';
-        const personality = charData?.personality || '';
-        const scenario = charData?.scenario || '';
-        const mesExamples = charData?.mes_example || '';
-        
-        let lorebookInfo = '';
-        try {
-            const lorebook = ctx.chat_metadata?.world_info || [];
-            if (Array.isArray(lorebook)) {
-                lorebookInfo = lorebook.map(entry => entry.content || '').join('\n').substring(0, 1000);
-            }
-        } catch (e) {}
-        
-        let historyInfo = '';
-        try {
-            const recentChat = ctx.chat?.slice(-20) || [];
-            const names = new Set();
-            recentChat.forEach(msg => {
-                if (msg.name && msg.name !== userName && msg.name !== mainCharName) {
-                    names.add(msg.name);
-                }
-            });
-            if (names.size > 0) {
-                historyInfo = `Characters mentioned in chat: ${[...names].join(', ')}`;
-            }
-        } catch (e) {}
-        
-        const combinedContext = `${description}\n${personality}\n${scenario}\n${mesExamples}\n${lorebookInfo}\n${historyInfo}`.substring(0, 3000);
-        
-        const prompt = `${getSystemInstruction()}
-    
-    [NPC Extraction Task]
-    Extract supporting characters (NPCs) from this context.
-    EXCLUDE: Main character "${mainCharName}" and user "${userName}"
-    
-    Context:
-    ${combinedContext}
-    
-    List only SUPPORTING characters with brief descriptions.
-    Format: NAME | BRIEF_DESCRIPTION
-    
-    Rules:
-    - Do NOT include "${mainCharName}" or "${userName}"
-    - Only named characters, not generic terms
-    - Maximum 8 characters
-    - If description contains multiple main characters (like A, B, C format), list ALL of them
-    
-    List:`;
-    
-        try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
-            const cleaned = Utils.cleanResponse(result);
-            
-            const npcs = cleaned.split('\n')
-                .map(line => {
-                    const match = line.match(/^([^|]+)\|(.+)$/);
-                    if (match) {
-                        const name = match[1].trim();
-                        if (name.toLowerCase() === mainCharName.toLowerCase() || 
-                            name.toLowerCase() === userName.toLowerCase()) {
-                            return null;
-                        }
-                        return {
-                            id: Utils.generateId(),
-                            name: name,
-                            description: match[2].trim(),
-                            avatar: null,
-                            isMainChar: false
-                        };
-                    }
-                    const name = line.replace(/^[-*•]\s*/, '').trim();
-                    if (name && name.length > 1 && name.length < 50 &&
-                        name.toLowerCase() !== mainCharName.toLowerCase() &&
-                        name.toLowerCase() !== userName.toLowerCase()) {
-                        return {
-                            id: Utils.generateId(),
-                            name: name,
-                            description: '',
-                            avatar: null,
-                            isMainChar: false
-                        };
-                    }
-                    return null;
-                })
-                .filter(Boolean)
-                .slice(0, 8);
-            
-            data.npcList = npcs;
-            DataManager.save();
-            
-            return npcs;
-        } catch (e) {
-            return [];
-        }
-    },
-    
-    async extractMainCharacters() {
-        const ctx = getContext();
-        const charData = ctx.characters?.[ctx.characterId];
-        const mainCharName = charData?.name || ctx.name2 || '';
-        const description = charData?.description || '';
-        const personality = charData?.personality || '';
-        
-        const combinedContext = `${description}\n${personality}`.substring(0, 2000);
-        
-        const prompt = `${getSystemInstruction()}
-    
-    [Main Character Detection]
-    Analyze this character description. Is this a SINGLE character or MULTIPLE main characters?
-    
-    Description:
-    ${combinedContext}
-    
-    If SINGLE: Output just the name "${mainCharName}"
-    If MULTIPLE (like characters A, B, C sharing one card): List all main character names
-    
-    Format each as: NAME | BRIEF_DESCRIPTION
-    Only main/protagonist characters, not supporting roles.
-    
-    List:`;
-    
-        try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
-            const cleaned = Utils.cleanResponse(result);
-            
-            const chars = cleaned.split('\n')
-                .map(line => {
-                    const match = line.match(/^([^|]+)\|(.+)$/);
-                    if (match) {
-                        return {
-                            id: Utils.generateId(),
-                            name: match[1].trim(),
-                            description: match[2].trim(),
-                            avatar: charData?.avatar ? `/characters/${charData.avatar}` : null,
-                            isMainChar: true
-                        };
-                    }
-                    const name = line.replace(/^[-*•]\s*/, '').trim();
-                    if (name && name.length > 1 && name.length < 50) {
-                        return {
-                            id: Utils.generateId(),
-                            name: name,
-                            description: '',
-                            avatar: charData?.avatar ? `/characters/${charData.avatar}` : null,
-                            isMainChar: true
-                        };
-                    }
-                    return null;
-                })
-                .filter(Boolean);
-            
-            if (chars.length === 0) {
-                return [{
-                    id: ctx.characterId,
-                    name: mainCharName,
-                    description: '',
-                    avatar: charData?.avatar ? `/characters/${charData.avatar}` : null,
-                    isMainChar: true
-                }];
-            }
-            
-            return chars;
-        } catch (e) {
-            return [{
-                id: ctx.characterId,
-                name: mainCharName,
-                description: '',
-                avatar: charData?.avatar ? `/characters/${charData.avatar}` : null,
-                isMainChar: true
-            }];
-        }
-    },
-    
-    // NPC 목록 가져오기 (캐시 우선)
-    async getNPCList() {
-        const ctx = getContext();
-        
-        // 실제 그룹챗이면 기존 로직 사용
-        if (ctx.groupId && ctx.groups) {
-            return this.getCharacterList();
-        }
-        
-        // 1:1이면 NPC 추출
-        return await this.extractNPCs();
     },
     
     getCharacterAvatar(charId) {
@@ -2290,54 +2087,38 @@ Answer only: SELFIE or SCENERY`;
         }
     },
     
-    async generateCharacterPost(charName, charId, settings, posterNPC = null) {
+    async generateCharacterPost(charName, charId, settings) {
         const ctx = getContext();
         const data = this.getData(settings, PhoneCore.getCharId());
         
-        const posterName = posterNPC?.name || charName;
-        const posterDesc = posterNPC?.description || '';
-        const posterId = posterNPC?.id || charId;
-        
-        const contentPrompt = `You are writing an Instagram caption for ${posterName}.
-    
-    RULES:
-    - Write ONLY 1-3 short sentences
-    - Use casual social media language
-    - Can include emojis
-    - NO roleplay, NO narrative, NO actions
-    - NO asterisks, NO quotes, NO markdown
-    - NO "he/she said", NO third person narration
-    - Write as if ${posterName} is typing on their phone RIGHT NOW
-    
-    BAD examples (DO NOT write like this):
-    - "He smiled as he posted the photo"
-    - "*takes a selfie* Having fun!"
-    - "She thought about her day..."
-    
-    GOOD examples:
-    - "오늘 날씨 최고 ☀️"
-    - "MVP 받았다!! 🏆"
-    - "카페에서 힐링중 ☕"
-    
-    Write the caption:`;
-    
+        const contentPrompt = `${getSystemInstruction()}
+
+[Instagram Post]
+${charName} is posting on Instagram.
+
+Write a short Instagram caption (1-3 sentences).
+Include appropriate emojis.
+Stay in character based on personality and current situation.
+
+Write only the caption:`;
+
         try {
             const caption = await ctx.generateQuietPrompt(contentPrompt, false, false);
-            const cleanCaption = Utils.cleanResponse(caption).substring(0, 200);
+            const cleanCaption = Utils.cleanResponse(caption).substring(0, 300);
             
-            const imageType = await this.getImageType(cleanCaption, posterName);
+            const imageType = await this.getImageType(cleanCaption, charName);
             
             let imageUrl = '';
             
             if (imageType === 'selfie') {
-                const imagePrompt = await this.generateImagePrompt(cleanCaption, posterName, 'selfie', posterDesc);
+                const imagePrompt = await this.generateImagePrompt(cleanCaption, charName, 'selfie');
                 imageUrl = await this.generateNovelAIImage(imagePrompt);
             } else {
-                const imagePrompt = await this.generateImagePrompt(cleanCaption, posterName, 'scenery');
+                const imagePrompt = await this.generateImagePrompt(cleanCaption, charName, 'scenery');
                 imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?nologo=true`;
             }
             
-            if (!data.charPosts[posterId]) data.charPosts[posterId] = [];
+            if (!data.charPosts[charId]) data.charPosts[charId] = [];
             
             const post = {
                 id: Utils.generateId(),
@@ -2347,17 +2128,12 @@ Answer only: SELFIE or SCENERY`;
                 imageUrl: imageUrl,
                 imageType: imageType,
                 likes: [],
-                likeCount: 0,
                 comments: [],
                 charId: charId,
-                posterId: posterId,
-                charName: posterName,
-                posterDesc: posterDesc
+                charName: charName
             };
             
-            await this.generateNPCEngagement(post, posterName, posterDesc, false);
-            
-            data.charPosts[posterId].unshift(post);
+            data.charPosts[charId].unshift(post);
             data.lastAutoPost = Utils.getTodayKey();
             DataManager.save();
             
@@ -2368,12 +2144,11 @@ Answer only: SELFIE or SCENERY`;
         }
     },
     
-    async generateImagePrompt(caption, charName, imageType, npcDescription = '') {
+    async generateImagePrompt(caption, charName, imageType) {
         const ctx = getContext();
         
         if (imageType === 'selfie') {
-            // NPC description이 있으면 사용, 없으면 캐릭터 description 사용
-            const charDescription = npcDescription || ctx.characters?.[ctx.characterId]?.description || '';
+            const charDescription = ctx.characters?.[ctx.characterId]?.description || '';
             const prompt = `${getSystemInstruction()}
 
 Create a short image generation prompt for NovelAI.
@@ -2447,270 +2222,6 @@ Write only the prompt:`;
             return null;
         }
     },
-
-    async generateNPCComment(postCaption, posterName, commenterName, commenterDesc) {
-    const ctx = getContext();
-    const prompt = `You are ${commenterName} commenting on ${posterName}'s Instagram post.
-Post caption: "${postCaption}"
-
-RULES:
-- Write ONLY 1-2 short sentences
-- Casual comment like a real friend would write
-- Can include emojis
-- NO roleplay, NO narrative, NO actions
-- NO asterisks, NO quotes, NO markdown
-- NO "I think", just write the comment directly
-
-BAD: "*smiles* Great photo!"
-BAD: "She commented: Nice!"
-GOOD: "대박 ㅋㅋㅋ 👍"
-GOOD: "우와 진짜 예쁘다!"
-
-Write the comment:`;
-
-    try {
-        const result = await ctx.generateQuietPrompt(prompt, false, false);
-        return Utils.cleanResponse(result).substring(0, 150);
-    } catch {
-        return null;
-    }
-},
-
-async generatePosterReply(postCaption, posterName, commenterName, commentText) {
-    const ctx = getContext();
-    const prompt = `You are ${posterName} replying to ${commenterName}'s comment on your Instagram.
-Their comment: "${commentText}"
-
-RULES:
-- Write ONLY 1 short sentence
-- Casual reply like texting a friend
-- Can include emojis
-- NO roleplay, NO narrative, NO actions
-- NO asterisks, NO quotes, NO markdown
-
-BAD: "*laughs* Thanks!"
-GOOD: "ㅋㅋㅋ 고마워~"
-GOOD: "그치?? 😆"
-
-Write the reply:`;
-
-    try {
-        const result = await ctx.generateQuietPrompt(prompt, false, false);
-        return Utils.cleanResponse(result).substring(0, 100);
-    } catch {
-        return null;
-    }
-},
-    
-    async calculateLikes(posterName, posterDesc, isUser = false) {
-        const ctx = getContext();
-        const prompt = `${getSystemInstruction()}
-
-[Instagram Popularity Assessment]
-${posterName}'s profile: ${posterDesc ? posterDesc.substring(0, 300) : 'No description available'}
-
-Based on the personality and social traits, estimate their Instagram popularity.
-Consider: social skills, appearance, popularity among peers, extroversion, fame.
-
-Rate from 1-5:
-1 = Very low (5-15 likes)
-2 = Low (15-30 likes) 
-3 = Average (30-60 likes)
-4 = High (60-120 likes)
-5 = Very high/famous (120-300 likes)
-
-Answer with ONLY a number 1-5:`;
-
-        try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
-            const rating = parseInt(result.match(/[1-5]/)?.[0] || '3');
-            
-            const ranges = {
-                1: [5, 15],
-                2: [15, 30],
-                3: [30, 60],
-                4: [60, 120],
-                5: [120, 300]
-            };
-            
-            const [min, max] = ranges[rating] || [30, 60];
-            return Math.floor(Math.random() * (max - min + 1)) + min;
-        } catch {
-            return Math.floor(Math.random() * 30) + 20; // 기본 20-50
-        }
-    },
-
-    async generateNPCEngagement(post, posterName, posterDesc, isUserPost = false) {
-        const ctx = getContext();
-        const userName = ctx.name1 || 'User';
-        
-        const npcs = await this.extractNPCs(false);
-        const mainChars = await this.extractMainCharacters();
-        const isMultiChar = mainChars.length > 1;
-        
-        const likeCount = await this.calculateLikes(posterName, posterDesc, isUserPost);
-        
-        const likes = [];
-        
-        if (isUserPost) {
-            mainChars.forEach(char => {
-                likes.push({ type: 'mainChar', id: char.id, name: char.name });
-            });
-            npcs.forEach(npc => {
-                likes.push({ type: 'npc', id: npc.id, name: npc.name });
-            });
-        } else {
-            likes.push({ type: 'user', name: userName });
-            
-            if (isMultiChar) {
-                mainChars.forEach(char => {
-                    if (char.name.toLowerCase() !== posterName.toLowerCase()) {
-                        likes.push({ type: 'mainChar', id: char.id, name: char.name });
-                    }
-                });
-            }
-            
-            npcs.forEach(npc => {
-                if (npc.name.toLowerCase() !== posterName.toLowerCase()) {
-                    likes.push({ type: 'npc', id: npc.id, name: npc.name });
-                }
-            });
-        }
-        
-        const anonymousCount = Math.max(0, likeCount - likes.length);
-        for (let i = 0; i < anonymousCount; i++) {
-            likes.push({ type: 'anonymous' });
-        }
-        
-        post.likes = likes;
-        post.likeCount = likeCount;
-        
-        let availableCommenters = [];
-        
-        if (isUserPost) {
-            availableCommenters = [...mainChars, ...npcs];
-        } else {
-            if (isMultiChar) {
-                availableCommenters = mainChars.filter(c => 
-                    c.name.toLowerCase() !== posterName.toLowerCase()
-                );
-            }
-            availableCommenters = [...availableCommenters, ...npcs.filter(n => 
-                n.name.toLowerCase() !== posterName.toLowerCase()
-            )];
-        }
-        
-        const commentCount = Math.min(availableCommenters.length, Math.floor(Math.random() * 3) + 1);
-        const commenters = [...availableCommenters].sort(() => Math.random() - 0.5).slice(0, commentCount);
-        
-        for (const commenter of commenters) {
-            const comment = await this.generateNPCComment(
-                post.caption, 
-                posterName, 
-                commenter.name,
-                commenter.description || ''
-            );
-            
-            if (comment) {
-                const commentObj = {
-                    id: Utils.generateId(),
-                    text: comment,
-                    isUser: false,
-                    isNPC: !commenter.isMainChar,
-                    isMainChar: commenter.isMainChar || false,
-                    npcId: commenter.id,
-                    charName: commenter.name,
-                    timestamp: Date.now() + Math.random() * 60000,
-                    replies: []
-                };
-                
-                if (!isUserPost && Utils.chance(50)) {
-                    const replyText = await this.generatePosterReply(post.caption, posterName, commenter.name, comment);
-                    if (replyText) {
-                        commentObj.replies.push({
-                            id: Utils.generateId(),
-                            text: replyText,
-                            charName: posterName,
-                            isUser: false,
-                            timestamp: Date.now() + Math.random() * 120000
-                        });
-                    }
-                }
-                
-                post.comments.push(commentObj);
-            }
-        }
-        
-        return post;
-    },
-
-    async handleUserComment(post, commentText, Core) {
-        const ctx = getContext();
-        const settings = Core.getSettings();
-        const charId = Core.getCharId();
-        
-        if (!post.comments) post.comments = [];
-        
-        const userComment = {
-            id: Utils.generateId(),
-            text: commentText,
-            isUser: true,
-            timestamp: Date.now(),
-            replies: []
-        };
-        
-        post.comments.push(userComment);
-        Core.saveSettings();
-        
-        let replierName;
-        let replierDesc = '';
-        
-        if (post.isUserPost) {
-            return;
-        }
-        
-        replierName = post.charName;
-        replierDesc = post.posterDesc || '';
-        
-        const replyText = await this.generatePosterReply(post.caption, replierName, ctx.name1 || 'User', commentText);
-        
-        if (replyText) {
-            userComment.replies.push({
-                id: Utils.generateId(),
-                text: replyText,
-                charName: replierName,
-                isUser: false,
-                timestamp: Date.now()
-            });
-            Core.saveSettings();
-        }
-        
-        return userComment;
-    },
-    
-    async generatePosterReply(postCaption, posterName, commenterName, commentText) {
-        const ctx = getContext();
-        const prompt = `${getSystemInstruction()}
-    
-    [Instagram Reply]
-    ${commenterName} commented on ${posterName}'s post: "${commentText}"
-    Original post caption: "${postCaption}"
-    
-    As ${posterName}, write a short reply (1 sentence).
-    React naturally to the comment.
-    Can include emojis.
-    
-    IMPORTANT: Write ONLY the reply text. No markdown, no formatting.
-    
-    Write only the reply:`;
-    
-        try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
-            return Utils.cleanResponse(result).substring(0, 150);
-        } catch {
-            return null;
-        }
-    },
     
     // 메인 render
     render(charName) {
@@ -2727,49 +2238,42 @@ Answer with ONLY a number 1-5:`;
         <div class="app-content" id="insta-content"></div>`;
     },
     
-    renderFeed(data, npcList) {
+    renderFeed(data, charList) {
         let allPosts = [];
-        for (const posterId in data.charPosts) {
-            // NPC 목록에서 찾기 (id 또는 name으로)
-            const npcInfo = npcList.find(c => c.id == posterId || c.name == posterId);
-            const posts = data.charPosts[posterId] || [];
-            posts.forEach(p => {
-                allPosts.push({ 
-                    ...p, 
-                    npcInfo: npcInfo || { id: posterId, name: p.charName || '캐릭터', avatar: null }
-                });
-            });
+        for (const charId in data.charPosts) {
+            const charInfo = charList.find(c => c.id == charId);
+            if (charInfo) {
+                allPosts = allPosts.concat(
+                    data.charPosts[charId].map(p => ({ ...p, charInfo }))
+                );
+            }
         }
         
         allPosts.sort((a, b) => b.timestamp - a.timestamp);
         
         if (allPosts.length === 0) {
-            return `<div class="empty-state">📸<br>아직 게시물이 없어요<br><small style="opacity:0.6;">캐릭터가 인스타를 올리면 여기에 표시돼요</small></div>`;
+            return `<div class="empty-state">📸<br>아직 게시물이 없어요</div>`;
         }
         
         let profilesHtml = `<div class="insta-profiles">`;
-        const postersWithPosts = new Set(Object.keys(data.charPosts).filter(k => data.charPosts[k]?.length > 0));
-        
-        npcList.forEach(npc => {
-            const postCount = data.charPosts[npc.id]?.length || 0;
-            if (postCount > 0 || postersWithPosts.size === 0) {
-                profilesHtml += `
-                    <div class="insta-profile" data-npc-id="${npc.id}">
-                        ${npc.avatar 
-                            ? `<img src="${npc.avatar}" class="insta-profile-img">`
-                            : `<div class="insta-profile-img" style="background:linear-gradient(135deg,var(--phone-primary),var(--phone-primary-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;">${npc.name.charAt(0)}</div>`
-                        }
-                        <span class="insta-profile-name">${npc.name.length > 8 ? npc.name.substring(0,7) + '..' : npc.name}</span>
-                        ${postCount > 0 ? `<span class="insta-profile-count">${postCount}</span>` : ''}
-                    </div>`;
-            }
+        charList.forEach(char => {
+            const postCount = data.charPosts[char.id]?.length || 0;
+            profilesHtml += `
+                <div class="insta-profile" data-char-id="${char.id}">
+                    ${char.avatar 
+                        ? `<img src="${char.avatar}" class="insta-profile-img">`
+                        : `<div class="insta-profile-img">${char.name.charAt(0)}</div>`
+                    }
+                    <span class="insta-profile-name">${char.name}</span>
+                    <span class="insta-profile-count">${postCount}</span>
+                </div>`;
         });
         profilesHtml += `</div>`;
         
         let gridHtml = `<div class="insta-grid">`;
         allPosts.forEach(post => {
             gridHtml += `
-                <div class="insta-thumb" data-post-id="${post.id}" data-poster-id="${post.posterId || post.charId}">
+                <div class="insta-thumb" data-post-id="${post.id}" data-char-id="${post.charId}">
                     ${post.imageUrl 
                         ? `<img src="${post.imageUrl}" alt="">`
                         : `<div class="insta-thumb-placeholder">📷</div>`
@@ -2801,7 +2305,7 @@ Answer with ONLY a number 1-5:`;
         return gridHtml;
     },
     
-    renderPostDetail(post, isUserPost, npcList) {
+    renderPostDetail(post, isUserPost, charList) {
         const ctx = getContext();
         const userName = ctx.name1 || 'User';
         const userAvatar = this.getUserAvatar();
@@ -2811,52 +2315,29 @@ Answer with ONLY a number 1-5:`;
             authorAvatar = userAvatar;
             authorName = userName;
         } else {
-            const npcInfo = npcList.find(c => c.id == post.posterId || c.name == post.charName);
-            authorAvatar = npcInfo?.avatar || '';
-            authorName = post.charName || npcInfo?.name || '캐릭터';
+            const charInfo = charList.find(c => c.id == post.charId);
+            authorAvatar = charInfo?.avatar || '';
+            authorName = post.charName || charInfo?.name || '캐릭터';
         }
         
-        const isLiked = post.likes?.some(l => 
-            l === 'user' || (typeof l === 'object' && l.type === 'user')
-        );
+        const isLiked = post.likes?.includes('user');
         
         let commentsHtml = '';
         if (post.comments && post.comments.length > 0) {
             commentsHtml = post.comments.map(comment => {
                 const isUserComment = comment.isUser;
-                const commentNpc = npcList.find(c => c.id == comment.npcId || c.id == comment.charId || c.name == comment.charName);
-                const commentAvatar = isUserComment ? userAvatar : (commentNpc?.avatar || '');
+                const commentAvatar = isUserComment ? userAvatar : (charList.find(c => c.id == comment.charId)?.avatar || '');
                 const commentName = isUserComment ? userName : comment.charName;
-                
-                // 답글 렌더링
-                let repliesHtml = '';
-                if (comment.replies && comment.replies.length > 0) {
-                    repliesHtml = comment.replies.map(reply => `
-                        <div class="insta-reply" style="margin-left:40px;margin-top:8px;padding:8px;background:rgba(255,255,255,0.05);border-radius:8px;">
-                            <span class="insta-comment-name" style="color:var(--phone-primary);">${reply.charName}</span>
-                            <span class="insta-comment-text">${Utils.escapeHtml(reply.text)}</span>
-                        </div>
-                    `).join('');
-                }
-                
-                const showReplyBtn = !isUserPost && !isUserComment && !comment.replies?.length;
                 
                 return `
                     <div class="insta-comment">
                         ${commentAvatar 
                             ? `<img src="${commentAvatar}" class="insta-comment-avatar">`
-                            : `<div class="insta-comment-avatar" style="background:linear-gradient(135deg,var(--phone-primary),var(--phone-primary-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;">${commentName.charAt(0)}</div>`
+                            : `<div class="insta-comment-avatar">${commentName.charAt(0)}</div>`
                         }
-                        <div class="insta-comment-content" style="flex:1;">
+                        <div class="insta-comment-content">
                             <span class="insta-comment-name">${commentName}</span>
                             <span class="insta-comment-text">${Utils.escapeHtml(comment.text)}</span>
-                            ${showReplyBtn ? `
-                                <button class="insta-reply-btn" data-comment-id="${comment.id}" style="
-                                    background:none;border:none;color:var(--phone-primary);font-size:11px;
-                                    cursor:pointer;margin-top:4px;padding:0;opacity:0.8;
-                                ">↩️ ${authorName} 답글 생성</button>
-                            ` : ''}
-                            ${repliesHtml}
                         </div>
                     </div>`;
             }).join('');
@@ -2869,7 +2350,7 @@ Answer with ONLY a number 1-5:`;
                 <div class="insta-detail-author">
                     ${authorAvatar 
                         ? `<img src="${authorAvatar}" class="insta-author-avatar">`
-                        : `<div class="insta-author-avatar" style="background:linear-gradient(135deg,var(--phone-primary),var(--phone-primary-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;">${authorName.charAt(0)}</div>`
+                        : `<div class="insta-author-avatar">${authorName.charAt(0)}</div>`
                     }
                     <span class="insta-author-name">${authorName}</span>
                 </div>
@@ -2884,7 +2365,7 @@ Answer with ONLY a number 1-5:`;
                 </div>
                 <div class="insta-detail-actions">
                     <button class="insta-like-btn ${isLiked ? 'liked' : ''}" data-post-id="${post.id}">
-                        ${isLiked ? '❤️' : '🤍'} ${post.likeCount || post.likes?.length || 0}
+                        ${isLiked ? '❤️' : '🤍'} ${post.likes?.length || 0}
                     </button>
                     <span class="insta-date">${Utils.formatDate(post.date)}</span>
                 </div>
@@ -2925,19 +2406,16 @@ Answer with ONLY a number 1-5:`;
     
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
-        
-        // NPC 목록 가져오기 (1:1이면 디스크립션에서 추출)
-        const npcList = await this.getNPCList();
+        const charList = this.getCharacterList();
         
         this.state.currentView = 'feed';
-        this.state.npcCache = npcList;  // 캐시 저장
-        document.getElementById('insta-content').innerHTML = this.renderFeed(data, npcList);
+        document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
     },
     
     bindEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
-        const npcList = this.state.npcCache || this.getCharacterList();  // 캐시된 NPC 목록 사용
+        const charList = this.getCharacterList();
         const data = this.getData(settings, charId);
         const ctx = getContext();
         const charName = ctx.name2 || '캐릭터';
@@ -2949,7 +2427,7 @@ Answer with ONLY a number 1-5:`;
                 
                 const tabType = tab.dataset.tab;
                 if (tabType === 'feed') {
-                    document.getElementById('insta-content').innerHTML = this.renderFeed(data, npcList);
+                    document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
                 } else {
                     document.getElementById('insta-content').innerHTML = this.renderMyPosts(data);
                 }
@@ -2968,24 +2446,22 @@ Answer with ONLY a number 1-5:`;
     bindGridEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
-        const npcList = this.state.npcCache || this.getCharacterList();
+        const charList = this.getCharacterList();
         const data = this.getData(settings, charId);
         
         document.querySelectorAll('.insta-thumb').forEach(thumb => {
             Utils.bindLongPress(thumb, () => {
                 const postId = thumb.dataset.postId;
                 const isUser = thumb.dataset.isUser === 'true';
-                const posterId = thumb.dataset.posterId || thumb.dataset.charId;
+                const postCharId = thumb.dataset.charId;
                 if (confirm('이 게시물을 삭제할까요?')) {
                     if (isUser) {
                         data.userPosts = data.userPosts.filter(p => p.id !== postId);
                     } else {
-                        if (data.charPosts[posterId]) {
-                            data.charPosts[posterId] = data.charPosts[posterId].filter(p => p.id !== postId);
-                        }
+                        data.charPosts[postCharId] = data.charPosts[postCharId].filter(p => p.id !== postId);
                     }
                     Core.saveSettings();
-                    document.getElementById('insta-content').innerHTML = this.renderFeed(data, npcList);
+                    document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
                     this.bindGridEvents(Core);
                     toastr.success('게시물이 삭제되었어요');
                 }
@@ -2994,25 +2470,18 @@ Answer with ONLY a number 1-5:`;
             thumb.addEventListener('click', () => {
                 const postId = thumb.dataset.postId;
                 const isUser = thumb.dataset.isUser === 'true';
-                const posterId = thumb.dataset.posterId || thumb.dataset.charId;
+                const postCharId = thumb.dataset.charId;
                 
                 let post;
                 if (isUser) {
                     post = data.userPosts.find(p => p.id === postId);
                 } else {
-                    // posterId로 찾기
-                    for (const key in data.charPosts) {
-                        const found = data.charPosts[key]?.find(p => p.id === postId);
-                        if (found) {
-                            post = found;
-                            break;
-                        }
-                    }
+                    post = data.charPosts[postCharId]?.find(p => p.id === postId);
                 }
                 
                 if (post) {
-                    this.state.selectedPost = { post, isUser, posterId };
-                    document.getElementById('insta-content').innerHTML = this.renderPostDetail(post, isUser, npcList);
+                    this.state.selectedPost = { post, isUser, postCharId };
+                    document.getElementById('insta-content').innerHTML = this.renderPostDetail(post, isUser, charList);
                     this.bindDetailEvents(Core);
                 }
             });
@@ -3020,14 +2489,13 @@ Answer with ONLY a number 1-5:`;
         
         document.querySelectorAll('.insta-profile').forEach(profile => {
             profile.addEventListener('click', () => {
-                const npcId = profile.dataset.npcId || profile.dataset.charId;
-                const npc = npcList.find(n => n.id == npcId);
-                const posts = data.charPosts[npcId] || [];
+                const clickedCharId = profile.dataset.charId;
+                const posts = data.charPosts[clickedCharId] || [];
                 
                 let gridHtml = `
                     <div class="insta-char-header">
                         <button class="app-back-btn" id="insta-back-main">◀</button>
-                        <span>${npc?.name || profile.querySelector('.insta-profile-name').textContent}</span>
+                        <span>${profile.querySelector('.insta-profile-name').textContent}</span>
                     </div>`;
                 
                 if (posts.length === 0) {
@@ -3036,7 +2504,7 @@ Answer with ONLY a number 1-5:`;
                     gridHtml += `<div class="insta-grid">`;
                     posts.forEach(post => {
                         gridHtml += `
-                            <div class="insta-thumb" data-post-id="${post.id}" data-poster-id="${npcId}">
+                            <div class="insta-thumb" data-post-id="${post.id}" data-char-id="${clickedCharId}">
                                 ${post.imageUrl 
                                     ? `<img src="${post.imageUrl}" alt="">`
                                     : `<div class="insta-thumb-placeholder">📷</div>`
@@ -3049,7 +2517,7 @@ Answer with ONLY a number 1-5:`;
                 document.getElementById('insta-content').innerHTML = gridHtml;
                 
                 document.getElementById('insta-back-main')?.addEventListener('click', () => {
-                    document.getElementById('insta-content').innerHTML = this.renderFeed(data, npcList);
+                    document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
                     this.bindGridEvents(Core);
                 });
                 
@@ -3061,7 +2529,7 @@ Answer with ONLY a number 1-5:`;
     bindDetailEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
-        const npcList = this.state.npcCache || this.getCharacterList();
+        const charList = this.getCharacterList();
         const data = this.getData(settings, charId);
         const ctx = getContext();
         
@@ -3072,7 +2540,7 @@ Answer with ONLY a number 1-5:`;
                 document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
                 document.querySelector('.insta-tab[data-tab="my"]')?.classList.add('active');
             } else {
-                document.getElementById('insta-content').innerHTML = this.renderFeed(data, npcList);
+                document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
                 document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
                 document.querySelector('.insta-tab[data-tab="feed"]')?.classList.add('active');
             }
@@ -3082,80 +2550,22 @@ Answer with ONLY a number 1-5:`;
         document.querySelector('.insta-like-btn')?.addEventListener('click', (e) => {
             const btn = e.currentTarget;
             const postId = btn.dataset.postId;
-            const { post, isUser, posterId } = this.state.selectedPost;
+            const { post, isUser, postCharId } = this.state.selectedPost;
             
             if (!post.likes) post.likes = [];
-            if (!post.likeCount) post.likeCount = post.likes.length || 0;
             
-            // 유저 좋아요 찾기 (새 구조와 구 구조 모두 지원)
-            const userLikeIdx = post.likes.findIndex(l => 
-                l === 'user' || (typeof l === 'object' && l.type === 'user')
-            );
-            
-            if (userLikeIdx > -1) {
-                // 좋아요 취소
-                post.likes.splice(userLikeIdx, 1);
-                post.likeCount = Math.max(0, post.likeCount - 1);
+            const idx = post.likes.indexOf('user');
+            if (idx > -1) {
+                post.likes.splice(idx, 1);
                 btn.classList.remove('liked');
+                btn.innerHTML = `🤍 ${post.likes.length}`;
             } else {
-                // 좋아요 추가
-                post.likes.push({ type: 'user', name: ctx.name1 || 'User' });
-                post.likeCount = post.likeCount + 1;
+                post.likes.push('user');
                 btn.classList.add('liked');
+                btn.innerHTML = `❤️ ${post.likes.length}`;
             }
             
-            btn.innerHTML = `${btn.classList.contains('liked') ? '❤️' : '🤍'} ${post.likeCount}`;
             Core.saveSettings();
-        });
-        
-        document.querySelectorAll('.insta-reply-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const commentId = btn.dataset.commentId;
-                const { post, isUser } = this.state.selectedPost;
-                const comment = post.comments?.find(c => c.id === commentId);
-                
-                if (!comment) return;
-                
-                const posterName = post.charName;
-                const commenterName = comment.charName;
-                
-                toastr.info(`💬 ${posterName}님이 답글 작성 중...`);
-                
-                const replyPrompt = `${getSystemInstruction()}
-
-[Instagram Reply]
-${commenterName} commented on ${posterName}'s post: "${comment.text}"
-Original post caption: "${post.caption}"
-
-As ${posterName}, write a short reply (1 sentence).
-React naturally to the comment.
-Can include emojis.
-
-Write only the reply:`;
-
-                try {
-                    const result = await ctx.generateQuietPrompt(replyPrompt, false, false);
-                    const replyText = Utils.cleanResponse(result).substring(0, 150);
-                    
-                    if (!comment.replies) comment.replies = [];
-                    comment.replies.push({
-                        id: Utils.generateId(),
-                        text: replyText,
-                        charName: posterName,
-                        isUser: false,
-                        timestamp: Date.now()
-                    });
-                    
-                    Core.saveSettings();
-                    toastr.success(`💬 ${posterName}님이 답글을 달았어요!`);
-                    
-                    document.getElementById('insta-content').innerHTML = this.renderPostDetail(post, isUser, npcList);
-                    this.bindDetailEvents(Core);
-                } catch (err) {
-                    console.error('[Insta] Reply generation failed:', err);
-                    toastr.error('답글 생성에 실패했어요');
-                }
-            });
         });
         
         document.getElementById('insta-comment-send')?.addEventListener('click', async () => {
@@ -3163,44 +2573,53 @@ Write only the reply:`;
             const text = input.value.trim();
             if (!text) return;
             
-            const { post, isUser, posterId } = this.state.selectedPost;
+            const { post, isUser, postCharId } = this.state.selectedPost;
+            if (!post.comments) post.comments = [];
+            
+            post.comments.push({
+                id: Utils.generateId(),
+                text: text,
+                isUser: true,
+                timestamp: Date.now()
+            });
             
             input.value = '';
+            Core.saveSettings();
             
             if (!isUser) {
-                await this.handleUserComment(post, text, Core);
-            } else {
-                if (!post.comments) post.comments = [];
-                post.comments.push({
-                    id: Utils.generateId(),
-                    text: text,
-                    isUser: true,
-                    timestamp: Date.now(),
-                    replies: []
-                });
-                Core.saveSettings();
-                
-                const mainChars = await this.extractMainCharacters();
-                if (mainChars.length > 0) {
-                    const responder = mainChars[0];
-                    const npcComment = await this.generateNPCComment(post.caption, ctx.name1 || 'User', responder.name, responder.description);
-                    if (npcComment) {
-                        post.comments.push({
-                            id: Utils.generateId(),
-                            text: npcComment,
-                            isUser: false,
-                            isMainChar: true,
-                            npcId: responder.id,
-                            charName: responder.name,
-                            timestamp: Date.now(),
-                            replies: []
-                        });
-                        Core.saveSettings();
-                    }
+                const charName = post.charName;
+                const reply = await this.generateCharacterComment(text, charName);
+                if (reply) {
+                    post.comments.push({
+                        id: Utils.generateId(),
+                        text: reply,
+                        isUser: false,
+                        charId: postCharId,
+                        charName: charName,
+                        timestamp: Date.now()
+                    });
+                    Core.saveSettings();
                 }
             }
             
-            document.getElementById('insta-content').innerHTML = this.renderPostDetail(post, isUser, npcList);
+            if (isUser && post.comments.filter(c => !c.isUser).length === 0) {
+                // 첫 댓글이면 캐릭터도 댓글
+                const charName = ctx.name2 || '캐릭터';
+                const charComment = await this.generateCharacterComment(post.caption, charName);
+                if (charComment) {
+                    post.comments.push({
+                        id: Utils.generateId(),
+                        text: charComment,
+                        isUser: false,
+                        charId: ctx.characterId,
+                        charName: charName,
+                        timestamp: Date.now()
+                    });
+                    Core.saveSettings();
+                }
+            }
+            
+            document.getElementById('insta-content').innerHTML = this.renderPostDetail(post, isUser, charList);
             this.bindDetailEvents(Core);
         });
     },
@@ -3209,7 +2628,7 @@ Write only the reply:`;
         const settings = Core.getSettings();
         const charId = Core.getCharId();
         const data = this.getData(settings, charId);
-        const npcList = this.state.npcCache || this.getCharacterList();
+        const charList = this.getCharacterList();
         const ctx = getContext();
         
         let selectedImage = null;
@@ -3246,29 +2665,35 @@ Write only the reply:`;
                 return;
             }
             
-            toastr.info('📸 게시물 업로드 중...');
-            
             const post = {
                 id: Utils.generateId(),
                 date: Utils.getTodayKey(),
                 timestamp: Date.now(),
                 caption: caption,
                 imageUrl: selectedImage,
-                likes: [],
-                likeCount: 0,
+                likes: ['char'],
                 comments: []
             };
-            
-            // NPC 자동 참여 (좋아요 + 댓글) 생성
-            const userDesc = ctx.personas?.[ctx.user_avatar]?.description || '';
-            await this.generateNPCEngagement(post, ctx.name1 || 'User', userDesc, true);
             
             data.userPosts.unshift(post);
             Core.saveSettings();
             
-            const likeText = post.likeCount > 0 ? ` ❤️ ${post.likeCount}개의 좋아요!` : '';
-            const commentText = post.comments.length > 0 ? ` 💬 ${post.comments.length}개의 댓글!` : '';
-            toastr.success(`📸 게시물 업로드 완료!${likeText}${commentText}`);
+            toastr.success('📸 게시물이 업로드되었어요!');
+            
+            const charName = ctx.name2 || '캐릭터';
+            const comment = await this.generateCharacterComment(caption || '사진을 올렸어요', charName, selectedImage);
+            if (comment) {
+                post.comments.push({
+                    id: Utils.generateId(),
+                    text: comment,
+                    isUser: false,
+                    charId: ctx.characterId,
+                    charName: charName,
+                    timestamp: Date.now()
+                });
+                Core.saveSettings();
+                toastr.info(`💬 ${charName}님이 댓글을 달았어요!`);
+            }
             
             document.getElementById('insta-content').innerHTML = this.renderMyPosts(data);
             document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
@@ -3284,87 +2709,21 @@ Write only the reply:`;
         }
         
         const ctx = getContext();
-        const settings = PhoneCore.getSettings();
+        const charName = ctx.name2 || '캐릭터';
         const charId = ctx.characterId;
-        
-        const mainChar = ctx.characters?.[ctx.characterId];
-        const mainCharInfo = {
-            id: charId,
-            name: mainChar?.name || ctx.name2 || '캐릭터',
-            description: mainChar?.description || '',
-            avatar: mainChar?.avatar ? `/characters/${mainChar.avatar}` : null
-        };
-        
-        const extractedNPCs = await this.extractNPCs(false);
-        
-        const otherChars = extractedNPCs.filter(npc => 
-            npc.name.toLowerCase() !== mainCharInfo.name.toLowerCase()
-        );
-        
-        let poster;
-        let commenters;
-        
-        if (otherChars.length > 0 && extractedNPCs.length > 1) {
-            const allMainChars = extractedNPCs;
-            poster = await this.selectBestPoster(allMainChars);
-            commenters = allMainChars.filter(c => c.name !== poster.name);
-        } else {
-            poster = mainCharInfo;
-            commenters = extractedNPCs.filter(npc => 
-                npc.name.toLowerCase() !== mainCharInfo.name.toLowerCase()
-            );
-        }
+        const settings = PhoneCore.getSettings();
         
         this.state.isGenerating = true;
-        toastr.info(`📸 ${poster.name}님이 인스타 올리는 중...`);
+        toastr.info('📸 인스타 올리는 중...');
         
-        const post = await this.generateCharacterPost(poster.name, charId, settings, poster);
+        const post = await this.generateCharacterPost(charName, charId, settings);
         
         this.state.isGenerating = false;
         
         if (post) {
-            const likeText = post.likeCount ? ` ❤️ ${post.likeCount}` : '';
-            const commentText = post.comments?.length ? ` 💬 ${post.comments.length}` : '';
-            toastr.success(`📸 ${poster.name}님이 인스타를 올렸어요!${likeText}${commentText}`);
+            toastr.success(`📸 ${charName}님이 인스타를 올렸어요!`);
         } else {
             toastr.error('포스트 생성에 실패했어요');
-        }
-    },
-    
-    async selectBestPoster(characterList) {
-        const ctx = getContext();
-        
-        const recentMessages = ctx.chat?.slice(-5).map(m => {
-            const sender = m.is_user ? (ctx.name1 || 'User') : (m.name || ctx.name2);
-            return `${sender}: ${m.mes?.substring(0, 150) || ''}`;
-        }).join('\n') || '';
-        
-        const charInfo = characterList.map((c, i) => 
-            `${i + 1}. ${c.name}${c.description ? ` - ${c.description.substring(0, 80)}` : ''}`
-        ).join('\n');
-        
-        const prompt = `${getSystemInstruction()}
-    
-    [Select Instagram Poster]
-    Based on the recent conversation, who would most likely post on Instagram right now?
-    
-    Recent conversation:
-    ${recentMessages || '(No recent messages)'}
-    
-    Characters:
-    ${charInfo}
-    
-    Consider: Who experienced something worth sharing? Who is most active on social media?
-    
-    Answer with ONLY the number (1, 2, 3...):`;
-    
-        try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
-            const num = parseInt(result.match(/\d+/)?.[0] || '1');
-            const idx = Math.min(Math.max(num - 1, 0), characterList.length - 1);
-            return characterList[idx];
-        } catch (e) {
-            return characterList[Math.floor(Math.random() * characterList.length)];
         }
     },
     
