@@ -2128,10 +2128,16 @@ Write only the caption:`;
                 imageUrl: imageUrl,
                 imageType: imageType,
                 likes: [],
+                likeCount: 0,
                 comments: [],
                 charId: charId,
                 charName: charName
             };
+            
+            // 캐릭터 디스크립션 기반 NPC 자동 참여 (좋아요 + 댓글)
+            const charData = ctx.characters?.[charId];
+            const charDesc = charData?.description || charData?.personality || '';
+            await this.generateNPCEngagement(post, charName, charDesc, false);
             
             data.charPosts[charId].unshift(post);
             data.lastAutoPost = Utils.getTodayKey();
@@ -2221,6 +2227,143 @@ Write only the prompt:`;
         } catch {
             return null;
         }
+    },
+
+    // NPC 댓글 생성 (poster와 commenter 모두 고려)
+    async generateNPCComment(postCaption, posterName, commenterName, commenterDesc) {
+        const ctx = getContext();
+        const prompt = `${getSystemInstruction()}
+
+[Instagram Comment]
+${posterName} posted a photo on Instagram.
+${postCaption ? `Caption: "${postCaption}"` : '(No caption)'}
+
+As ${commenterName}, write a short comment (1-2 sentences).
+${commenterDesc ? `Your character: ${commenterDesc.substring(0, 200)}` : ''}
+React naturally based on your personality and your relationship with ${posterName}.
+Can include emojis.
+
+Write only the comment:`;
+
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            return Utils.cleanResponse(result).substring(0, 200);
+        } catch {
+            return null;
+        }
+    },
+
+    // 인기도 기반 좋아요 개수 계산
+    async calculateLikes(posterName, posterDesc, isUser = false) {
+        const ctx = getContext();
+        const prompt = `${getSystemInstruction()}
+
+[Instagram Popularity Assessment]
+${posterName}'s profile: ${posterDesc ? posterDesc.substring(0, 300) : 'No description available'}
+
+Based on the personality and social traits, estimate their Instagram popularity.
+Consider: social skills, appearance, popularity among peers, extroversion, fame.
+
+Rate from 1-5:
+1 = Very low (5-15 likes)
+2 = Low (15-30 likes) 
+3 = Average (30-60 likes)
+4 = High (60-120 likes)
+5 = Very high/famous (120-300 likes)
+
+Answer with ONLY a number 1-5:`;
+
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const rating = parseInt(result.match(/[1-5]/)?.[0] || '3');
+            
+            const ranges = {
+                1: [5, 15],
+                2: [15, 30],
+                3: [30, 60],
+                4: [60, 120],
+                5: [120, 300]
+            };
+            
+            const [min, max] = ranges[rating] || [30, 60];
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        } catch {
+            return Math.floor(Math.random() * 30) + 20; // 기본 20-50
+        }
+    },
+
+    // NPC 자동 참여 (좋아요 + 댓글) 생성
+    async generateNPCEngagement(post, posterName, posterDesc, isUserPost = false) {
+        const ctx = getContext();
+        const charList = this.getCharacterList();
+        
+        // 좋아요 개수 계산
+        const likeCount = await this.calculateLikes(posterName, posterDesc, isUserPost);
+        
+        // 좋아요 리스트 생성 (익명 NPC + 실제 캐릭터)
+        const likes = [];
+        
+        // 그룹 캐릭터들은 무조건 좋아요 (유저 포스트면)
+        if (isUserPost) {
+            charList.forEach(char => {
+                likes.push({ type: 'char', id: char.id, name: char.name });
+            });
+        } else {
+            // 캐릭터 포스트면 유저가 좋아요
+            likes.push({ type: 'user', name: ctx.name1 || 'User' });
+            // 다른 그룹 캐릭터들도 좋아요 (포스터 제외)
+            charList.forEach(char => {
+                if (char.id !== post.charId) {
+                    likes.push({ type: 'char', id: char.id, name: char.name });
+                }
+            });
+        }
+        
+        // 나머지는 익명 NPC로 채우기
+        const anonymousCount = Math.max(0, likeCount - likes.length);
+        for (let i = 0; i < anonymousCount; i++) {
+            likes.push({ type: 'anonymous' });
+        }
+        
+        post.likes = likes;
+        post.likeCount = likeCount;
+        
+        // NPC 댓글 생성 (1-3개)
+        const commentCount = Math.min(charList.length, Math.floor(Math.random() * 3) + 1);
+        const commenters = [...charList].sort(() => Math.random() - 0.5).slice(0, commentCount);
+        
+        for (const commenter of commenters) {
+            // 유저 포스트거나, 캐릭터 포스트인데 댓글러가 포스터가 아닌 경우
+            if (isUserPost || commenter.id !== post.charId) {
+                const charData = ctx.characters?.[commenter.id];
+                const commenterDesc = charData?.description || charData?.personality || '';
+                
+                const comment = await this.generateNPCComment(
+                    post.caption, 
+                    posterName, 
+                    commenter.name,
+                    commenterDesc
+                );
+                
+                if (comment) {
+                    post.comments.push({
+                        id: Utils.generateId(),
+                        text: comment,
+                        isUser: false,
+                        charId: commenter.id,
+                        charName: commenter.name,
+                        timestamp: Date.now() + Math.random() * 60000 // 약간의 시간차
+                    });
+                }
+            }
+        }
+        
+        // 유저 포스트가 아니면 유저도 댓글 달 확률 (30%)
+        if (!isUserPost && Utils.chance(30)) {
+            // 유저 자동 댓글은 생략 (유저가 직접 달도록)
+        }
+        
+        return post;
     },
     
     // 메인 render
@@ -2320,7 +2463,10 @@ Write only the prompt:`;
             authorName = post.charName || charInfo?.name || '캐릭터';
         }
         
-        const isLiked = post.likes?.includes('user');
+        // 유저 좋아요 여부 확인 (새 구조와 구 구조 모두 지원)
+        const isLiked = post.likes?.some(l => 
+            l === 'user' || (typeof l === 'object' && l.type === 'user')
+        );
         
         let commentsHtml = '';
         if (post.comments && post.comments.length > 0) {
@@ -2365,7 +2511,7 @@ Write only the prompt:`;
                 </div>
                 <div class="insta-detail-actions">
                     <button class="insta-like-btn ${isLiked ? 'liked' : ''}" data-post-id="${post.id}">
-                        ${isLiked ? '❤️' : '🤍'} ${post.likes?.length || 0}
+                        ${isLiked ? '❤️' : '🤍'} ${post.likeCount || post.likes?.length || 0}
                     </button>
                     <span class="insta-date">${Utils.formatDate(post.date)}</span>
                 </div>
@@ -2553,18 +2699,26 @@ Write only the prompt:`;
             const { post, isUser, postCharId } = this.state.selectedPost;
             
             if (!post.likes) post.likes = [];
+            if (!post.likeCount) post.likeCount = post.likes.length || 0;
             
-            const idx = post.likes.indexOf('user');
-            if (idx > -1) {
-                post.likes.splice(idx, 1);
+            // 유저 좋아요 찾기 (새 구조와 구 구조 모두 지원)
+            const userLikeIdx = post.likes.findIndex(l => 
+                l === 'user' || (typeof l === 'object' && l.type === 'user')
+            );
+            
+            if (userLikeIdx > -1) {
+                // 좋아요 취소
+                post.likes.splice(userLikeIdx, 1);
+                post.likeCount = Math.max(0, post.likeCount - 1);
                 btn.classList.remove('liked');
-                btn.innerHTML = `🤍 ${post.likes.length}`;
             } else {
-                post.likes.push('user');
+                // 좋아요 추가
+                post.likes.push({ type: 'user', name: ctx.name1 || 'User' });
+                post.likeCount = post.likeCount + 1;
                 btn.classList.add('liked');
-                btn.innerHTML = `❤️ ${post.likes.length}`;
             }
             
+            btn.innerHTML = `${btn.classList.contains('liked') ? '❤️' : '🤍'} ${post.likeCount}`;
             Core.saveSettings();
         });
         
@@ -2665,35 +2819,29 @@ Write only the prompt:`;
                 return;
             }
             
+            toastr.info('📸 게시물 업로드 중...');
+            
             const post = {
                 id: Utils.generateId(),
                 date: Utils.getTodayKey(),
                 timestamp: Date.now(),
                 caption: caption,
                 imageUrl: selectedImage,
-                likes: ['char'],
+                likes: [],
+                likeCount: 0,
                 comments: []
             };
+            
+            // NPC 자동 참여 (좋아요 + 댓글) 생성
+            const userDesc = ctx.personas?.[ctx.user_avatar]?.description || '';
+            await this.generateNPCEngagement(post, ctx.name1 || 'User', userDesc, true);
             
             data.userPosts.unshift(post);
             Core.saveSettings();
             
-            toastr.success('📸 게시물이 업로드되었어요!');
-            
-            const charName = ctx.name2 || '캐릭터';
-            const comment = await this.generateCharacterComment(caption || '사진을 올렸어요', charName, selectedImage);
-            if (comment) {
-                post.comments.push({
-                    id: Utils.generateId(),
-                    text: comment,
-                    isUser: false,
-                    charId: ctx.characterId,
-                    charName: charName,
-                    timestamp: Date.now()
-                });
-                Core.saveSettings();
-                toastr.info(`💬 ${charName}님이 댓글을 달았어요!`);
-            }
+            const likeText = post.likeCount > 0 ? ` ❤️ ${post.likeCount}개의 좋아요!` : '';
+            const commentText = post.comments.length > 0 ? ` 💬 ${post.comments.length}개의 댓글!` : '';
+            toastr.success(`📸 게시물 업로드 완료!${likeText}${commentText}`);
             
             document.getElementById('insta-content').innerHTML = this.renderMyPosts(data);
             document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
