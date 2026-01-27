@@ -866,19 +866,21 @@ const LetterApp = {
     
     renderView(letter, charName, isFromChar, idx) {
         return `
-        <div class="letter-paper ${isFromChar ? 'received' : ''}">
-            <div class="letter-header-row">
-                <div class="letter-to">${letter.fromMe ? `To. ${charName}` : 'To. 나'}</div>
-                ${isFromChar ? `<button class="regen-btn" id="letter-regen-content" data-idx="${idx}">🔄</button>` : ''}
-            </div>
-            <div class="letter-body">${Utils.escapeHtml(letter.content)}</div>
-            <div class="letter-from">${letter.fromMe ? 'From. 나' : `From. ${letter.charName || charName}`}</div>
-            ${letter.reply ? `
-                <div class="letter-reply">
-                    <div class="reply-label">💕 답장 <button class="regen-btn" id="letter-regen-reply" data-idx="${idx}">🔄</button></div>
-                    <div class="reply-content">${Utils.escapeHtml(letter.reply)}</div>
+        <div class="letter-fullscreen">
+            <div class="letter-paper ${isFromChar ? 'received' : ''}">
+                <div class="letter-header-row">
+                    <div class="letter-to">${letter.fromMe ? `To. ${charName}` : 'To. 나'}</div>
+                    ${isFromChar ? `<button class="regen-btn" id="letter-regen-content" data-idx="${idx}">🔄</button>` : ''}
                 </div>
-            ` : ''}
+                <div class="letter-body">${Utils.escapeHtml(letter.content)}</div>
+                <div class="letter-from">${letter.fromMe ? 'From. 나' : `From. ${letter.charName || charName}`}</div>
+                ${letter.reply ? `
+                    <div class="letter-reply">
+                        <div class="reply-label">💕 답장 <button class="regen-btn" id="letter-regen-reply" data-idx="${idx}">🔄</button></div>
+                        <div class="reply-content">${Utils.escapeHtml(letter.reply)}</div>
+                    </div>
+                ` : ''}
+            </div>
             <button id="letter-back-list" class="btn-secondary">목록으로</button>
         </div>`;
     },
