@@ -3083,7 +3083,7 @@ Write only the reply:`;
         });
     },
     
-    async triggerCharacterPost(selectedNPC = null) {
+    async triggerCharacterPost() {
         if (this.state.isGenerating) {
             toastr.warning('이미 생성 중이에요...');
             return;
@@ -3091,19 +3091,35 @@ Write only the reply:`;
         
         const ctx = getContext();
         const settings = PhoneCore.getSettings();
-        
-        // NPC 목록 가져오기
-        const npcList = await this.getNPCList();
-        
-        // 선택된 NPC가 없고, NPC가 여러 명이면 선택 모달 띄우기
-        if (!selectedNPC && npcList.length > 1) {
-            this.showNPCSelectionModal(npcList, 'post');
-            return;
-        }
-        
-        // 선택된 NPC 또는 첫 번째 NPC 사용
-        const poster = selectedNPC || npcList[0];
         const charId = ctx.characterId;
+        
+        const mainChar = ctx.characters?.[ctx.characterId];
+        const mainCharInfo = {
+            id: charId,
+            name: mainChar?.name || ctx.name2 || '캐릭터',
+            description: mainChar?.description || '',
+            avatar: mainChar?.avatar ? `/characters/${mainChar.avatar}` : null
+        };
+        
+        const extractedNPCs = await this.extractNPCs(false);
+        
+        const otherChars = extractedNPCs.filter(npc => 
+            npc.name.toLowerCase() !== mainCharInfo.name.toLowerCase()
+        );
+        
+        let poster;
+        let commenters;
+        
+        if (otherChars.length > 0 && extractedNPCs.length > 1) {
+            const allMainChars = extractedNPCs;
+            poster = await this.selectBestPoster(allMainChars);
+            commenters = allMainChars.filter(c => c.name !== poster.name);
+        } else {
+            poster = mainCharInfo;
+            commenters = extractedNPCs.filter(npc => 
+                npc.name.toLowerCase() !== mainCharInfo.name.toLowerCase()
+            );
+        }
         
         this.state.isGenerating = true;
         toastr.info(`📸 ${poster.name}님이 인스타 올리는 중...`);
@@ -3121,74 +3137,41 @@ Write only the reply:`;
         }
     },
     
-    // NPC 선택 모달
-    showNPCSelectionModal(npcList, action = 'post') {
-        // 기존 모달 제거
-        $('#npc-select-modal').remove();
+    async selectBestPoster(characterList) {
+        const ctx = getContext();
         
-        const title = action === 'post' ? '누가 인스타를 올릴까요?' : 'NPC 선택';
+        const recentMessages = ctx.chat?.slice(-5).map(m => {
+            const sender = m.is_user ? (ctx.name1 || 'User') : (m.name || ctx.name2);
+            return `${sender}: ${m.mes?.substring(0, 150) || ''}`;
+        }).join('\n') || '';
         
-        const modalHtml = `
-        <div id="npc-select-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:10001;">
-            <div style="background:#1a1a2e;border-radius:16px;padding:20px;max-width:350px;width:90%;max-height:70vh;overflow-y:auto;">
-                <h3 style="margin:0 0 15px;color:#fff;text-align:center;">${title}</h3>
-                <div class="npc-select-list" style="display:flex;flex-direction:column;gap:10px;">
-                    ${npcList.map((npc, idx) => `
-                        <button class="npc-select-btn" data-npc-idx="${idx}" style="
-                            display:flex;align-items:center;gap:12px;padding:12px 16px;
-                            background:rgba(255,255,255,0.1);border:none;border-radius:12px;
-                            cursor:pointer;transition:all 0.2s;text-align:left;
-                        ">
-                            <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--phone-primary),var(--phone-primary-dark));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;">
-                                ${npc.name.charAt(0)}
-                            </div>
-                            <div style="flex:1;">
-                                <div style="color:#fff;font-weight:600;">${npc.name}</div>
-                                ${npc.description ? `<div style="color:#aaa;font-size:11px;margin-top:2px;">${npc.description.substring(0, 40)}${npc.description.length > 40 ? '...' : ''}</div>` : ''}
-                            </div>
-                        </button>
-                    `).join('')}
-                </div>
-                <button id="npc-select-cancel" style="width:100%;margin-top:15px;padding:10px;background:rgba(255,255,255,0.1);border:none;border-radius:8px;color:#888;cursor:pointer;">취소</button>
-                <button id="npc-refresh-btn" style="width:100%;margin-top:8px;padding:8px;background:transparent;border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#666;cursor:pointer;font-size:11px;">🔄 NPC 목록 새로고침</button>
-            </div>
-        </div>`;
+        const charInfo = characterList.map((c, i) => 
+            `${i + 1}. ${c.name}${c.description ? ` - ${c.description.substring(0, 80)}` : ''}`
+        ).join('\n');
         
-        $('body').append(modalHtml);
-        
-        // 스타일 호버 효과
-        $('.npc-select-btn').hover(
-            function() { $(this).css('background', 'rgba(255,255,255,0.2)'); },
-            function() { $(this).css('background', 'rgba(255,255,255,0.1)'); }
-        );
-        
-        // 선택 이벤트
-        $('.npc-select-btn').on('click', async (e) => {
-            const idx = $(e.currentTarget).data('npc-idx');
-            const selectedNPC = npcList[idx];
-            $('#npc-select-modal').remove();
-            
-            if (action === 'post') {
-                await this.triggerCharacterPost(selectedNPC);
-            }
-        });
-        
-        // 취소
-        $('#npc-select-cancel, #npc-select-modal').on('click', (e) => {
-            if (e.target.id === 'npc-select-modal' || e.target.id === 'npc-select-cancel') {
-                $('#npc-select-modal').remove();
-            }
-        });
-        
-        // NPC 새로고침
-        $('#npc-refresh-btn').on('click', async (e) => {
-            e.stopPropagation();
-            toastr.info('🔄 NPC 목록 새로고침 중...');
-            const newList = await this.extractNPCs(true);
-            $('#npc-select-modal').remove();
-            this.showNPCSelectionModal(newList, action);
-            toastr.success(`${newList.length}명의 NPC를 찾았어요!`);
-        });
+        const prompt = `${getSystemInstruction()}
+    
+    [Select Instagram Poster]
+    Based on the recent conversation, who would most likely post on Instagram right now?
+    
+    Recent conversation:
+    ${recentMessages || '(No recent messages)'}
+    
+    Characters:
+    ${charInfo}
+    
+    Consider: Who experienced something worth sharing? Who is most active on social media?
+    
+    Answer with ONLY the number (1, 2, 3...):`;
+    
+        try {
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const num = parseInt(result.match(/\d+/)?.[0] || '1');
+            const idx = Math.min(Math.max(num - 1, 0), characterList.length - 1);
+            return characterList[idx];
+        } catch (e) {
+            return characterList[Math.floor(Math.random() * characterList.length)];
+        }
     },
     
     async checkAutoPost(recentMessage) {
