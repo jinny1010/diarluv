@@ -2074,16 +2074,21 @@ Answer only: YES or NO`;
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
 
-This Instagram post is about: "${postContent}"
+This Instagram post caption: "${postContent}"
+Posted by: ${charName}
 
-Is this a SELFIE/PERSON photo or SCENERY/OBJECT photo?
+What type of photo would this be?
+- SELFIE: photos of people, self-portraits, portraits, photos with people, mirror selfies, group photos
+- SCENERY: landscapes, food, objects, places without people, products
+
+Most personal Instagram posts are SELFIE type.
 Answer only: SELFIE or SCENERY`;
 
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
-            return result.toUpperCase().includes('SELFIE') ? 'selfie' : 'scenery';
+            return result.toUpperCase().includes('SCENERY') ? 'scenery' : 'selfie';
         } catch {
-            return 'scenery';
+            return 'selfie';
         }
     },
     
@@ -2121,6 +2126,7 @@ Write only the caption:`;
             if (!data.charPosts[charId]) data.charPosts[charId] = [];
             
             const likes = await this.generateLikes(false);
+            const npcComments = await this.generateNPCComments(cleanCaption, charName, false);
             
             const post = {
                 id: Utils.generateId(),
@@ -2130,7 +2136,7 @@ Write only the caption:`;
                 imageUrl: imageUrl,
                 imageType: imageType,
                 likes: likes,
-                comments: [],
+                comments: npcComments,
                 charId: charId,
                 charName: charName
             };
@@ -2253,6 +2259,64 @@ Write only the prompt:`;
         }
         
         return likes;
+    },
+
+    async generateNPCComments(caption, charName, isUserPost) {
+        const comments = [];
+        const commentCount = Math.floor(Math.random() * 4) + 1; // 1~4개
+        
+        const npcNames = [
+            'sunny_life', 'cool_j_kim', 'minjae_daily', 'hyuna_xx', 'jisu_0412',
+            'yuna_smile', 'minsu_k', 'sera_moon', 'jinwoo_95', 'haeun_diary',
+            'subin_art', 'dohyun_fit', 'yeji_photo', 'taehyung_v', 'sooyoung_s',
+            'cherry_blossom', 'night_owl_99', 'coffee_lover_kr', 'travel_with_me', 'foodie_seoul'
+        ];
+        
+        const genericComments = {
+            ko: [
+                '와 대박 🔥', '너무 예뻐요 ㅠㅠ', '분위기 미쳤다', '좋아요 누르고 갑니다 👍',
+                '오늘도 빛나네 ✨', '최고 💕', '멋있어요!', '우와 진짜?', 'ㄹㅇ 인정',
+                '부럽다...', '어디예요??', '대박대박', '심쿵 💓', '눈부셔요',
+                '팔로우 했어요!', '완전 좋아 👏', '레전드', '미쳤다 진짜', '힐링된다 🌿'
+            ],
+            en: [
+                'Amazing! 🔥', 'So pretty!', 'Love this ✨', 'Wow!', 'Beautiful 💕',
+                'Goals!', 'Stunning!', 'Perfect 👍', 'Love it!', 'So cool!',
+                'Following!', 'Awesome!', 'Legend!', 'Incredible!', 'Vibes ✨'
+            ]
+        };
+        
+        const settings = PhoneCore.getSettings();
+        const lang = settings.language || 'ko';
+        const commentPool = genericComments[lang] || genericComments.ko;
+        
+        const usedNames = new Set();
+        const usedComments = new Set();
+        
+        for (let i = 0; i < commentCount; i++) {
+            let name;
+            do {
+                name = npcNames[Math.floor(Math.random() * npcNames.length)];
+            } while (usedNames.has(name));
+            usedNames.add(name);
+            
+            let text;
+            do {
+                text = commentPool[Math.floor(Math.random() * commentPool.length)];
+            } while (usedComments.has(text) && usedComments.size < commentPool.length);
+            usedComments.add(text);
+            
+            comments.push({
+                id: Utils.generateId(),
+                text: text,
+                isUser: false,
+                isNPC: true,
+                npcName: name,
+                timestamp: Date.now() - Math.floor(Math.random() * 3600000) // 1시간 내 랜덤
+            });
+        }
+        
+        return comments;
     },
     
     async generateCharacterComment(postCaption, charName, imageUrl = null) {
@@ -2379,19 +2443,34 @@ Write only the prompt:`;
         
         let commentsHtml = '';
         if (post.comments && post.comments.length > 0) {
-            commentsHtml = post.comments.map(comment => {
+            commentsHtml = post.comments.map((comment, idx) => {
                 const isUserComment = comment.isUser;
-                const commentAvatar = isUserComment ? userAvatar : (charList.find(c => c.id == comment.charId)?.avatar || '');
-                const commentName = isUserComment ? userName : comment.charName;
+                const isNPC = comment.isNPC;
+                const isReply = comment.isReply;
+                
+                let commentAvatar, commentName;
+                
+                if (isNPC) {
+                    commentAvatar = '';
+                    commentName = comment.npcName || 'user';
+                } else if (isUserComment) {
+                    commentAvatar = userAvatar;
+                    commentName = userName;
+                } else {
+                    commentAvatar = charList.find(c => c.id == comment.charId)?.avatar || '';
+                    commentName = comment.charName;
+                }
+                
+                const replyClass = isReply ? 'insta-comment-reply' : '';
                 
                 return `
-                    <div class="insta-comment">
+                    <div class="insta-comment ${replyClass}">
                         ${commentAvatar 
                             ? `<img src="${commentAvatar}" class="insta-comment-avatar">`
-                            : `<div class="insta-comment-avatar">${commentName.charAt(0)}</div>`
+                            : `<div class="insta-comment-avatar">${commentName.charAt(0).toUpperCase()}</div>`
                         }
                         <div class="insta-comment-content">
-                            <span class="insta-comment-name">${commentName}</span>
+                            <span class="insta-comment-name">${Utils.escapeHtml(commentName)}</span>
                             <span class="insta-comment-text">${Utils.escapeHtml(comment.text)}</span>
                         </div>
                     </div>`;
@@ -2649,6 +2728,7 @@ Write only the prompt:`;
                         id: Utils.generateId(),
                         text: reply,
                         isUser: false,
+                        isReply: true,
                         charId: postCharId,
                         charName: charName,
                         timestamp: Date.now()
@@ -2721,6 +2801,7 @@ Write only the prompt:`;
             }
             
             const likes = await this.generateLikes(true);
+            const npcComments = await this.generateNPCComments(caption, charName, true);
             
             const post = {
                 id: Utils.generateId(),
@@ -2729,7 +2810,7 @@ Write only the prompt:`;
                 caption: caption,
                 imageUrl: selectedImage,
                 likes: likes,
-                comments: []
+                comments: npcComments
             };
             
             data.userPosts.unshift(post);
