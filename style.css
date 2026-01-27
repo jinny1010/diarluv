@@ -981,6 +981,12 @@
     padding: 12px;
     border-bottom: 1px solid rgba(255,255,255,0.1);
 }
+
+.phone-container .insta-upload-header .app-nav-btn {
+    min-width: auto;
+    width: auto;
+    padding: 4px 12px;
+}
 .phone-container .insta-upload-preview {
     width: 100%;
     aspect-ratio: 1;
