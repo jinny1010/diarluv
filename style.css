@@ -269,16 +269,10 @@
         0 1px 3px rgba(0,0,0,0.08),
         inset 0 0 60px rgba(255,250,240,0.5);
     border: 1px solid #f0e6d8;
-    margin: 0 -5px; /* 좌우 여백 줄이기 */
+    margin: 0 -5px;
 }
-
-.phone-container .letter-content {
-    font-size: 15px;
-    line-height: 2;
-    color: #2a2a2a;
-    white-space: pre-wrap; /* 문단 구분 유지 */
-    font-family: 'Nanum Myeongjo', serif, inherit;
-    word-break: keep-all;
+.phone-container .letter-paper.received { 
+    background: linear-gradient(to bottom, #f0f9ff 0%, #e6f5ff 100%); 
 }
 
 .phone-container .letter-to,
@@ -301,15 +295,101 @@
     text-align: right;
 }
 
+.phone-container .letter-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
 .phone-container .letter-paper textarea {
-    width: 100%; min-height: 200px; border: none; background: transparent;
-    font-size: 14px; line-height: 1.8; color: #333; resize: none;
+    width: 100%; 
+    min-height: 200px; 
+    border: none; 
+    background: transparent;
+    font-size: 15px; 
+    line-height: 2; 
+    color: #2a2a2a; 
+    resize: none;
+    font-family: inherit;
 }
 .phone-container .letter-paper textarea:focus { outline: none; }
-.phone-container .letter-content { font-size: 14px; line-height: 1.8; color: #333; white-space: pre-wrap; min-height: 150px; }
-.phone-container .letter-reply { margin-top: 20px; padding-top: 15px; border-top: 1px dashed #ddd; }
-.phone-container .reply-label { font-size: 12px; color: var(--phone-primary); margin-bottom: 8px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-.phone-container .reply-content { color: #333; }
+
+.phone-container .letter-content {
+    font-size: 15px;
+    line-height: 2;
+    color: #2a2a2a;
+    white-space: pre-wrap;
+    word-break: keep-all;
+    min-height: 150px;
+}
+
+.phone-container .letter-body {
+    font-size: 15px; 
+    line-height: 2; 
+    color: #2a2a2a; 
+    white-space: pre-wrap;
+    word-break: keep-all;
+}
+
+.phone-container .letter-reply { 
+    margin-top: 20px; 
+    padding-top: 15px; 
+    border-top: 1px dashed #ddd; 
+}
+.phone-container .reply-label { 
+    font-size: 12px; 
+    color: var(--phone-primary); 
+    margin-bottom: 8px; 
+    font-weight: 600; 
+    display: flex; 
+    align-items: center; 
+    gap: 8px; 
+}
+.phone-container .reply-content { 
+    color: #2a2a2a;
+    font-size: 14px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+}
+
+/* 편지 전체화면 모드 */
+.phone-container .letter-fullscreen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(to bottom, #fffdf8 0%, #fff9f0 100%);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.phone-container .letter-fullscreen .letter-paper {
+    flex: 1;
+    margin: 0;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    min-height: auto;
+}
+
+.phone-container .letter-fullscreen .letter-body {
+    flex: 1;
+    max-height: none;
+    overflow-y: auto;
+    padding: 20px 0;
+}
+
+.phone-container .letter-fullscreen .btn-secondary {
+    margin: 16px 20px;
+    flex-shrink: 0;
+}
 
 /* Diary */
 .phone-container .diary-content { font-size: 14px; line-height: 1.7; color: rgba(255,255,255,0.85); white-space: pre-wrap; }
