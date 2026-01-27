@@ -502,7 +502,6 @@ const MessageApp = {
         }
         
         const ctx = getContext();
-        const data = this.getData(settings, charId);
         const msgLang = PhoneCore.getSettings().msgLanguage || 'ko'; 
         const langInstruction = msgLang === 'ko' 
             ? '- MUST respond in Korean (한국어).'
@@ -569,7 +568,6 @@ Write only the message content:`;
             conversationHistory = `[Previous messages]\n${conversationHistory}\n\n`;
         }
         
-        const data = this.getData(settings, charId);
         const msgLang = PhoneCore.getSettings().msgLanguage || 'ko'; 
         const langInstruction = msgLang === 'ko' 
             ? '- MUST respond in Korean (한국어).'
