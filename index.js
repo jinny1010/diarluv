@@ -2120,6 +2120,8 @@ Write only the caption:`;
             
             if (!data.charPosts[charId]) data.charPosts[charId] = [];
             
+            const likes = await this.generateLikes(false);
+            
             const post = {
                 id: Utils.generateId(),
                 date: Utils.getTodayKey(),
@@ -2127,7 +2129,7 @@ Write only the caption:`;
                 caption: cleanCaption,
                 imageUrl: imageUrl,
                 imageType: imageType,
-                likes: [],
+                likes: likes,
                 comments: [],
                 charId: charId,
                 charName: charName
@@ -2198,6 +2200,59 @@ Write only the prompt:`;
             console.error('[Insta] NovelAI generation failed:', e);
             return '';
         }
+    },
+
+    async generateLikes(isUserPost) {
+        const likes = [];
+        
+        if (isUserPost) {
+            likes.push('char');
+        } else {
+            likes.push('user');
+        }
+        
+        let baseFollowers = 20;
+        let maxFollowers = 200;
+        
+        try {
+            const ctx = getContext();
+            const charDescription = (ctx.characters?.[ctx.characterId]?.description || '').toLowerCase();
+            const charPersonality = (ctx.characters?.[ctx.characterId]?.personality || '').toLowerCase();
+            const combined = charDescription + ' ' + charPersonality;
+            
+            const veryPopularKeywords = ['아이돌', 'idol', '연예인', 'celebrity', '스타', 'star', '인플루언서', 'influencer', '유튜버', 'youtuber', '배우', 'actor', 'actress', '가수', 'singer', '모델', 'model'];
+            
+            const popularKeywords = ['인기', 'popular', '유명', 'famous', '팔로워', 'follower', '외향적', 'extrovert', '사교적', 'social', '활발', '명문', '재벌', '부자', 'rich', 'wealthy'];
+            
+            const shyKeywords = ['내성적', 'shy', '조용', 'quiet', '은둔', '혼자', 'introvert', '소심', '숨어', 'hidden', '히키코모리', 'hikikomori'];
+            
+            const isVeryPopular = veryPopularKeywords.some(k => combined.includes(k));
+            const isPopular = popularKeywords.some(k => combined.includes(k));
+            const isShy = shyKeywords.some(k => combined.includes(k));
+            
+            if (isVeryPopular) {
+                baseFollowers = 1000;
+                maxFollowers = 5000;
+            } else if (isPopular) {
+                baseFollowers = 200;
+                maxFollowers = 1000;
+            } else if (isShy) {
+                baseFollowers = 20;
+                maxFollowers = 80;
+            } else {
+                baseFollowers = 50;
+                maxFollowers = 300;
+            }
+        } catch (e) {
+            console.log('[Insta] Using default like range');
+        }
+        
+        const followerCount = Math.floor(Math.random() * (maxFollowers - baseFollowers + 1)) + baseFollowers;
+        for (let i = 0; i < followerCount; i++) {
+            likes.push(`follower_${i}`);
+        }
+        
+        return likes;
     },
     
     async generateCharacterComment(postCaption, charName, imageUrl = null) {
@@ -2665,13 +2720,15 @@ Write only the prompt:`;
                 return;
             }
             
+            const likes = await this.generateLikes(true);
+            
             const post = {
                 id: Utils.generateId(),
                 date: Utils.getTodayKey(),
                 timestamp: Date.now(),
                 caption: caption,
                 imageUrl: selectedImage,
-                likes: ['char'],
+                likes: likes,
                 comments: []
             };
             
