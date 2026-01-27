@@ -2534,7 +2534,16 @@ Write only the prompt:`;
         const ctx = getContext();
         
         document.getElementById('insta-back-feed')?.addEventListener('click', () => {
-            document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
+            const { isUser } = this.state.selectedPost;
+            if (isUser) {
+                document.getElementById('insta-content').innerHTML = this.renderMyPosts(data);
+                document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
+                document.querySelector('.insta-tab[data-tab="my"]')?.classList.add('active');
+            } else {
+                document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
+                document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
+                document.querySelector('.insta-tab[data-tab="feed"]')?.classList.add('active');
+            }
             this.bindGridEvents(Core);
         });
         
