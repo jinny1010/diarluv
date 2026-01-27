@@ -563,11 +563,19 @@ Write only the message content:`;
     },
     
     render(charName) {
+        const ctx = getContext();
+        const avatarUrl = ctx.characters?.[ctx.characterId]?.avatar 
+            ? `/characters/${ctx.characters[ctx.characterId].avatar}` 
+            : '';
+        
         return `
         <div class="app-header msg-header">
             <button class="app-back-btn" data-back="home">◀</button>
             <div class="msg-contact">
-                <div class="msg-avatar">${charName.charAt(0)}</div>
+                ${avatarUrl 
+                    ? `<img class="msg-avatar" src="${avatarUrl}" alt="${charName}">`
+                    : `<div class="msg-avatar">${charName.charAt(0)}</div>`
+                }
                 <span class="app-title">${charName}</span>
             </div>
             <span></span>
