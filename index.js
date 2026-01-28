@@ -37,33 +37,18 @@ const DataManager = {
     cache: null,
     saveTimeout: null,
     
-    getFilePath() {
-        return `${extensionFolderPath}/data.json`;
-    },
-    
     async load() {
         if (this.cache) return this.cache;
         
-        try {
-            const response = await fetch(`/api/extensions/fetch?path=${encodeURIComponent(this.getFilePath())}`);
-            if (response.ok) {
-                const text = await response.text();
-                this.cache = JSON.parse(text);
-                console.log('[Phone] Data loaded from file');
-                return this.cache;
-            }
-        } catch (e) {
-            console.log('[Phone] No existing data file, creating new');
+        if (extension_settings[extensionName]) {
+            this.cache = extension_settings[extensionName];
+            console.log('[Phone] Data loaded from extension_settings');
+            return this.cache;
         }
         
         this.cache = { enabledApps: {}, wallpapers: {}, themeColors: {}, appData: {} };
-        
-        if (extension_settings[extensionName]?.appData) {
-            console.log('[Phone] Migrating from extension_settings');
-            this.cache = JSON.parse(JSON.stringify(extension_settings[extensionName]));
-            await this.save();
-        }
-        
+        extension_settings[extensionName] = this.cache;
+        console.log('[Phone] Created new data');
         return this.cache;
     },
     
@@ -72,36 +57,18 @@ const DataManager = {
         this.saveTimeout = setTimeout(() => this._doSave(), 1000);
     },
     
-    async _doSave() {
+    _doSave() {
         if (!this.cache) return;
         
-        try {
-            const response = await fetch('/api/extensions/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    path: this.getFilePath(),
-                    data: JSON.stringify(this.cache, null, 2),
-                }),
-            });
-            
-            if (response.ok) {
-                console.log('[Phone] Data saved to file');
-            } else {
-                console.error('[Phone] Save failed:', response.status);
-                extension_settings[extensionName] = this.cache;
-                saveSettingsDebounced();
-            }
-        } catch (e) {
-            console.error('[Phone] Save error:', e);
-            extension_settings[extensionName] = this.cache;
-            saveSettingsDebounced();
-        }
+        extension_settings[extensionName] = this.cache;
+        saveSettingsDebounced();
+        console.log('[Phone] Data saved to extension_settings');
     },
     
     get() {
         if (!this.cache) {
-            this.cache = { enabledApps: {}, wallpapers: {}, themeColors: {}, appData: {} };
+            this.cache = extension_settings[extensionName] || { enabledApps: {}, wallpapers: {}, themeColors: {}, appData: {} };
+            extension_settings[extensionName] = this.cache;
         }
         return this.cache;
     },
