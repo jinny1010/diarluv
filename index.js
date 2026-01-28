@@ -2715,45 +2715,29 @@ Answer only: SELFIE or SCENERY`;
     async generateCharacterPost(charName, charId, settings) {
         const ctx = getContext();
         const data = this.getData(settings, PhoneCore.getCharId());
-        const lang = PhoneCore.getSettings().language || 'ko';
         const ddayData = DdayApp.getData(settings, charId);
         const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
         
-        const lorebookChars = this.extractLorebookCharacters();
-        const lorebookNames = lorebookChars.slice(0, 3).map(c => c.toLowerCase().replace(/\s+/g, '_') + '_official');
-        
-        const npcNames = ['sunny_life', 'cool_j_kim', 'minjae_daily', 'hyuna_xx', 'jisu_0412'];
-        const commenters = [...lorebookNames, ...npcNames].slice(0, 5);
-        
-        
         const charDescription = ctx.characters?.[ctx.characterId]?.description || '';
         
-        
+        // 캡션 + 이미지타입 + 이미지프롬프트 한 번에 생성
         const combinedPrompt = `${getSystemInstruction()}
 
-[CHATSITARGRAM Post Generation]
-${charName} is posting on CHATSITARGRAM (like Instagram).
+[CHATSITARGRAM Post]
+${charName} is posting on CHATSITARGRAM.
+Character: ${charDescription.substring(0, 300)}
 
-Character description: ${charDescription.substring(0, 400)}
+Generate a post with this exact format:
 
-Generate a complete post with the following format (use exact labels):
-
-CAPTION: (Write 1-3 sentences with emojis, stay in character)
-IMAGE_TYPE: (SELFIE if photo includes people/self, SCENERY if landscape/food/objects only)
-IMAGE_PROMPT: (For image generation - if SELFIE: describe character appearance, pose, expression, setting in comma-separated tags. If SCENERY: describe the scene in tags. Keep under 80 words)
-COMMENTS:
-- ${commenters[0]}: (short comment with emoji)
-- ${commenters[1]}: (short comment with emoji)
-- ${commenters[2]}: (short comment with emoji)
-
-${lang === 'ko' ? 'Write caption and comments in Korean.' : 'Write in English.'}`;
+CAPTION: (1-3 sentences with emojis, stay in character)
+IMAGE_TYPE: (SELFIE if photo has people, SCENERY if landscape/food/objects)
+IMAGE_PROMPT: (comma-separated tags for image generation, under 80 words. If SELFIE: character appearance, pose, expression, setting. If SCENERY: describe the scene)`;
 
         try {
             const result = await ctx.generateQuietPrompt(combinedPrompt, false, false);
             
-            
+            // 파싱
             let caption = '', imageType = 'selfie', imagePrompt = '';
-            const comments = [];
             
             const captionMatch = result.match(/CAPTION:\s*(.+?)(?=IMAGE_TYPE:|$)/s);
             if (captionMatch) caption = Utils.cleanResponse(captionMatch[1]).substring(0, 300);
@@ -2761,30 +2745,10 @@ ${lang === 'ko' ? 'Write caption and comments in Korean.' : 'Write in English.'}
             const typeMatch = result.match(/IMAGE_TYPE:\s*(\w+)/i);
             if (typeMatch) imageType = typeMatch[1].toUpperCase().includes('SCENERY') ? 'scenery' : 'selfie';
             
-            const promptMatch = result.match(/IMAGE_PROMPT:\s*(.+?)(?=COMMENTS:|$)/s);
+            const promptMatch = result.match(/IMAGE_PROMPT:\s*(.+?)$/s);
             if (promptMatch) imagePrompt = Utils.cleanResponse(promptMatch[1]).substring(0, 400);
             
-            
-            const commentsMatch = result.match(/COMMENTS:\s*([\s\S]+)$/);
-            if (commentsMatch) {
-                const commentLines = commentsMatch[1].match(/-\s*(\w+):\s*(.+)/g) || [];
-                commentLines.forEach(line => {
-                    const match = line.match(/-\s*(\w+):\s*(.+)/);
-                    if (match) {
-                        comments.push({
-                            id: Utils.generateId(),
-                            text: Utils.cleanResponse(match[2]).substring(0, 100),
-                            isUser: false,
-                            isNPC: true,
-                            isLorebookChar: lorebookNames.includes(match[1]),
-                            npcName: match[1],
-                            timestamp: Date.now() - Math.floor(Math.random() * 3600000)
-                        });
-                    }
-                });
-            }
-            
-            
+            // 이미지 생성
             let imageUrl = '';
             if (imageType === 'selfie') {
                 imageUrl = await this.generateNovelAIImage(imagePrompt || `${charName}, selfie, instagram photo`);
@@ -2804,14 +2768,7 @@ ${lang === 'ko' ? 'Write caption and comments in Korean.' : 'Write in English.'}
                 imageUrl: imageUrl,
                 imageType: imageType,
                 likes: likes,
-                comments: comments.length > 0 ? comments : [{
-                    id: Utils.generateId(),
-                    text: lang === 'ko' ? '좋아요 💕' : 'Nice! 💕',
-                    isUser: false,
-                    isNPC: true,
-                    npcName: 'follower_1',
-                    timestamp: Date.now()
-                }],
+                comments: [],
                 charId: charId,
                 charName: charName
             };
