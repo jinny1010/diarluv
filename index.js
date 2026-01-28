@@ -1640,12 +1640,19 @@ const DiaryApp = {
     id: 'diary',
     name: '일기장',
     icon: '📔',
-    state: { selectedDate: null, calYear: null, calMonth: null, isGenerating: false },
+    state: { selectedDate: null, calYear: null, calMonth: null, isGenerating: false, currentTab: 'realtime' },
     
     getData(settings, charId) {
         const key = `diary_${charId}`;
         if (!settings.appData) settings.appData = {};
-        if (!settings.appData[key]) settings.appData[key] = { entries: {}, lastCharDiaryDate: null };
+        if (!settings.appData[key]) settings.appData[key] = { 
+            entries: {},           // 리얼타임 일기
+            rpEntries: {},         // 롤플타임 일기
+            lastCharDiaryDate: null,
+            lastRpCharDiaryDate: null
+        };
+        // 기존 데이터 마이그레이션
+        if (!settings.appData[key].rpEntries) settings.appData[key].rpEntries = {};
         return settings.appData[key];
     },
     
@@ -1700,6 +1707,41 @@ Write only the diary content:`;
         return null;
     },
     
+    // 롤플타임 전용: D-DAY 앱 연동
+    async tryCharacterDiaryRP(settings, charId, charName, userName) {
+        const data = this.getData(settings, charId);
+        const ddayData = DdayApp.getData(settings, charId);
+        const rpDate = ddayData.currentRpDate;
+        
+        if (!rpDate) return null;
+        const dateKey = rpDate.dateKey;
+        
+        if (data.lastRpCharDiaryDate === dateKey) return null;
+        if (data.rpEntries[dateKey]?.charDiary) return null;
+        if (!Utils.chance(20)) {
+            data.lastRpCharDiaryDate = dateKey;
+            return null;
+        }
+        
+        const moods = ['😊', '🥰', '😴', '🤔', '😎'];
+        const mood = moods[Math.floor(Math.random() * moods.length)];
+        
+        const content = await this.generateCharacterDiary(charName, userName, mood);
+        
+        if (content && content.length > 10) {
+            if (!data.rpEntries[dateKey]) data.rpEntries[dateKey] = {};
+            data.rpEntries[dateKey].charDiary = {
+                content: content,
+                mood: mood,
+                date: dateKey,
+                read: false,
+            };
+            data.lastRpCharDiaryDate = dateKey;
+            return content;
+        }
+        return null;
+    },
+    
     render() {
         return `
         <div class="app-header">
@@ -1708,6 +1750,10 @@ Write only the diary content:`;
             <button class="app-nav-btn" id="diary-today-btn">오늘</button>
         </div>
         <div class="app-content">
+            <div class="diary-tabs">
+                <button class="diary-tab active" data-tab="realtime">🕐 리얼타임</button>
+                <button class="diary-tab" data-tab="rptime">🎭 롤플타임</button>
+            </div>
             <div class="calendar-nav"><button id="diary-cal-prev">◀</button><span id="diary-cal-title"></span><button id="diary-cal-next">▶</button></div>
             <div class="calendar" id="diary-calendar"></div>
             <div id="diary-entry-area"></div>
@@ -1782,6 +1828,7 @@ Write only the reply:`;
         this.state.calYear = now.getFullYear();
         this.state.calMonth = now.getMonth();
         this.state.selectedDate = Utils.getTodayKey();
+        this.state.currentTab = 'realtime';
         
         const data = this.getData(settings, charId);
         const userName = getContext().name1 || '나';
@@ -1802,19 +1849,35 @@ Write only the reply:`;
         this.bindCalendarNav(settings, charId, charName);
     },
     
+    // 현재 탭에 따른 entries 가져오기
+    getCurrentEntries(data) {
+        return this.state.currentTab === 'rptime' ? data.rpEntries : data.entries;
+    },
+    
     renderCalendar(settings, charId, charName) {
-        const { calYear: year, calMonth: month } = this.state;
-        document.getElementById('diary-cal-title').textContent = `${year}년 ${month + 1}월`;
+        const { calYear: year, calMonth: month, currentTab } = this.state;
+        const tabLabel = currentTab === 'rptime' ? ' (롤플)' : '';
+        document.getElementById('diary-cal-title').textContent = `${year}년 ${month + 1}월${tabLabel}`;
+        
         const data = this.getData(settings, charId);
+        const entries = this.getCurrentEntries(data);
         const startDay = new Date(year, month, 1).getDay();
         const totalDays = new Date(year, month + 1, 0).getDate();
-        const today = Utils.getTodayKey();
+        
+        // 오늘 날짜 결정 (롤플타임이면 D-DAY 앱 날짜 사용)
+        let today;
+        if (currentTab === 'rptime') {
+            const ddayData = DdayApp.getData(settings, charId);
+            today = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
+        } else {
+            today = Utils.getTodayKey();
+        }
         
         let html = '<div class="cal-week"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div class="cal-days">';
         for (let i = 0; i < startDay; i++) html += '<span class="cal-day empty"></span>';
         for (let d = 1; d <= totalDays; d++) {
             const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-            const entry = data.entries[key];
+            const entry = entries[key];
             const hasData = entry?.content || entry?.charDiary;
             const hasUnread = entry?.charDiary && !entry.charDiary.read;
             const mood = entry?.mood || entry?.charDiary?.mood || '';
@@ -1827,7 +1890,8 @@ Write only the reply:`;
     
     showEntry(settings, charId, charName) {
         const data = this.getData(settings, charId);
-        const entry = data.entries[this.state.selectedDate];
+        const entries = this.getCurrentEntries(data);
+        const entry = entries[this.state.selectedDate];
         const userName = getContext().name1 || '나';
         
         if (entry?.charDiary && !entry.charDiary.read) {
@@ -1844,14 +1908,70 @@ Write only the reply:`;
     },
     
     bindEvents(Core) {
+        const settings = Core.getSettings();
+        const charId = Core.getCharId();
+        const charName = getContext().name2 || '캐릭터';
+        
+        // 탭 전환 이벤트
+        document.querySelectorAll('.diary-tab').forEach(tab => {
+            tab.addEventListener('click', async () => {
+                document.querySelectorAll('.diary-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                this.state.currentTab = tab.dataset.tab;
+                const data = this.getData(settings, charId);
+                
+                if (this.state.currentTab === 'rptime') {
+                    // 롤플타임: D-DAY 날짜로 이동
+                    const ddayData = DdayApp.getData(settings, charId);
+                    if (ddayData.currentRpDate) {
+                        const rp = ddayData.currentRpDate;
+                        this.state.calYear = rp.year;
+                        this.state.calMonth = rp.month;
+                        this.state.selectedDate = rp.dateKey;
+                        
+                        // 롤플타임 캐릭터 일기 생성 시도
+                        if (!this.state.isGenerating) {
+                            this.state.isGenerating = true;
+                            const userName = getContext().name1 || '나';
+                            const charDiary = await this.tryCharacterDiaryRP(settings, charId, charName, userName);
+                            if (charDiary) {
+                                DataManager.save();
+                                toastr.info(`📔 ${charName}가 롤플 일기를 썼어요!`);
+                            }
+                            this.state.isGenerating = false;
+                        }
+                    }
+                } else {
+                    // 리얼타임: 현재 날짜로 이동
+                    const now = new Date();
+                    this.state.calYear = now.getFullYear();
+                    this.state.calMonth = now.getMonth();
+                    this.state.selectedDate = Utils.getTodayKey();
+                }
+                
+                this.renderCalendar(settings, charId, charName);
+                this.showEntry(settings, charId, charName);
+            });
+        });
+        
         document.getElementById('diary-today-btn')?.addEventListener('click', () => {
-            const now = new Date();
-            this.state.calYear = now.getFullYear();
-            this.state.calMonth = now.getMonth();
-            this.state.selectedDate = Utils.getTodayKey();
-            const settings = Core.getSettings();
-            const charId = Core.getCharId();
-            const charName = getContext().name2 || '캐릭터';
+            if (this.state.currentTab === 'rptime') {
+                // 롤플타임: D-DAY 날짜로 이동
+                const ddayData = DdayApp.getData(settings, charId);
+                if (ddayData.currentRpDate) {
+                    const rp = ddayData.currentRpDate;
+                    this.state.calYear = rp.year;
+                    this.state.calMonth = rp.month;
+                    this.state.selectedDate = rp.dateKey;
+                }
+            } else {
+                // 리얼타임: 현재 날짜로 이동
+                const now = new Date();
+                this.state.calYear = now.getFullYear();
+                this.state.calMonth = now.getMonth();
+                this.state.selectedDate = Utils.getTodayKey();
+            }
             this.renderCalendar(settings, charId, charName);
             this.showEntry(settings, charId, charName);
         });
@@ -1881,7 +2001,8 @@ Write only the reply:`;
     bindRegenEvents(settings, charId, charName) {
         document.getElementById('diary-regen-char')?.addEventListener('click', async () => {
             const data = this.getData(settings, charId);
-            const entry = data.entries[this.state.selectedDate];
+            const entries = this.getCurrentEntries(data);
+            const entry = entries[this.state.selectedDate];
             
             const btn = document.getElementById('diary-regen-char');
             btn.disabled = true;
@@ -1905,7 +2026,8 @@ Write only the reply:`;
         
         document.getElementById('diary-regen-reply')?.addEventListener('click', async () => {
             const data = this.getData(settings, charId);
-            const entry = data.entries[this.state.selectedDate];
+            const entries = this.getCurrentEntries(data);
+            const entry = entries[this.state.selectedDate];
             
             const btn = document.getElementById('diary-regen-reply');
             btn.disabled = true;
@@ -1946,11 +2068,12 @@ Write only the reply:`;
             const charReply = await this.generateReply(content, selectedMood, charName);
             
             const data = this.getData(settings, charId);
-            if (!data.entries[this.state.selectedDate]) data.entries[this.state.selectedDate] = {};
-            data.entries[this.state.selectedDate].content = content;
-            data.entries[this.state.selectedDate].mood = selectedMood;
-            data.entries[this.state.selectedDate].charReply = charReply;
-            data.entries[this.state.selectedDate].date = this.state.selectedDate;
+            const entries = this.getCurrentEntries(data);
+            if (!entries[this.state.selectedDate]) entries[this.state.selectedDate] = {};
+            entries[this.state.selectedDate].content = content;
+            entries[this.state.selectedDate].mood = selectedMood;
+            entries[this.state.selectedDate].charReply = charReply;
+            entries[this.state.selectedDate].date = this.state.selectedDate;
             DataManager.save();
             
             toastr.success('📔 저장되었습니다!');
@@ -1959,9 +2082,270 @@ Write only the reply:`;
         });
     },
 };
+
+// ========================================
+// D-DAY 앱 (롤플 날짜 동기화)
+// ========================================
+const DdayApp = {
+    id: 'dday',
+    name: 'D-DAY',
+    icon: '📅',
+    state: {},
+    
+    getData(settings, charId) {
+        const key = `dday_${charId}`;
+        if (!settings.appData) settings.appData = {};
+        if (!settings.appData[key]) settings.appData[key] = { 
+            currentRpDate: null,
+            syncEnabled: true,
+            ddays: []
+        };
+        return settings.appData[key];
+    },
+    
+    // INFOBLOCK에서 날짜 파싱해서 업데이트
+    updateFromInfoblock() {
+        const ctx = getContext();
+        const settings = PhoneCore.getSettings();
+        const charId = PhoneCore.getCharId();
+        const data = this.getData(settings, charId);
+        
+        if (!data.syncEnabled) return null;
+        
+        const rpDate = this.parseInfoblockDate(ctx.chat);
+        if (rpDate) {
+            data.currentRpDate = rpDate;
+            DataManager.save();
+            return rpDate;
+        }
+        return data.currentRpDate;
+    },
+    
+    parseInfoblockDate(chat) {
+        if (!chat || chat.length === 0) return null;
+        for (let i = chat.length - 1; i >= 0; i--) {
+            const mes = chat[i]?.mes || '';
+            const match = mes.match(/📅\s*:\s*(\w+)\s+(\d+)\s*\[(\w+)\]/);
+            if (match) {
+                const monthMap = { 'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5,
+                    'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11 };
+                const month = monthMap[match[1]];
+                const day = parseInt(match[2]);
+                const dayOfWeek = match[3];
+                if (month !== undefined && day) {
+                    const now = new Date();
+                    let year = now.getFullYear();
+                    const yearMatch = mes.match(/\((\d{4})\/\d{2}\/\d{2}/);
+                    if (yearMatch) year = parseInt(yearMatch[1]);
+                    return { year, month, day, dayOfWeek,
+                        dateKey: `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` };
+                }
+            }
+        }
+        return null;
+    },
+    
+    render(charName) {
+        return `
+        <div class="app-header">
+            <button class="app-back-btn" data-back="home">◀</button>
+            <span class="app-title">D-DAY</span>
+            <button class="app-nav-btn" id="dday-settings-btn">⚙️</button>
+        </div>
+        <div class="app-content" id="dday-content"></div>`;
+    },
+    
+    renderMain(data, charName) {
+        const today = new Date();
+        const realDateStr = `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일`;
+        
+        let rpDateStr = '동기화 필요';
+        let rpDateFull = '';
+        if (data.currentRpDate) {
+            const rp = data.currentRpDate;
+            rpDateStr = `${rp.year}년 ${rp.month + 1}월 ${rp.day}일`;
+            rpDateFull = `${rp.dateKey} (${rp.dayOfWeek})`;
+        }
+        
+        let ddaysHtml = '';
+        if (data.ddays && data.ddays.length > 0) {
+            ddaysHtml = `<div class="card" style="margin-top:15px;">
+                <div class="card-label">📌 기념일</div>
+                ${data.ddays.map((dd, idx) => {
+                    const daysDiff = this.calculateDday(dd.date, data.currentRpDate?.dateKey || Utils.getTodayKey());
+                    const ddayText = daysDiff === 0 ? 'D-DAY!' : (daysDiff > 0 ? `D-${daysDiff}` : `D+${Math.abs(daysDiff)}`);
+                    return `<div class="dday-item" data-idx="${idx}">
+                        <span class="dday-name">${Utils.escapeHtml(dd.name)}</span>
+                        <span class="dday-value">${ddayText}</span>
+                    </div>`;
+                }).join('')}
+            </div>`;
+        }
+        
+        return `
+        <div class="card pink">
+            <div class="card-label">🎭 롤플타임 (RP)</div>
+            <div class="dday-date-big">${rpDateStr}</div>
+            <div class="dday-date-sub">${rpDateFull}</div>
+            <button class="btn-secondary" id="dday-sync-btn" style="margin-top:10px;">🔄 INFOBLOCK에서 동기화</button>
+        </div>
+        <div class="card" style="margin-top:15px;">
+            <div class="card-label">🕐 리얼타임</div>
+            <div class="dday-date-big">${realDateStr}</div>
+        </div>
+        ${ddaysHtml}
+        <button class="btn-secondary" id="dday-add-btn" style="margin-top:15px;">➕ 기념일 추가</button>`;
+    },
+    
+    renderSettings(data) {
+        return `
+        <div class="card">
+            <div class="card-label">⚙️ 동기화 설정</div>
+            <div class="dday-setting-item">
+                <label>
+                    <input type="checkbox" id="dday-sync-enabled" ${data.syncEnabled ? 'checked' : ''}>
+                    INFOBLOCK 날짜 자동 동기화
+                </label>
+            </div>
+            <div class="dday-setting-desc">
+                활성화 시 INFOBLOCK의 📅 날짜를 자동으로 읽어옵니다.
+            </div>
+        </div>
+        <div class="card" style="margin-top:15px;">
+            <div class="card-label">📱 동기화 대상 앱</div>
+            <div class="dday-setting-desc">
+                롤플타임 동기화 시 아래 앱들이 RP 날짜를 사용합니다:
+            </div>
+            <ul style="margin:10px 0;padding-left:20px;color:rgba(255,255,255,0.7);font-size:13px;">
+                <li>📔 일기장 (롤플타임 탭)</li>
+                <li>📸 챗시타그램</li>
+            </ul>
+        </div>
+        <button class="btn-secondary" id="dday-settings-back">← 돌아가기</button>`;
+    },
+    
+    renderAddDday() {
+        return `
+        <div class="form-card">
+            <div class="form-group">
+                <label>📌 기념일 이름</label>
+                <input type="text" id="dday-name" placeholder="예: 처음 만난 날">
+            </div>
+            <div class="form-group">
+                <label>📅 날짜</label>
+                <input type="date" id="dday-date">
+            </div>
+            <button class="btn-primary" id="dday-save">저장하기</button>
+            <button class="btn-secondary" id="dday-add-cancel">취소</button>
+        </div>`;
+    },
+    
+    calculateDday(targetDate, baseDate) {
+        const target = new Date(targetDate);
+        const base = new Date(baseDate);
+        const diff = Math.ceil((target - base) / (1000 * 60 * 60 * 24));
+        return diff;
+    },
+    
+    async loadUI(settings, charId, charName) {
+        const data = this.getData(settings, charId);
+        if (data.syncEnabled) this.updateFromInfoblock();
+        document.getElementById('dday-content').innerHTML = this.renderMain(data, charName);
+        this.bindMainEvents(settings, charId, charName);
+    },
+    
+    bindEvents(Core) {
+        const settings = Core.getSettings();
+        const charId = Core.getCharId();
+        const charName = getContext().name2 || '캐릭터';
+        
+        document.getElementById('dday-settings-btn')?.addEventListener('click', () => {
+            const data = this.getData(settings, charId);
+            document.getElementById('dday-content').innerHTML = this.renderSettings(data);
+            this.bindSettingsEvents(settings, charId, charName);
+        });
+        this.bindMainEvents(settings, charId, charName);
+    },
+    
+    bindMainEvents(settings, charId, charName) {
+        const data = this.getData(settings, charId);
+        
+        document.getElementById('dday-sync-btn')?.addEventListener('click', () => {
+            const rpDate = this.updateFromInfoblock();
+            if (rpDate) {
+                toastr.success(`📅 동기화 완료: ${rpDate.year}/${rpDate.month + 1}/${rpDate.day}`);
+                document.getElementById('dday-content').innerHTML = this.renderMain(data, charName);
+                this.bindMainEvents(settings, charId, charName);
+            } else {
+                toastr.warning('INFOBLOCK에서 날짜를 찾을 수 없어요');
+            }
+        });
+        
+        document.getElementById('dday-add-btn')?.addEventListener('click', () => {
+            document.getElementById('dday-content').innerHTML = this.renderAddDday();
+            this.bindAddDdayEvents(settings, charId, charName);
+        });
+        
+        document.querySelectorAll('.dday-item').forEach(el => {
+            Utils.bindLongPress(el, () => {
+                const idx = parseInt(el.dataset.idx);
+                if (confirm('이 기념일을 삭제할까요?')) {
+                    data.ddays.splice(idx, 1);
+                    DataManager.save();
+                    document.getElementById('dday-content').innerHTML = this.renderMain(data, charName);
+                    this.bindMainEvents(settings, charId, charName);
+                    toastr.info('기념일이 삭제되었어요');
+                }
+            });
+        });
+    },
+    
+    bindSettingsEvents(settings, charId, charName) {
+        const data = this.getData(settings, charId);
+        
+        document.getElementById('dday-sync-enabled')?.addEventListener('change', (e) => {
+            data.syncEnabled = e.target.checked;
+            DataManager.save();
+            toastr.info(e.target.checked ? '자동 동기화 활성화' : '자동 동기화 비활성화');
+        });
+        
+        document.getElementById('dday-settings-back')?.addEventListener('click', () => {
+            document.getElementById('dday-content').innerHTML = this.renderMain(data, charName);
+            this.bindMainEvents(settings, charId, charName);
+        });
+    },
+    
+    bindAddDdayEvents(settings, charId, charName) {
+        const data = this.getData(settings, charId);
+        
+        document.getElementById('dday-save')?.addEventListener('click', () => {
+            const name = document.getElementById('dday-name').value.trim();
+            const date = document.getElementById('dday-date').value;
+            
+            if (!name || !date) {
+                toastr.warning('이름과 날짜를 모두 입력해주세요');
+                return;
+            }
+            
+            if (!data.ddays) data.ddays = [];
+            data.ddays.push({ name, date });
+            DataManager.save();
+            
+            toastr.success('📌 기념일이 추가되었어요!');
+            document.getElementById('dday-content').innerHTML = this.renderMain(data, charName);
+            this.bindMainEvents(settings, charId, charName);
+        });
+        
+        document.getElementById('dday-add-cancel')?.addEventListener('click', () => {
+            document.getElementById('dday-content').innerHTML = this.renderMain(data, charName);
+            this.bindMainEvents(settings, charId, charName);
+        });
+    }
+};
+
 const InstaApp = {
     id: 'insta',
-    name: '인스타',
+    name: '챗시타그램',
     icon: '📸',
     state: { currentView: 'feed', selectedPost: null, isGenerating: false },
     
@@ -2021,7 +2405,7 @@ const InstaApp = {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
 
-Based on this roleplay message, would ${charName} post on Instagram?
+Based on this roleplay message, would ${charName} post on CHATSITARGRAM?
 (traveling, taking photos, special event, date, food, scenery, selfie, etc.)
 
 Message: "${recentMessage.substring(0, 500)}"
@@ -2040,14 +2424,14 @@ Answer only: YES or NO`;
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
 
-This Instagram post caption: "${postContent}"
+This CHATSITARGRAM post caption: "${postContent}"
 Posted by: ${charName}
 
 What type of photo would this be?
 - SELFIE: photos of people, self-portraits, portraits, photos with people, mirror selfies, group photos
 - SCENERY: landscapes, food, objects, places without people, products
 
-Most personal Instagram posts are SELFIE type.
+Most personal CHATSITARGRAM posts are SELFIE type.
 Answer only: SELFIE or SCENERY`;
 
         try {
@@ -2064,10 +2448,10 @@ Answer only: SELFIE or SCENERY`;
         
         const contentPrompt = `${getSystemInstruction()}
 
-[Instagram Post]
-${charName} is posting on Instagram.
+[CHATSITARGRAM Post]
+${charName} is posting on CHATSITARGRAM.
 
-Write a short Instagram caption (1-3 sentences).
+Write a short CHATSITARGRAM caption (1-3 sentences).
 Include appropriate emojis.
 Stay in character based on personality and current situation.
 
@@ -2128,7 +2512,7 @@ Write only the caption:`;
 Create a short image generation prompt for NovelAI.
 Character: ${charName}
 Character description: ${charDescription.substring(0, 300)}
-Instagram caption: "${caption}"
+CHATSITARGRAM caption: "${caption}"
 
 Write a concise prompt focusing on: character appearance, pose, expression, setting.
 Use tags separated by commas. Keep under 100 words.
@@ -2144,7 +2528,7 @@ Write only the prompt:`;
         } else {
             const prompt = `${getSystemInstruction()}
 
-Create a short image prompt for this Instagram post: "${caption}"
+Create a short image prompt for this CHATSITARGRAM post: "${caption}"
 
 Describe the scenery or object in the photo.
 Use descriptive tags separated by commas. Keep under 50 words.
@@ -2229,7 +2613,12 @@ Write only the prompt:`;
 
     async generateNPCComments(caption, charName, isUserPost) {
         const comments = [];
-        const commentCount = Math.floor(Math.random() * 4) + 1; // 1~4개
+        const ctx = getContext();
+        const settings = PhoneCore.getSettings();
+        const lang = settings.language || 'ko';
+        
+        // 로어북에서 캐릭터 추출
+        const lorebookChars = this.extractLorebookCharacters();
         
         const npcNames = [
             'sunny_life', 'cool_j_kim', 'minjae_daily', 'hyuna_xx', 'jisu_0412',
@@ -2238,59 +2627,114 @@ Write only the prompt:`;
             'cherry_blossom', 'night_owl_99', 'coffee_lover_kr', 'travel_with_me', 'foodie_seoul'
         ];
         
-        const genericComments = {
-            ko: [
-                '와 대박 🔥', '너무 예뻐요 ㅠㅠ', '분위기 미쳤다', '좋아요 누르고 갑니다 👍',
-                '오늘도 빛나네 ✨', '최고 💕', '멋있어요!', '우와 진짜?', 'ㄹㅇ 인정',
-                '부럽다...', '어디예요??', '대박대박', '심쿵 💓', '눈부셔요',
-                '팔로우 했어요!', '완전 좋아 👏', '레전드', '미쳤다 진짜', '힐링된다 🌿'
-            ],
-            en: [
-                'Amazing! 🔥', 'So pretty!', 'Love this ✨', 'Wow!', 'Beautiful 💕',
-                'Goals!', 'Stunning!', 'Perfect 👍', 'Love it!', 'So cool!',
-                'Following!', 'Awesome!', 'Legend!', 'Incredible!', 'Vibes ✨'
-            ]
-        };
+        // 로어북 캐릭터를 NPC 풀에 추가
+        const allCommenters = [...npcNames];
+        lorebookChars.forEach(char => {
+            const handle = char.toLowerCase().replace(/\s+/g, '_') + '_official';
+            allCommenters.unshift(handle);
+        });
         
-        const settings = PhoneCore.getSettings();
-        const lang = settings.language || 'ko';
-        const commentPool = genericComments[lang] || genericComments.ko;
-        
+        const commentCount = Math.floor(Math.random() * 5) + 2; // 2~6개
         const usedNames = new Set();
-        const usedComments = new Set();
+        
+        // AI로 문맥 기반 댓글 생성
+        const generateContextualComment = async (commenterName, isLorebookChar) => {
+            const prompt = `${getSystemInstruction()}
+
+[CHATSITARGRAM Comment]
+Someone posted: "${caption}"
+Posted by: ${isUserPost ? ctx.name1 : charName}
+
+${isLorebookChar 
+    ? `As ${commenterName.replace(/_official$/, '').replace(/_/g, ' ')}, write a comment based on your relationship with the poster.`
+    : `As a random follower (${commenterName}), write a casual comment.`}
+
+Write a short, natural social media comment (1 sentence max).
+Be specific to the post content, not generic.
+${lang === 'ko' ? 'Write in Korean with appropriate slang/emojis.' : 'Write in English with emojis.'}
+
+Write only the comment:`;
+
+            try {
+                const result = await ctx.generateQuietPrompt(prompt, false, false);
+                return Utils.cleanResponse(result).substring(0, 100);
+            } catch {
+                const fallbackComments = lang === 'ko' 
+                    ? ['와 대박 🔥', '너무 예뻐요!', '분위기 좋다 ✨', '좋아요 👍', '멋있어요!']
+                    : ['Amazing! 🔥', 'So pretty!', 'Love this ✨', 'Wow!', 'Beautiful!'];
+                return fallbackComments[Math.floor(Math.random() * fallbackComments.length)];
+            }
+        };
         
         for (let i = 0; i < commentCount; i++) {
             let name;
+            let isLorebookChar = false;
+            
             do {
-                name = npcNames[Math.floor(Math.random() * npcNames.length)];
-            } while (usedNames.has(name));
+                const idx = Math.floor(Math.random() * allCommenters.length);
+                name = allCommenters[idx];
+                isLorebookChar = name.endsWith('_official');
+            } while (usedNames.has(name) && usedNames.size < allCommenters.length);
+            
             usedNames.add(name);
             
+            // 첫 2개 댓글은 AI 생성, 나머지는 확률적
+            const useAI = i < 2 || Utils.chance(50);
             let text;
-            do {
-                text = commentPool[Math.floor(Math.random() * commentPool.length)];
-            } while (usedComments.has(text) && usedComments.size < commentPool.length);
-            usedComments.add(text);
+            
+            if (useAI) {
+                text = await generateContextualComment(name, isLorebookChar);
+            } else {
+                const genericComments = lang === 'ko'
+                    ? ['와 대박 🔥', '너무 예뻐요 ㅠㅠ', '분위기 미쳤다', '좋아요 👍', '오늘도 빛나네 ✨', '최고 💕', '멋있어요!']
+                    : ['Amazing! 🔥', 'So pretty!', 'Love this ✨', 'Wow!', 'Beautiful 💕', 'Goals!', 'Stunning!'];
+                text = genericComments[Math.floor(Math.random() * genericComments.length)];
+            }
             
             comments.push({
                 id: Utils.generateId(),
                 text: text,
                 isUser: false,
                 isNPC: true,
+                isLorebookChar: isLorebookChar,
                 npcName: name,
-                timestamp: Date.now() - Math.floor(Math.random() * 3600000) // 1시간 내 랜덤
+                timestamp: Date.now() - Math.floor(Math.random() * 3600000)
             });
         }
         
         return comments;
     },
     
+    // 로어북에서 캐릭터 추출
+    extractLorebookCharacters() {
+        const ctx = getContext();
+        const characters = new Set();
+        try {
+            if (ctx.worldInfo) {
+                ctx.worldInfo.forEach(entry => {
+                    if (entry.content) {
+                        const nameMatches = entry.content.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/g);
+                        if (nameMatches) nameMatches.forEach(name => {
+                            if (name.length > 2 && name.length < 30) characters.add(name);
+                        });
+                    }
+                });
+            }
+            const charDesc = ctx.characters?.[ctx.characterId]?.description || '';
+            const descNames = charDesc.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/g);
+            if (descNames) descNames.forEach(name => {
+                if (name.length > 2 && name.length < 30 && name !== ctx.name2) characters.add(name);
+            });
+        } catch (e) { console.log('[Phone] Lorebook extraction error:', e); }
+        return Array.from(characters).slice(0, 10);
+    },
+    
     async generateCharacterComment(postCaption, charName, imageUrl = null) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
     
-    [Instagram Comment]
-    ${ctx.name1 || 'User'} posted a photo on Instagram.
+    [CHATSITARGRAM Comment]
+    ${ctx.name1 || 'User'} posted on CHATSITARGRAM.
     ${postCaption ? `Caption: "${postCaption}"` : '(No caption)'}
     
     As ${charName}, write a short comment (1-2 sentences).
@@ -2313,7 +2757,7 @@ Write only the prompt:`;
         return `
         <div class="app-header">
             <button class="app-back-btn" data-back="home">◀</button>
-            <span class="app-title">Instagram</span>
+            <span class="app-title">CHATSITARGRAM</span>
             <button class="app-nav-btn" id="insta-upload-btn">➕</button>
         </div>
         <div class="insta-tabs">
@@ -2324,6 +2768,10 @@ Write only the prompt:`;
     },
     
     renderFeed(data, charList) {
+        const ctx = getContext();
+        const userName = ctx.name1 || 'User';
+        const userAvatar = this.getUserAvatar();
+        
         let allPosts = [];
         for (const charId in data.charPosts) {
             const charInfo = charList.find(c => c.id == charId);
@@ -2340,7 +2788,21 @@ Write only the prompt:`;
             return `<div class="empty-state">📸<br>아직 게시물이 없어요</div>`;
         }
         
+        // 프로필 영역 - 유저 프로필도 포함
         let profilesHtml = `<div class="insta-profiles">`;
+        
+        // 유저 프로필 먼저 표시
+        const userPostCount = data.userPosts?.length || 0;
+        profilesHtml += `
+            <div class="insta-profile" data-user="true">
+                ${userAvatar 
+                    ? `<img src="${userAvatar}" class="insta-profile-img">`
+                    : `<div class="insta-profile-img">${userName.charAt(0)}</div>`
+                }
+                <span class="insta-profile-name">${userName}</span>
+                <span class="insta-profile-count">${userPostCount}</span>
+            </div>`;
+        
         charList.forEach(char => {
             const postCount = data.charPosts[char.id]?.length || 0;
             profilesHtml += `
@@ -2371,8 +2833,25 @@ Write only the prompt:`;
     },
     
     renderMyPosts(data) {
+        const ctx = getContext();
+        const userName = ctx.name1 || 'User';
+        const userAvatar = this.getUserAvatar();
+        
+        // 내 프로필 헤더
+        let profileHtml = `
+        <div class="insta-my-profile">
+            ${userAvatar 
+                ? `<img src="${userAvatar}" class="insta-my-avatar">`
+                : `<div class="insta-my-avatar">${userName.charAt(0)}</div>`
+            }
+            <div class="insta-my-info">
+                <div class="insta-my-name">${userName}</div>
+                <div class="insta-my-stats">${data.userPosts.length} 게시물</div>
+            </div>
+        </div>`;
+        
         if (data.userPosts.length === 0) {
-            return `<div class="empty-state">📸<br>아직 게시물이 없어요<br><small>➕ 버튼으로 게시물을 올려보세요</small></div>`;
+            return profileHtml + `<div class="empty-state">📸<br>아직 게시물이 없어요<br><small>➕ 버튼으로 게시물을 올려보세요</small></div>`;
         }
         
         let gridHtml = `<div class="insta-grid">`;
@@ -2387,7 +2866,7 @@ Write only the prompt:`;
         });
         gridHtml += `</div>`;
         
-        return gridHtml;
+        return profileHtml + gridHtml;
     },
     
     renderPostDetail(post, isUserPost, charList) {
@@ -2587,7 +3066,16 @@ Write only the prompt:`;
             });
         });
         
-        document.querySelectorAll('.insta-profile').forEach(profile => {
+        // 유저 프로필 클릭 시 내 게시물 탭으로 이동
+        document.querySelector('.insta-profile[data-user="true"]')?.addEventListener('click', () => {
+            document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector('.insta-tab[data-tab="my"]')?.classList.add('active');
+            document.getElementById('insta-content').innerHTML = this.renderMyPosts(data);
+            this.bindGridEvents(Core);
+        });
+        
+        // 캐릭터 프로필 클릭
+        document.querySelectorAll('.insta-profile[data-char-id]').forEach(profile => {
             profile.addEventListener('click', () => {
                 const clickedCharId = profile.dataset.charId;
                 const posts = data.charPosts[clickedCharId] || [];
@@ -2824,14 +3312,14 @@ Write only the prompt:`;
         const settings = PhoneCore.getSettings();
         
         this.state.isGenerating = true;
-        toastr.info('📸 인스타 올리는 중...');
+        toastr.info('📸 챗시타그램 올리는 중...');
         
         const post = await this.generateCharacterPost(charName, charId, settings);
         
         this.state.isGenerating = false;
         
         if (post) {
-            toastr.success(`📸 ${charName}님이 인스타를 올렸어요!`);
+            toastr.success(`📸 ${charName}님이 챗시타그램에 올렸어요!`);
         } else {
             toastr.error('포스트 생성에 실패했어요');
         }
@@ -2860,7 +3348,7 @@ Write only the prompt:`;
 // Phone Core
 // ========================================
 const PhoneCore = {
-    apps: { mundap: MundapApp, message: MessageApp, letter: LetterApp, book: BookApp, movie: MovieApp, diary: DiaryApp, insta: InstaApp },
+    apps: { mundap: MundapApp, message: MessageApp, letter: LetterApp, book: BookApp, movie: MovieApp, diary: DiaryApp, dday: DdayApp, insta: InstaApp },
     pageHistory: [],
     currentPage: 'home',
     initialized: false,
@@ -2893,7 +3381,7 @@ const PhoneCore = {
         $('#insta-trigger-container').remove();
         
         const buttonHtml = `
-            <div id="insta-trigger-container" class="interactable" title="캐릭터 인스타 올리기" style="cursor:pointer;">
+            <div id="insta-trigger-container" class="interactable" title="캐릭터 챗시타그램 올리기" style="cursor:pointer;">
                 <div class="fa-solid fa-camera extensionsMenuExtensionButton" style="color:var(--phone-primary, #ff6b9d);"></div>
             </div>`;
         

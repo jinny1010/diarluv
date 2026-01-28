@@ -1049,3 +1049,123 @@
 .phone-container .insta-upload .btn-secondary {
     margin: 0 12px;
 }
+
+/* ========================================
+   D-DAY 앱 스타일
+   ======================================== */
+.phone-container .dday-date-big {
+    font-size: 24px;
+    font-weight: 700;
+    color: white;
+    margin: 10px 0 5px;
+}
+.phone-container .dday-date-sub {
+    font-size: 13px;
+    color: rgba(255,255,255,0.6);
+}
+.phone-container .dday-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.phone-container .dday-item:last-child {
+    border-bottom: none;
+}
+.phone-container .dday-name {
+    color: rgba(255,255,255,0.85);
+    font-size: 14px;
+}
+.phone-container .dday-value {
+    color: var(--phone-primary);
+    font-weight: 600;
+    font-size: 14px;
+}
+.phone-container .dday-setting-item {
+    padding: 10px 0;
+}
+.phone-container .dday-setting-item label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: rgba(255,255,255,0.85);
+    cursor: pointer;
+}
+.phone-container .dday-setting-desc {
+    font-size: 12px;
+    color: rgba(255,255,255,0.5);
+    margin-top: 8px;
+    line-height: 1.5;
+}
+
+/* ========================================
+   일기장 탭 스타일
+   ======================================== */
+.phone-container .diary-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.phone-container .diary-tab {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid rgba(var(--phone-primary-rgb), 0.3);
+    border-radius: 20px;
+    background: transparent;
+    color: var(--phone-primary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.phone-container .diary-tab.active {
+    background: var(--phone-primary);
+    color: white;
+}
+.phone-container .diary-tab:hover:not(.active) {
+    background: rgba(var(--phone-primary-rgb), 0.1);
+}
+
+/* ========================================
+   챗시타그램 내 프로필 스타일
+   ======================================== */
+.phone-container .insta-my-profile {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    margin-bottom: 15px;
+}
+.phone-container .insta-my-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--phone-primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: bold;
+}
+.phone-container .insta-my-info {
+    flex: 1;
+}
+.phone-container .insta-my-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: white;
+}
+.phone-container .insta-my-stats {
+    font-size: 13px;
+    color: rgba(255,255,255,0.6);
+    margin-top: 4px;
+}
+
+/* 로어북 캐릭터 댓글 강조 */
+.phone-container .insta-comment-lorebook .insta-comment-name {
+    color: var(--phone-primary);
+}
