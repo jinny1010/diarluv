@@ -2720,23 +2720,32 @@ Answer only: SELFIE or SCENERY`;
         
         const charDescription = ctx.characters?.[ctx.characterId]?.description || '';
         
-        // 캡션 + 이미지타입 + 이미지프롬프트 한 번에 생성
+        const chat = ctx.chat || [];
+        const recentMessages = chat.slice(-15).filter(msg => !msg.is_system);
+        const historyText = recentMessages.map(msg => {
+            const sender = msg.is_user ? (ctx.name1 || 'User') : charName;
+            return `${sender}: ${(msg.mes || '').substring(0, 150)}`;
+        }).join('\n');
+        
         const combinedPrompt = `${getSystemInstruction()}
 
 [CHATSITARGRAM Post]
 ${charName} is posting on CHATSITARGRAM.
+
 Character: ${charDescription.substring(0, 300)}
 
-Generate a post with this exact format:
+Recent events:
+${historyText.substring(0, 800)}
 
-CAPTION: (1-3 sentences with emojis, stay in character)
+Based on the character and recent events, generate a post with this exact format:
+
+CAPTION: (1-3 sentences with emojis, stay in character, relate to recent events if relevant)
 IMAGE_TYPE: (SELFIE if photo has people, SCENERY if landscape/food/objects)
 IMAGE_PROMPT: (comma-separated tags for image generation, under 80 words. If SELFIE: character appearance, pose, expression, setting. If SCENERY: describe the scene)`;
 
         try {
             const result = await ctx.generateQuietPrompt(combinedPrompt, false, false);
             
-            // 파싱
             let caption = '', imageType = 'selfie', imagePrompt = '';
             
             const captionMatch = result.match(/CAPTION:\s*(.+?)(?=IMAGE_TYPE:|$)/s);
@@ -2748,7 +2757,6 @@ IMAGE_PROMPT: (comma-separated tags for image generation, under 80 words. If SEL
             const promptMatch = result.match(/IMAGE_PROMPT:\s*(.+?)$/s);
             if (promptMatch) imagePrompt = Utils.cleanResponse(promptMatch[1]).substring(0, 400);
             
-            // 이미지 생성
             let imageUrl = '';
             if (imageType === 'selfie') {
                 imageUrl = await this.generateNovelAIImage(imagePrompt || `${charName}, selfie, instagram photo`);
