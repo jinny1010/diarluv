@@ -124,7 +124,6 @@ const Utils = {
             .trim();
     },
 
-    // Split text into sentences for message bubbles
     splitIntoMessages(text) {
         if (!text) return [text];
         
@@ -441,9 +440,6 @@ Comment: `;
     },
 };
 
-// ========================================
-// 문자 앱 (Messages - iMessage style)
-// ========================================
 const MessageApp = {
     id: 'message',
     name: '문자',
@@ -459,7 +455,8 @@ const MessageApp = {
     
     async tryCharacterMessage(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
-        const today = Utils.getTodayKey();
+        const ddayData = DdayApp.getData(settings, charId);
+        const today = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
         
         if (data.lastCharMsgDate === today) return null;
         if (!Utils.chance(40)) {
@@ -590,7 +587,7 @@ Write only the message content:`;
     
     renderMessages(data, charName) {
         if (data.conversations.length === 0) {
-            return `<div class="msg-empty">💬<br>${charName}에게 첫 문자를 보내보세요!</div>`;
+            return `<div class="empty-state">💬<br>${charName}와의 대화를 시작해보세요!</div>`;
         }
         
         let html = '';
@@ -603,15 +600,12 @@ Write only the message content:`;
                 lastDate = msgDate;
             }
             
-            const time = msg.timestamp ? Utils.formatTime(new Date(msg.timestamp)) : '';
             const bubbles = Utils.splitIntoMessages(msg.content);
             
             for (let i = 0; i < bubbles.length; i++) {
-                const isLast = i === bubbles.length - 1;
                 html += `
                     <div class="msg-bubble-wrap ${msg.fromMe ? 'sent' : 'received'}">
                         <div class="msg-bubble ${msg.fromMe ? 'sent' : 'received'}" data-msg-id="${msg.id}">${Utils.escapeHtml(bubbles[i])}</div>
-                        ${isLast ? `<div class="msg-time">${time}</div>` : ''}
                     </div>`;
             }
             
@@ -679,11 +673,13 @@ Write only the message content:`;
         const charName = ctx.name2 || '캐릭터';
         const data = this.getData(settings, charId);
         
-        // Add user message
+        const ddayData = DdayApp.getData(settings, charId);
+        const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
+        
         data.conversations.push({
             id: Utils.generateId(),
             timestamp: Date.now(),
-            date: Utils.getTodayKey(),
+            date: currentDate,
             content: content,
             fromMe: true,
         });
@@ -692,11 +688,11 @@ Write only the message content:`;
         document.getElementById('msg-container').innerHTML = this.renderMessages(data, charName);
         this.scrollToBottom();
         
-        // Generate reply
+        
         this.state.isGenerating = true;
         this.showTypingIndicator(charName);
         
-        // Random delay for realism
+        
         await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
         
         const reply = await this.generateReply(content, charName, ctx.name1 || '나', settings, charId);
@@ -707,7 +703,7 @@ Write only the message content:`;
             data.conversations.push({
                 id: Utils.generateId(),
                 timestamp: Date.now(),
-                date: Utils.getTodayKey(),
+                date: currentDate,
                 content: reply,
                 fromMe: false,
                 charName: charName,
@@ -763,7 +759,7 @@ Write only the message content:`;
         
         const injection = `[Recent text messages between {{user}} and {{char}}]\n${summary}`;
         
-        // SillyTavern 확장 데이터에 저장 (Author's Note 영역)
+        
         const ctx = getContext();
         if (ctx.setExtensionPrompt) {
             ctx.setExtensionPrompt('phone_messages', injection, 1, 0);
@@ -820,7 +816,8 @@ const LetterApp = {
     
     async tryCharacterLetter(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
-        const today = Utils.getTodayKey();
+        const ddayData = DdayApp.getData(settings, charId);
+        const today = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
         
         if (data.lastCharLetterDate === today) return null;
         if (!Utils.chance(10)) {
@@ -1061,9 +1058,12 @@ Write only the reply content:`;
             
             const reply = await this.generateReply(content, charName);
             
+            const ddayData = DdayApp.getData(settings, charId);
+            const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
+            
             data.letters.push({
                 id: Utils.generateId(),
-                date: Utils.getTodayKey(),
+                date: currentDate,
                 content: content,
                 fromMe: true,
                 reply: reply,
@@ -1646,12 +1646,12 @@ const DiaryApp = {
         const key = `diary_${charId}`;
         if (!settings.appData) settings.appData = {};
         if (!settings.appData[key]) settings.appData[key] = { 
-            entries: {},           // 리얼타임 일기
-            rpEntries: {},         // 롤플타임 일기
+            entries: {},           
+            rpEntries: {},         
             lastCharDiaryDate: null,
             lastRpCharDiaryDate: null
         };
-        // 기존 데이터 마이그레이션
+        
         if (!settings.appData[key].rpEntries) settings.appData[key].rpEntries = {};
         return settings.appData[key];
     },
@@ -2346,7 +2346,7 @@ const SettingsApp = {
             
             if (result.success) {
                 toastr.success(result.message);
-                // UI 새로고침
+                
                 const ddayData = DdayApp.getData(settings, charId);
                 document.getElementById('settings-content').innerHTML = this.renderMain(this.getData(settings, charId), charName, ddayData);
                 this.bindEvents(Core);
@@ -2374,7 +2374,7 @@ const DdayApp = {
         return settings.appData[key];
     },
     
-    // INFOBLOCK에서 날짜 파싱해서 업데이트
+    
     updateFromInfoblock() {
         const ctx = getContext();
         const settings = PhoneCore.getSettings();
@@ -2635,7 +2635,6 @@ const InstaApp = {
     getCharacterAvatar(charId) {
         const ctx = getContext();
         if (ctx.groupId) {
-            // 그룹챗인 경우
             const char = ctx.characters?.find(c => c.avatar && c.name);
             return char?.avatar ? `/characters/${char.avatar}` : '';
         }
@@ -2716,54 +2715,109 @@ Answer only: SELFIE or SCENERY`;
     async generateCharacterPost(charName, charId, settings) {
         const ctx = getContext();
         const data = this.getData(settings, PhoneCore.getCharId());
+        const lang = PhoneCore.getSettings().language || 'ko';
+        const ddayData = DdayApp.getData(settings, charId);
+        const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
         
-        const contentPrompt = `${getSystemInstruction()}
+        const lorebookChars = this.extractLorebookCharacters();
+        const lorebookNames = lorebookChars.slice(0, 3).map(c => c.toLowerCase().replace(/\s+/g, '_') + '_official');
+        
+        const npcNames = ['sunny_life', 'cool_j_kim', 'minjae_daily', 'hyuna_xx', 'jisu_0412'];
+        const commenters = [...lorebookNames, ...npcNames].slice(0, 5);
+        
+        
+        const charDescription = ctx.characters?.[ctx.characterId]?.description || '';
+        
+        
+        const combinedPrompt = `${getSystemInstruction()}
 
-[CHATSITARGRAM Post]
-${charName} is posting on CHATSITARGRAM.
+[CHATSITARGRAM Post Generation]
+${charName} is posting on CHATSITARGRAM (like Instagram).
 
-Write a short CHATSITARGRAM caption (1-3 sentences).
-Include appropriate emojis.
-Stay in character based on personality and current situation.
+Character description: ${charDescription.substring(0, 400)}
 
-Write only the caption:`;
+Generate a complete post with the following format (use exact labels):
+
+CAPTION: (Write 1-3 sentences with emojis, stay in character)
+IMAGE_TYPE: (SELFIE if photo includes people/self, SCENERY if landscape/food/objects only)
+IMAGE_PROMPT: (For image generation - if SELFIE: describe character appearance, pose, expression, setting in comma-separated tags. If SCENERY: describe the scene in tags. Keep under 80 words)
+COMMENTS:
+- ${commenters[0]}: (short comment with emoji)
+- ${commenters[1]}: (short comment with emoji)
+- ${commenters[2]}: (short comment with emoji)
+
+${lang === 'ko' ? 'Write caption and comments in Korean.' : 'Write in English.'}`;
 
         try {
-            const caption = await ctx.generateQuietPrompt(contentPrompt, false, false);
-            const cleanCaption = Utils.cleanResponse(caption).substring(0, 300);
+            const result = await ctx.generateQuietPrompt(combinedPrompt, false, false);
             
-            const imageType = await this.getImageType(cleanCaption, charName);
+            
+            let caption = '', imageType = 'selfie', imagePrompt = '';
+            const comments = [];
+            
+            const captionMatch = result.match(/CAPTION:\s*(.+?)(?=IMAGE_TYPE:|$)/s);
+            if (captionMatch) caption = Utils.cleanResponse(captionMatch[1]).substring(0, 300);
+            
+            const typeMatch = result.match(/IMAGE_TYPE:\s*(\w+)/i);
+            if (typeMatch) imageType = typeMatch[1].toUpperCase().includes('SCENERY') ? 'scenery' : 'selfie';
+            
+            const promptMatch = result.match(/IMAGE_PROMPT:\s*(.+?)(?=COMMENTS:|$)/s);
+            if (promptMatch) imagePrompt = Utils.cleanResponse(promptMatch[1]).substring(0, 400);
+            
+            
+            const commentsMatch = result.match(/COMMENTS:\s*([\s\S]+)$/);
+            if (commentsMatch) {
+                const commentLines = commentsMatch[1].match(/-\s*(\w+):\s*(.+)/g) || [];
+                commentLines.forEach(line => {
+                    const match = line.match(/-\s*(\w+):\s*(.+)/);
+                    if (match) {
+                        comments.push({
+                            id: Utils.generateId(),
+                            text: Utils.cleanResponse(match[2]).substring(0, 100),
+                            isUser: false,
+                            isNPC: true,
+                            isLorebookChar: lorebookNames.includes(match[1]),
+                            npcName: match[1],
+                            timestamp: Date.now() - Math.floor(Math.random() * 3600000)
+                        });
+                    }
+                });
+            }
+            
             
             let imageUrl = '';
-            
             if (imageType === 'selfie') {
-                const imagePrompt = await this.generateImagePrompt(cleanCaption, charName, 'selfie');
-                imageUrl = await this.generateNovelAIImage(imagePrompt);
+                imageUrl = await this.generateNovelAIImage(imagePrompt || `${charName}, selfie, instagram photo`);
             } else {
-                const imagePrompt = await this.generateImagePrompt(cleanCaption, charName, 'scenery');
-                imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?nologo=true`;
+                imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt || 'beautiful scenery')}?nologo=true`;
             }
             
             if (!data.charPosts[charId]) data.charPosts[charId] = [];
             
             const likes = await this.generateLikes(false);
-            const npcComments = await this.generateNPCComments(cleanCaption, charName, false);
             
             const post = {
                 id: Utils.generateId(),
-                date: Utils.getTodayKey(),
+                date: currentDate,
                 timestamp: Date.now(),
-                caption: cleanCaption,
+                caption: caption || '📸',
                 imageUrl: imageUrl,
                 imageType: imageType,
                 likes: likes,
-                comments: npcComments,
+                comments: comments.length > 0 ? comments : [{
+                    id: Utils.generateId(),
+                    text: lang === 'ko' ? '좋아요 💕' : 'Nice! 💕',
+                    isUser: false,
+                    isNPC: true,
+                    npcName: 'follower_1',
+                    timestamp: Date.now()
+                }],
                 charId: charId,
                 charName: charName
             };
             
             data.charPosts[charId].unshift(post);
-            data.lastAutoPost = Utils.getTodayKey();
+            data.lastAutoPost = currentDate;
             DataManager.save();
             
             return post;
@@ -2888,7 +2942,7 @@ Write only the prompt:`;
         const settings = PhoneCore.getSettings();
         const lang = settings.language || 'ko';
         
-        // 로어북에서 캐릭터 추출
+        
         const lorebookChars = this.extractLorebookCharacters();
         
         const npcNames = [
@@ -2898,17 +2952,17 @@ Write only the prompt:`;
             'cherry_blossom', 'night_owl_99', 'coffee_lover_kr', 'travel_with_me', 'foodie_seoul'
         ];
         
-        // 로어북 캐릭터를 NPC 풀에 추가
+        
         const allCommenters = [...npcNames];
         lorebookChars.forEach(char => {
             const handle = char.toLowerCase().replace(/\s+/g, '_') + '_official';
             allCommenters.unshift(handle);
         });
         
-        const commentCount = Math.floor(Math.random() * 5) + 2; // 2~6개
+        const commentCount = Math.floor(Math.random() * 5) + 2; 
         const usedNames = new Set();
         
-        // AI로 문맥 기반 댓글 생성
+        
         const generateContextualComment = async (commenterName, isLorebookChar) => {
             const prompt = `${getSystemInstruction()}
 
@@ -2949,7 +3003,7 @@ Write only the comment:`;
             
             usedNames.add(name);
             
-            // 첫 2개 댓글은 AI 생성, 나머지는 확률적
+            
             const useAI = i < 2 || Utils.chance(50);
             let text;
             
@@ -2976,7 +3030,7 @@ Write only the comment:`;
         return comments;
     },
     
-    // 로어북에서 캐릭터 추출
+    
     extractLorebookCharacters() {
         const ctx = getContext();
         const characters = new Set();
@@ -3023,7 +3077,7 @@ Write only the comment:`;
         }
     },
     
-    // 메인 render
+    
     render(charName) {
         return `
         <div class="app-header">
@@ -3059,10 +3113,10 @@ Write only the comment:`;
             return `<div class="empty-state">📸<br>아직 게시물이 없어요</div>`;
         }
         
-        // 프로필 영역 - 유저 프로필도 포함
+        
         let profilesHtml = `<div class="insta-profiles">`;
         
-        // 유저 프로필 먼저 표시
+       
         const userPostCount = data.userPosts?.length || 0;
         profilesHtml += `
             <div class="insta-profile" data-user="true">
@@ -3108,7 +3162,7 @@ Write only the comment:`;
         const userName = ctx.name1 || 'User';
         const userAvatar = this.getUserAvatar();
         
-        // 내 프로필 헤더
+        
         let profileHtml = `
         <div class="insta-my-profile">
             ${userAvatar 
@@ -3337,7 +3391,7 @@ Write only the comment:`;
             });
         });
         
-        // 유저 프로필 클릭 시 내 게시물 탭으로 이동
+        
         document.querySelector('.insta-profile[data-user="true"]')?.addEventListener('click', () => {
             document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
             document.querySelector('.insta-tab[data-tab="my"]')?.classList.add('active');
@@ -3345,7 +3399,7 @@ Write only the comment:`;
             this.bindGridEvents(Core);
         });
         
-        // 캐릭터 프로필 클릭
+        
         document.querySelectorAll('.insta-profile[data-char-id]').forEach(profile => {
             profile.addEventListener('click', () => {
                 const clickedCharId = profile.dataset.charId;
@@ -3463,7 +3517,7 @@ Write only the comment:`;
             }
             
             if (isUser && post.comments.filter(c => !c.isUser).length === 0) {
-                // 첫 댓글이면 캐릭터도 댓글
+                
                 const charName = ctx.name2 || '캐릭터';
                 const charComment = await this.generateCharacterComment(post.caption, charName);
                 if (charComment) {
@@ -3526,29 +3580,82 @@ Write only the comment:`;
                 return;
             }
             
+            const submitBtn = document.getElementById('insta-upload-submit');
+            submitBtn.disabled = true;
+            submitBtn.textContent = '업로드 중...';
+            
             const likes = await this.generateLikes(true);
-            const npcComments = await this.generateNPCComments(caption, charName, true);
             
-            const charComment = await this.generateCharacterComment(caption || '사진을 올렸어요', charName, selectedImage);
+            const lang = PhoneCore.getSettings().language || 'ko';
+            const lorebookChars = this.extractLorebookCharacters();
+            const lorebookNames = lorebookChars.slice(0, 2).map(c => c.toLowerCase().replace(/\s+/g, '_') + '_official');
+            const npcNames = ['sunny_life', 'cool_j_kim', 'minjae_daily'];
+            const commenters = [...lorebookNames, ...npcNames].slice(0, 4);
             
-            let allComments = [...npcComments];
-            if (charComment) {
-                const charCommentObj = {
-                    id: Utils.generateId(),
-                    text: charComment,
-                    isUser: false,
-                    charId: ctx.characterId,
-                    charName: charName,
-                    timestamp: Date.now()
-                };
+            const commentPrompt = `${getSystemInstruction()}
+
+[CHATSITARGRAM Comments]
+${ctx.name1 || 'User'} posted a photo on CHATSITARGRAM.
+Caption: "${caption || '(no caption)'}"
+
+Generate comments for this post:
+
+${charName.toUpperCase()}_COMMENT: (As ${charName}, write a comment based on your relationship with ${ctx.name1}. Be personal and in character. 1 sentence with emoji)
+${commenters.map((name, i) => `COMMENT_${i+1}: ${name}: (casual follower comment, 1 sentence with emoji)`).join('\n')}
+
+${lang === 'ko' ? 'Write all comments in Korean.' : 'Write in English.'}`;
+
+            let allComments = [];
+            
+            try {
+                const result = await ctx.generateQuietPrompt(commentPrompt, false, false);
                 
-                const insertIdx = Math.floor(Math.random() * (allComments.length + 1));
-                allComments.splice(insertIdx, 0, charCommentObj);
+                const charMatch = result.match(new RegExp(`${charName.toUpperCase()}_COMMENT:\\s*(.+?)(?=COMMENT_|$)`, 's'));
+                if (charMatch) {
+                    allComments.push({
+                        id: Utils.generateId(),
+                        text: Utils.cleanResponse(charMatch[1]).substring(0, 100),
+                        isUser: false,
+                        charId: ctx.characterId,
+                        charName: charName,
+                        timestamp: Date.now()
+                    });
+                }
+                
+                for (let i = 0; i < commenters.length; i++) {
+                    const match = result.match(new RegExp(`COMMENT_${i+1}:\\s*${commenters[i]}:\\s*(.+?)(?=COMMENT_|$)`, 's'));
+                    if (match) {
+                        allComments.push({
+                            id: Utils.generateId(),
+                            text: Utils.cleanResponse(match[1]).substring(0, 100),
+                            isUser: false,
+                            isNPC: true,
+                            isLorebookChar: lorebookNames.includes(commenters[i]),
+                            npcName: commenters[i],
+                            timestamp: Date.now() - Math.floor(Math.random() * 3600000)
+                        });
+                    }
+                }
+            } catch (e) {
+                console.log('[Insta] Comment generation fallback');
+                allComments.push({
+                    id: Utils.generateId(),
+                    text: lang === 'ko' ? '좋아요 💕' : 'Nice! 💕',
+                    isUser: false,
+                    isNPC: true,
+                    npcName: 'follower_1',
+                    timestamp: Date.now()
+                });
             }
+            
+            allComments = allComments.sort(() => Math.random() - 0.5);
+            
+            const ddayData = DdayApp.getData(settings, charId);
+            const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
             
             const post = {
                 id: Utils.generateId(),
-                date: Utils.getTodayKey(),
+                date: currentDate,
                 timestamp: Date.now(),
                 caption: caption,
                 imageUrl: selectedImage,
@@ -3560,9 +3667,13 @@ Write only the comment:`;
             Core.saveSettings();
             
             toastr.success('📸 게시물이 업로드되었어요!');
-            if (charComment) {
+            const hasCharComment = allComments.some(c => c.charName === charName);
+            if (hasCharComment) {
                 toastr.info(`💬 ${charName}님이 댓글을 달았어요!`);
             }
+            
+            submitBtn.disabled = false;
+            submitBtn.textContent = '업로드';
             
             document.getElementById('insta-content').innerHTML = this.renderMyPosts(data);
             document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
