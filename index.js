@@ -105,10 +105,9 @@ const Utils = {
         if (!text) return '';
         
         if (text.includes('parts:') && text.includes("finishReason:")) {
-            const matches = [...text.matchAll(/\{\s*text:\s*'([^']+)'\s*\}/g)];
-            const realText = matches.find(m => !m[1].includes('<think>'));
-            if (realText) {
-                text = realText[1];
+            const matches = [...text.matchAll(/\{\s*text:\s*['"]([^'"]+)['"]/g)];
+            if (matches.length > 0) {
+                text = matches[matches.length - 1][1]; 
             }
         }
         
