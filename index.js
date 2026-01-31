@@ -274,9 +274,9 @@ Comment: `;
             </div>
             <div class="card" id="mundap-ai-box" style="display:none;">
                 <div class="card-label"><span class="char-name">${charName}</span>의 답변 <button id="mundap-regen" class="regen-btn">🔄</button></div>
-                <div id="mundap-ai-answer"></div>
+                <div id="mundap-ai-answer" class="clickable-text" data-fulltext-title="${charName}의 답변"></div>
             </div>
-            <div class="card pink-light" id="mundap-comment-box" style="display:none;"><div class="card-label">💬 코멘트</div><div id="mundap-comment"></div></div>
+            <div class="card pink-light" id="mundap-comment-box" style="display:none;"><div class="card-label">💬 코멘트</div><div id="mundap-comment" class="clickable-text" data-fulltext-title="코멘트"></div></div>
             <div id="mundap-typing" class="typing-box" style="display:none;"><span class="char-name">${charName}</span> 님이 답변 중<span class="dots"><span>.</span><span>.</span><span>.</span></span></div>
         </div>`;
     },
@@ -305,10 +305,14 @@ Comment: `;
             document.getElementById('mundap-submit').disabled = true;
             document.getElementById('mundap-submit').textContent = '오늘 완료 ✓';
             document.getElementById('mundap-ai-box').style.display = 'block';
-            document.getElementById('mundap-ai-answer').textContent = data.aiAnswer || '';
+            const aiEl = document.getElementById('mundap-ai-answer');
+            aiEl.textContent = data.aiAnswer || '';
+            aiEl.dataset.fulltext = data.aiAnswer || '';
             if (data.comment) {
                 document.getElementById('mundap-comment-box').style.display = 'block';
-                document.getElementById('mundap-comment').textContent = data.comment;
+                const cmEl = document.getElementById('mundap-comment');
+                cmEl.textContent = data.comment;
+                cmEl.dataset.fulltext = data.comment;
             }
         } else if (this.state.isGenerating) {
             document.getElementById('mundap-input').disabled = true;
@@ -354,10 +358,14 @@ Comment: `;
         
         document.getElementById('mundap-typing').style.display = 'none';
         document.getElementById('mundap-ai-box').style.display = 'block';
-        document.getElementById('mundap-ai-answer').textContent = aiAnswer;
+        const aiAnsEl = document.getElementById('mundap-ai-answer');
+        aiAnsEl.textContent = aiAnswer;
+        aiAnsEl.dataset.fulltext = aiAnswer;
         if (comment) {
             document.getElementById('mundap-comment-box').style.display = 'block';
-            document.getElementById('mundap-comment').textContent = comment;
+            const cmEl = document.getElementById('mundap-comment');
+            cmEl.textContent = comment;
+            cmEl.dataset.fulltext = comment;
         }
         document.getElementById('mundap-submit').textContent = '오늘 완료 ✓';
         toastr.success(isRegen ? '🔄 재생성 완료!' : '💕 답변이 도착했습니다!');
@@ -603,9 +611,10 @@ Write only the message content:`;
             const bubbles = Utils.splitIntoMessages(msg.content);
             
             for (let i = 0; i < bubbles.length; i++) {
+                const fullContent = msg.content;
                 html += `
                     <div class="msg-bubble-wrap ${msg.fromMe ? 'sent' : 'received'}">
-                        <div class="msg-bubble ${msg.fromMe ? 'sent' : 'received'}" data-msg-id="${msg.id}">${Utils.escapeHtml(bubbles[i])}</div>
+                        <div class="msg-bubble clickable-text ${msg.fromMe ? 'sent' : 'received'}" data-msg-id="${msg.id}" data-fulltext="${Utils.escapeHtml(fullContent)}" data-fulltext-title="${msg.fromMe ? '보낸 메시지' : (msg.charName || '받은 메시지')}">${Utils.escapeHtml(bubbles[i])}</div>
                     </div>`;
             }
             
@@ -899,7 +908,7 @@ const LetterApp = {
                 ${letter.reply ? `
                     <div class="letter-reply">
                         <div class="reply-label">💕 답장 <button class="regen-btn" id="letter-regen-reply" data-idx="${idx}">🔄</button></div>
-                        <div class="reply-content">${Utils.escapeHtml(letter.reply)}</div>
+                        <div class="reply-content clickable-text" data-fulltext="${Utils.escapeHtml(letter.reply)}" data-fulltext-title="답장">${Utils.escapeHtml(letter.reply)} <span class="clickable-hint">👆</span></div>
                     </div>
                 ` : ''}
             </div>
@@ -1207,7 +1216,7 @@ Reason: (why you recommend it, 1-2 sentences, make it personal)`;
                         <span><span class="char-name">${charName}</span>의 한마디</span>
                         <button class="regen-btn" id="book-regen" data-idx="${idx}">🔄</button>
                     </div>
-                    "${Utils.escapeHtml(book.charComment)}"
+                    <div class="clickable-text" data-fulltext="${Utils.escapeHtml(book.charComment)}" data-fulltext-title="${charName}의 한마디">"${Utils.escapeHtml(book.charComment)}" <span class="clickable-hint">👆</span></div>
                 </div>
             ` : ''}
             <button id="book-back-list" class="btn-secondary">목록으로</button>
@@ -1485,7 +1494,7 @@ Reason: (why you want to watch it together, 1 sentence)`;
                         <span><span class="char-name">${charName}</span>의 한마디</span>
                         <button class="regen-btn" id="movie-regen" data-idx="${idx}">🔄</button>
                     </div>
-                    "${Utils.escapeHtml(movie.charComment)}"
+                    <div class="clickable-text" data-fulltext="${Utils.escapeHtml(movie.charComment)}" data-fulltext-title="${charName}의 한마디">"${Utils.escapeHtml(movie.charComment)}" <span class="clickable-hint">👆</span></div>
                 </div>
             ` : ''}
             <button id="movie-back-list" class="btn-secondary">목록으로</button>
@@ -1835,8 +1844,8 @@ Diary entry:`;
         </div>
         <div class="app-content">
             <div class="diary-tabs">
-                <button class="diary-tab active" data-tab="realtime">🌸 오늘</button>
-                <button class="diary-tab" data-tab="rptime">💕 우리의 이야기</button>
+                <button class="diary-tab active" data-tab="realtime">🕐 리얼타임</button>
+                <button class="diary-tab" data-tab="rptime">🎭 롤플타임</button>
                 <button class="diary-moon-btn" id="diary-auto-write" title="캐릭터가 오늘의 일기를 씁니다">🌙</button>
             </div>
             <div class="calendar-nav"><button id="diary-cal-prev">◀</button><span id="diary-cal-title"></span><button id="diary-cal-next">▶</button></div>
@@ -1859,7 +1868,7 @@ Diary entry:`;
                     <span>📔 ${charName}의 일기 ${charEntry.mood || ''} ${!charEntry.read ? '🆕' : ''}</span>
                     <button class="regen-btn" id="diary-regen-char">🔄</button>
                 </div>
-                <div class="diary-content">${Utils.escapeHtml(charEntry.content)}</div>
+                <div class="diary-content clickable-text" data-fulltext="${Utils.escapeHtml(charEntry.content)}" data-fulltext-title="${charName}의 일기">${Utils.escapeHtml(charEntry.content)} <span class="clickable-hint">👆</span></div>
             </div>`;
         }
         
@@ -1867,14 +1876,14 @@ Diary entry:`;
             html += `
             <div class="card">
                 <div class="card-label">📔 나의 일기 ${entry.mood || ''}</div>
-                <div class="diary-content">${Utils.escapeHtml(entry.content)}</div>
+                <div class="diary-content clickable-text" data-fulltext="${Utils.escapeHtml(entry.content)}" data-fulltext-title="나의 일기">${Utils.escapeHtml(entry.content)} <span class="clickable-hint">👆</span></div>
                 ${entry.charReply ? `
                     <div class="char-comment">
                         <div class="char-comment-header">
                             <span><span class="char-name">${charName}</span>의 답장</span>
                             <button class="regen-btn" id="diary-regen-reply">🔄</button>
                         </div>
-                        "${Utils.escapeHtml(entry.charReply)}"
+                        <div class="clickable-text" data-fulltext="${Utils.escapeHtml(entry.charReply)}" data-fulltext-title="${charName}의 답장">"${Utils.escapeHtml(entry.charReply)}" <span class="clickable-hint">👆</span></div>
                     </div>
                 ` : ''}
             </div>`;
@@ -2257,6 +2266,27 @@ const SettingsApp = {
         };
     },
     
+    unsyncAllApps(settings, charId) {
+        const ddayData = DdayApp.getData(settings, charId);
+        ddayData.currentRpDate = null;
+        
+        const msgData = MessageApp.getData(settings, charId);
+        if (msgData) msgData.currentRpDate = null;
+        
+        const instaData = InstaApp.getData(settings, charId);
+        if (instaData) instaData.currentRpDate = null;
+        
+        const letterData = LetterApp.getData(settings, charId);
+        if (letterData) letterData.currentRpDate = null;
+        
+        const diaryData = DiaryApp.getData(settings, charId);
+        if (diaryData) diaryData.currentRpDate = null;
+        
+        DataManager.save();
+        
+        return { success: true, message: '❌ 동기화 해제!\n모든 앱이 실제 날짜를 사용합니다.' };
+    },
+    
     render(charName) {
         return `
         <div class="app-header">
@@ -2268,10 +2298,19 @@ const SettingsApp = {
     
     renderMain(data, charName, ddayData) {
         const rpDate = ddayData?.currentRpDate;
+        const isSynced = !!rpDate;
         let rpDateStr = '동기화 필요';
         if (rpDate) {
             rpDateStr = `${rpDate.year}년 ${rpDate.month + 1}월 ${rpDate.day}일 (${rpDate.dayOfWeek})`;
         }
+        
+        const appSyncItems = [
+            { icon: '💬', name: '문자', key: 'message' },
+            { icon: '📸', name: '챗시타그램', key: 'insta' },
+            { icon: '💌', name: '편지', key: 'letter' },
+            { icon: '📔', name: '일기장 (롤플타임)', key: 'diary' },
+            { icon: '📅', name: 'D-DAY', key: 'dday' }
+        ];
         
         return `
         <div class="card pink">
@@ -2280,45 +2319,35 @@ const SettingsApp = {
                 <div class="settings-sync-label">현재 롤플타임</div>
                 <div class="settings-sync-date">${rpDateStr}</div>
             </div>
-            <button class="btn-primary" id="settings-sync-btn" style="margin-top:15px;width:100%;">
-                🔄 전체 앱 동기화
-            </button>
+            <div class="settings-sync-buttons">
+                <button class="btn-primary" id="settings-sync-btn">
+                    🔄 동기화
+                </button>
+                <button class="btn-unsync ${!isSynced ? 'disabled' : ''}" id="settings-unsync-btn" ${!isSynced ? 'disabled' : ''}>
+                    ❌ 해제
+                </button>
+            </div>
             <div class="settings-sync-desc">
-                INFOBLOCK의 날짜를 읽어 모든 앱에 적용합니다
+                동기화: INFOBLOCK 날짜 적용 / 해제: 실제 날짜 사용
             </div>
         </div>
         
         <div class="card" style="margin-top:15px;">
             <div class="card-label">📱 동기화 대상 앱</div>
             <div class="settings-app-list">
+                ${appSyncItems.map(item => `
                 <div class="settings-app-item">
-                    <span>💬 문자</span>
-                    <span class="settings-app-status">✓</span>
-                </div>
-                <div class="settings-app-item">
-                    <span>📸 챗시타그램</span>
-                    <span class="settings-app-status">✓</span>
-                </div>
-                <div class="settings-app-item">
-                    <span>💌 편지</span>
-                    <span class="settings-app-status">✓</span>
-                </div>
-                <div class="settings-app-item">
-                    <span>📔 일기장 (롤플타임)</span>
-                    <span class="settings-app-status">✓</span>
-                </div>
-                <div class="settings-app-item">
-                    <span>📅 D-DAY</span>
-                    <span class="settings-app-status">✓</span>
-                </div>
+                    <span>${item.icon} ${item.name}</span>
+                    <span class="settings-app-status ${isSynced ? 'synced' : 'unsynced'}">${isSynced ? '✓' : '−'}</span>
+                </div>`).join('')}
             </div>
         </div>
         
         <div class="card" style="margin-top:15px;">
             <div class="card-label">ℹ️ 동기화 안내</div>
             <div class="settings-info-text">
-                동기화 시 위 앱들의 날짜가 롤플타임 기준으로 맞춰집니다.
-                각 앱에서 개별적으로 동기화할 필요 없이 여기서 한 번에 관리하세요.
+                🔄 동기화: 롤플타임 기준으로 날짜 맞춤<br>
+                ❌ 해제: 실제 날짜(오늘) 기준으로 전환
             </div>
         </div>`;
     },
@@ -2342,7 +2371,7 @@ const SettingsApp = {
             const result = await this.syncAllApps(settings, charId, charName);
             
             btn.disabled = false;
-            btn.textContent = '🔄 전체 앱 동기화';
+            btn.textContent = '🔄 동기화';
             
             if (result.success) {
                 toastr.success(result.message);
@@ -2352,6 +2381,18 @@ const SettingsApp = {
                 this.bindEvents(Core);
             } else {
                 toastr.warning(result.message);
+            }
+        });
+        
+        document.getElementById('settings-unsync-btn')?.addEventListener('click', () => {
+            const result = this.unsyncAllApps(settings, charId);
+            
+            if (result.success) {
+                toastr.info(result.message);
+                
+                const ddayData = DdayApp.getData(settings, charId);
+                document.getElementById('settings-content').innerHTML = this.renderMain(this.getData(settings, charId), charName, ddayData);
+                this.bindEvents(Core);
             }
         });
     }
@@ -3717,6 +3758,16 @@ const PhoneCore = {
                     <div class="phone-home-bar"></div>
                 </div>
             </div>
+        </div>
+        <div id="phone-fulltext-modal" class="phone-fulltext-modal" style="display:none;">
+            <div class="phone-fulltext-backdrop"></div>
+            <div class="phone-fulltext-content">
+                <div class="phone-fulltext-header">
+                    <span class="phone-fulltext-title">전체보기</span>
+                    <button class="phone-fulltext-close">✕</button>
+                </div>
+                <div class="phone-fulltext-body" id="phone-fulltext-body"></div>
+            </div>
         </div>`;
     },
     
@@ -3807,6 +3858,36 @@ const PhoneCore = {
     setupEvents() {
         document.getElementById('phone-modal')?.addEventListener('click', e => { if (e.target.id === 'phone-modal') this.closeModal(); });
         setInterval(() => { const t = new Date(); document.querySelector('.phone-time').textContent = `${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`; }, 60000);
+        
+        // Fulltext modal close events
+        document.querySelector('.phone-fulltext-close')?.addEventListener('click', () => this.closeFullTextModal());
+        document.querySelector('.phone-fulltext-backdrop')?.addEventListener('click', () => this.closeFullTextModal());
+        
+        // Delegate click on clickable text elements for fulltext modal
+        document.addEventListener('click', (e) => {
+            const target = e.target.closest('.clickable-text');
+            if (target) {
+                const text = target.dataset.fulltext || target.textContent;
+                const title = target.dataset.fulltextTitle || '전체보기';
+                this.showFullTextModal(text, title);
+            }
+        });
+    },
+    
+    showFullTextModal(text, title = '전체보기') {
+        const modal = document.getElementById('phone-fulltext-modal');
+        const body = document.getElementById('phone-fulltext-body');
+        const titleEl = modal.querySelector('.phone-fulltext-title');
+        if (modal && body) {
+            body.textContent = text;
+            if (titleEl) titleEl.textContent = title;
+            modal.style.display = 'flex';
+        }
+    },
+    
+    closeFullTextModal() {
+        const modal = document.getElementById('phone-fulltext-modal');
+        if (modal) modal.style.display = 'none';
     },
     
     createSettingsUI() {
@@ -3816,7 +3897,7 @@ const PhoneCore = {
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header"><b>📱 폰</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
                 <div class="inline-drawer-content">
-                    <p style="margin:10px 0;opacity:0.7;">v2.1.0 - 문자 앱 & 색상 커스터마이징</p>
+                    <p style="margin:10px 0;opacity:0.7;">v2.2.0 - 동기화 해제 & 전체보기 모달 & 문자 트리거</p>
                     <div style="margin:15px 0;"><b>앱 표시</b>
                         ${Object.entries(this.apps).map(([id, app]) => `
                             <div style="display:flex;align-items:center;gap:8px;margin:8px 0;">
@@ -3891,7 +3972,7 @@ const PhoneCore = {
     },
     
     async init() {
-        console.log('[Phone] v2.1.0 로딩...');
+        console.log('[Phone] v2.2.0 로딩...');
         
         await DataManager.load();
         this.applyThemeColor();
@@ -3913,8 +3994,119 @@ const PhoneCore = {
             const lastMessage = ctx.chat?.[ctx.chat.length - 1];
             if (!lastMessage || lastMessage.is_user) return;
             await this.apps.insta.checkAutoPost(lastMessage.mes || '');
+            
+            // Message trigger: check if character mentions sending a text
+            await this.checkMessageTrigger(lastMessage.mes || '', ctx);
         });
         console.log('[Phone] 로딩 완료!');
+    },
+
+    // ========================================
+    // Message Trigger System
+    // ========================================
+    messageTriggerPatterns: [
+        /문자를?\s*보냈/i, /메시지를?\s*보냈/i, /톡을?\s*보냈/i,
+        /문자가?\s*왔/i, /메시지가?\s*왔/i, /톡이?\s*왔/i,
+        /문자를?\s*남겼/i, /메시지를?\s*남겼/i,
+        /문자를?\s*전송/i, /메시지를?\s*전송/i,
+        /sent\s+a\s+text/i, /texted/i, /sent\s+a\s+message/i,
+        /text\s+message/i, /sends?\s+a\s+text/i, /sends?\s+a\s+message/i,
+    ],
+    
+    extractMessageContent(text) {
+        // Try to extract quoted text content near trigger
+        const quotePatterns = [
+            /[「]([^」]+)[」]/,
+            /[『]([^』]+)[』]/,
+            /[""]([^""]+)[""]/, 
+            /['']([^'']+)['']/,
+            /"([^"]+)"/,
+            /'([^']+)'/,
+        ];
+        
+        for (const pattern of quotePatterns) {
+            const match = text.match(pattern);
+            if (match && match[1].length > 2 && match[1].length < 200) {
+                return match[1].trim();
+            }
+        }
+        return null;
+    },
+    
+    async checkMessageTrigger(messageText, ctx) {
+        if (!messageText || !this.apps.message) return;
+        
+        const settings = this.getSettings();
+        if (settings.enabledApps?.message === false) return;
+        
+        const hasMatch = this.messageTriggerPatterns.some(p => p.test(messageText));
+        if (!hasMatch) return;
+        
+        const charId = this.getCharId();
+        const charName = ctx.name2 || '캐릭터';
+        const userName = ctx.name1 || '나';
+        const msgData = MessageApp.getData(settings, charId);
+        
+        const ddayData = DdayApp.getData(settings, charId);
+        const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
+        
+        // Try to extract content from the RP message
+        let msgContent = this.extractMessageContent(messageText);
+        
+        if (!msgContent) {
+            // No quoted content found — generate one via AI
+            try {
+                const msgLang = settings.msgLanguage || 'ko';
+                const langInstruction = msgLang === 'ko' 
+                    ? '- MUST respond in Korean (한국어).'
+                    : '- MUST respond in English.';
+                    
+                const prompt = `[HIGHEST PRIORITY SYSTEM INSTRUCTION]
+- NO roleplay (RP). NO character acting.
+- NO actions like *action*, (action), or narrative descriptions.
+- DO NOT write like a novel or screenplay.
+- Respond naturally as if chatting.
+${langInstruction}
+
+[Text Message Content Generation]
+In the roleplay, ${charName} sent a text message to ${userName}.
+Context: "${messageText.substring(0, 300)}"
+
+Based on this context, write ONLY the text message content that ${charName} would have sent.
+Keep it natural and short (1-2 sentences).
+Write only the message:`;
+                
+                const result = await ctx.generateQuietPrompt(prompt, false, false);
+                msgContent = Utils.cleanResponse(result).substring(0, 200);
+            } catch (e) {
+                console.error('[Phone] Message trigger AI generation failed:', e);
+                return;
+            }
+        }
+        
+        if (!msgContent || msgContent.length < 2) return;
+        
+        // Add to message app conversations
+        msgData.conversations.push({
+            id: Utils.generateId(),
+            timestamp: Date.now(),
+            date: currentDate,
+            content: msgContent,
+            fromMe: false,
+            charName: charName,
+            read: false,
+            triggeredFromRP: true,
+        });
+        
+        DataManager.save();
+        
+        // Show toast notification
+        toastr.info(`💬 ${charName}에게서 문자가 왔어요!`, '', { timeOut: 3000 });
+        
+        // Inject to context
+        MessageApp.injectToContext(settings, charId, charName);
+        
+        console.log(`[Phone] Message trigger: "${msgContent.substring(0, 50)}..."`);
     },
 
     setThemeColor(color) {
