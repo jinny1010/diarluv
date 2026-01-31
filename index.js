@@ -104,6 +104,7 @@ const Utils = {
     cleanResponse(text) {
         if (!text) return '';
         
+        // Handle raw API response objects
         if (text.includes('parts:') && text.includes("finishReason:")) {
             const matches = [...text.matchAll(/\{\s*text:\s*['"]([^'"]+)['"]/g)];
             if (matches.length > 0) {
@@ -111,16 +112,29 @@ const Utils = {
             }
         }
         
+        // Remove <think> blocks
         text = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
         text = text.replace(/<think>[\s\S]*/gi, '');
         
+        // Strip ALL HTML tags (critical: prevents CSS/font leaks like "Segoe UI")
+        text = text.replace(/<[^>]*>/g, '');
+        
+        // Remove common CSS/font artifacts that leak through
+        text = text.replace(/font-family\s*:[^;]*/gi, '');
+        text = text.replace(/\b(Segoe UI|Arial|Helvetica|sans-serif|serif|monospace|Times New Roman|Courier)\b/gi, '');
+        text = text.replace(/style\s*=\s*["'][^"']*["']/gi, '');
+        
+        // Remove HTML entities
+        text = text.replace(/&[a-z]+;/gi, ' ');
+        text = text.replace(/&#\d+;/g, ' ');
+        
         return text
-            .replace(/\*[^*]*\*/g, '')
-            .replace(/「[^」]*」/g, '')
-            .replace(/『[^』]*』/g, '')
-            .replace(/^\s*["']|["']\s*$/g, '')
-            .replace(/[ \t]+/g, ' ')  
-            .replace(/\n{3,}/g, '\n\n')  
+            .replace(/\*[^*]*\*/g, '')       // *actions*
+            .replace(/「[^」]*」/g, '')        // 「brackets」
+            .replace(/『[^』]*』/g, '')        // 『brackets』
+            .replace(/^\s*["']|["']\s*$/g, '') // leading/trailing quotes
+            .replace(/[ \t]+/g, ' ')           // collapse spaces
+            .replace(/\n{3,}/g, '\n\n')        // collapse newlines
             .trim();
     },
 
@@ -1844,9 +1858,9 @@ Diary entry:`;
         </div>
         <div class="app-content">
             <div class="diary-tabs">
-                <button class="diary-tab active" data-tab="realtime">오늘</button>
-                <button class="diary-tab" data-tab="rptime">우리의 이야기</button>
-                <button class="diary-moon-btn" id="diary-auto-write" title="캐릭터가 오늘의 일기를 씁니다">💕</button>
+                <button class="diary-tab active" data-tab="realtime">🕐 리얼타임</button>
+                <button class="diary-tab" data-tab="rptime">🎭 롤플타임</button>
+                <button class="diary-moon-btn" id="diary-auto-write" title="캐릭터가 오늘의 일기를 씁니다">🌙</button>
             </div>
             <div class="calendar-nav"><button id="diary-cal-prev">◀</button><span id="diary-cal-title"></span><button id="diary-cal-next">▶</button></div>
             <div class="calendar" id="diary-calendar"></div>
@@ -3756,17 +3770,17 @@ const PhoneCore = {
                         <div class="phone-page" data-page="app" id="phone-app-page"></div>
                     </div>
                     <div class="phone-home-bar"></div>
+                    <div id="phone-fulltext-modal" class="phone-fulltext-modal" style="display:none;">
+                        <div class="phone-fulltext-backdrop"></div>
+                        <div class="phone-fulltext-content">
+                            <div class="phone-fulltext-header">
+                                <span class="phone-fulltext-title">전체보기</span>
+                                <button class="phone-fulltext-close">✕</button>
+                            </div>
+                            <div class="phone-fulltext-body" id="phone-fulltext-body"></div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
-        <div id="phone-fulltext-modal" class="phone-fulltext-modal" style="display:none;">
-            <div class="phone-fulltext-backdrop"></div>
-            <div class="phone-fulltext-content">
-                <div class="phone-fulltext-header">
-                    <span class="phone-fulltext-title">전체보기</span>
-                    <button class="phone-fulltext-close">✕</button>
-                </div>
-                <div class="phone-fulltext-body" id="phone-fulltext-body"></div>
             </div>
         </div>`;
     },
@@ -4014,22 +4028,63 @@ const PhoneCore = {
     ],
     
     extractMessageContent(text) {
-        // Try to extract quoted text content near trigger
+        if (!text) return null;
+        
+        // First strip HTML so we work with clean text
+        const clean = text.replace(/<[^>]*>/g, '').replace(/\*[^*]*\*/g, '');
+        
+        // Trigger keywords to anchor our search around
+        const triggerWords = [
+            '문자', '메시지', '톡', '메세지',
+            'text', 'message', 'texted', 'sent'
+        ];
+        
+        // Find the sentence/area that contains the trigger
+        const sentences = clean.split(/[.!?\n]+/);
+        let triggerArea = '';
+        for (const sent of sentences) {
+            if (triggerWords.some(tw => sent.toLowerCase().includes(tw))) {
+                triggerArea = sent;
+                break;
+            }
+        }
+        
+        // If no trigger area found, use full text but limit search
+        const searchText = triggerArea || clean;
+        
+        // Try to extract quoted content near the trigger
         const quotePatterns = [
-            /[「]([^」]+)[」]/,
-            /[『]([^』]+)[』]/,
-            /[""]([^""]+)[""]/, 
-            /['']([^'']+)['']/,
-            /"([^"]+)"/,
-            /'([^']+)'/,
+            /[""]([^""]{3,200})[""]/, 
+            /['']([^'']{3,200})['']/,
+            /"([^"]{3,200})"/,
+            /'([^']{3,200})'/,
+            /[「]([^」]{3,200})[」]/,
+            /[『]([^』]{3,200})[』]/,
         ];
         
         for (const pattern of quotePatterns) {
-            const match = text.match(pattern);
-            if (match && match[1].length > 2 && match[1].length < 200) {
-                return match[1].trim();
+            const match = searchText.match(pattern);
+            if (match && match[1].trim().length > 2) {
+                const content = match[1].trim();
+                // Reject if it looks like CSS/HTML/code artifact
+                if (/font|style|class|div|span|Segoe|Arial|serif/i.test(content)) continue;
+                return content;
             }
         }
+        
+        // Also check the full text if trigger area had no quotes
+        if (triggerArea) {
+            for (const pattern of quotePatterns) {
+                const match = clean.match(pattern);
+                if (match && match[1].trim().length > 2) {
+                    const content = match[1].trim();
+                    if (/font|style|class|div|span|Segoe|Arial|serif/i.test(content)) continue;
+                    // Only accept if it doesn't look like RP narration
+                    if (content.length < 150) return content;
+                }
+            }
+        }
+        
         return null;
     },
     
@@ -4039,14 +4094,97 @@ const PhoneCore = {
         const settings = this.getSettings();
         if (settings.enabledApps?.message === false) return;
         
-        const hasMatch = this.messageTriggerPatterns.some(p => p.test(messageText));
-        if (!hasMatch) return;
-        
         const charId = this.getCharId();
         const charName = ctx.name2 || '캐릭터';
         const userName = ctx.name1 || '나';
-        const msgData = MessageApp.getData(settings, charId);
         
+        const hasKeywordMatch = this.messageTriggerPatterns.some(p => p.test(messageText));
+        
+        if (hasKeywordMatch) {
+            // Direct keyword trigger — character explicitly mentions sending a text
+            await this._processMessageTrigger(messageText, ctx, settings, charId, charName, userName, 'keyword');
+        } else {
+            // Contextual trigger — check if the scene naturally calls for a text
+            await this._checkContextualTrigger(messageText, ctx, settings, charId, charName, userName);
+        }
+    },
+    
+    // Cooldown tracking for contextual triggers
+    _contextTriggerState: { lastTriggerIdx: 0, checkCounter: 0 },
+    
+    async _checkContextualTrigger(messageText, ctx, settings, charId, charName, userName) {
+        // Cooldown: only evaluate every 5th message, and at least 8 messages since last trigger
+        const chatLen = ctx.chat?.length || 0;
+        this._contextTriggerState.checkCounter++;
+        
+        if (this._contextTriggerState.checkCounter < 5) return;
+        this._contextTriggerState.checkCounter = 0;
+        
+        if (chatLen - this._contextTriggerState.lastTriggerIdx < 8) return;
+        
+        // Gather recent context (last ~3 messages for scene understanding)
+        const recentMsgs = (ctx.chat || []).slice(-4).map(m => {
+            const who = m.is_user ? userName : charName;
+            const clean = (m.mes || '').replace(/<[^>]*>/g, '').substring(0, 200);
+            return `${who}: ${clean}`;
+        }).join('\n');
+        
+        try {
+            const msgLang = settings.msgLanguage || 'ko';
+            const langInstruction = msgLang === 'ko'
+                ? '- Korean (한국어) for the message content.'
+                : '- English for the message content.';
+            
+            const prompt = `[SYSTEM: STRICT OUTPUT FORMAT]
+You are analyzing a roleplay scene. Determine if the characters just separated/parted ways in a way that would naturally lead to a follow-up text message.
+
+Situations where a text IS appropriate:
+- Characters said goodbye and parted / left / went home
+- One character left after a fight or emotional moment
+- A date/hangout ended and they went separate ways
+- One character is leaving on a trip
+- Characters are now physically apart after being together
+
+Situations where a text is NOT appropriate:
+- Characters are still together in the same scene
+- They're in the middle of a conversation face-to-face
+- Nothing significant happened (routine/mundane moment)
+- A text was already recently exchanged
+
+Recent scene:
+${recentMsgs}
+
+If a follow-up text message from ${charName} would be natural here, respond EXACTLY in this format:
+YES|<the text message content, 1-2 short sentences>
+
+If not appropriate, respond EXACTLY:
+NO
+
+${langInstruction}
+Respond with YES|message or NO only:`;
+            
+            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const cleaned = Utils.cleanResponse(result).trim();
+            
+            if (!cleaned.startsWith('YES')) return;
+            
+            const msgContent = cleaned.replace(/^YES\s*\|?\s*/, '').trim();
+            if (!msgContent || msgContent.length < 2 || msgContent === 'YES') return;
+            
+            // Safety check
+            if (/^(Segoe|Arial|Helvetica|sans-serif|serif|monospace|font|style|class|div|span|NO)\b/i.test(msgContent)) return;
+            
+            this._contextTriggerState.lastTriggerIdx = chatLen;
+            
+            await this._saveAndNotifyMessage(settings, charId, charName, msgContent, 'contextual');
+            
+        } catch (e) {
+            console.error('[Phone] Contextual message trigger failed:', e);
+        }
+    },
+    
+    async _processMessageTrigger(messageText, ctx, settings, charId, charName, userName, triggerType) {
+        const msgData = MessageApp.getData(settings, charId);
         const ddayData = DdayApp.getData(settings, charId);
         const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
         
@@ -4060,17 +4198,21 @@ const PhoneCore = {
                 const langInstruction = msgLang === 'ko' 
                     ? '- MUST respond in Korean (한국어).'
                     : '- MUST respond in English.';
+                
+                // Strip HTML from context to avoid CSS leaks in generation
+                const cleanContext = messageText.replace(/<[^>]*>/g, '').replace(/\*[^*]*\*/g, '').substring(0, 300);
                     
                 const prompt = `[HIGHEST PRIORITY SYSTEM INSTRUCTION]
 - NO roleplay (RP). NO character acting.
 - NO actions like *action*, (action), or narrative descriptions.
 - DO NOT write like a novel or screenplay.
 - Respond naturally as if chatting.
+- Do NOT output any HTML, CSS, font names, or formatting tags.
 ${langInstruction}
 
 [Text Message Content Generation]
 In the roleplay, ${charName} sent a text message to ${userName}.
-Context: "${messageText.substring(0, 300)}"
+Context: "${cleanContext}"
 
 Based on this context, write ONLY the text message content that ${charName} would have sent.
 Keep it natural and short (1-2 sentences).
@@ -4086,6 +4228,20 @@ Write only the message:`;
         
         if (!msgContent || msgContent.length < 2) return;
         
+        // Safety: reject content that looks like CSS/HTML artifacts
+        if (/^(Segoe|Arial|Helvetica|sans-serif|serif|monospace|font|style|class|div|span)\b/i.test(msgContent.trim())) {
+            console.log('[Phone] Message trigger: rejected garbage content:', msgContent);
+            return;
+        }
+        
+        await this._saveAndNotifyMessage(settings, charId, charName, msgContent, triggerType);
+    },
+    
+    async _saveAndNotifyMessage(settings, charId, charName, msgContent, triggerType) {
+        const msgData = MessageApp.getData(settings, charId);
+        const ddayData = DdayApp.getData(settings, charId);
+        const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
+        
         // Add to message app conversations
         msgData.conversations.push({
             id: Utils.generateId(),
@@ -4096,6 +4252,7 @@ Write only the message:`;
             charName: charName,
             read: false,
             triggeredFromRP: true,
+            triggerType: triggerType,
         });
         
         DataManager.save();
@@ -4106,7 +4263,7 @@ Write only the message:`;
         // Inject to context
         MessageApp.injectToContext(settings, charId, charName);
         
-        console.log(`[Phone] Message trigger: "${msgContent.substring(0, 50)}..."`);
+        console.log(`[Phone] Message trigger (${triggerType}): "${msgContent.substring(0, 50)}..."`);
     },
 
     setThemeColor(color) {
