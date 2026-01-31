@@ -1,22 +1,15 @@
 import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
-
 const extensionName = 'sumone-phone';
 const extensionFolderPath = `scripts/extensions/third_party/${extensionName}`;
 const getContext = () => SillyTavern.getContext(); 
-
-// ========================================
-// System Prompt (Top Priority)
-// ========================================
 function getSystemInstruction() {
     const settings = DataManager.get();
     const lang = settings.language || 'ko';
-    
     const langInstruction = lang === 'ko' 
         ? '- MUST respond in Korean (한국어).'
         : '- MUST respond in English.';
-    
     return `[HIGHEST PRIORITY SYSTEM INSTRUCTION]
 - NO roleplay (RP). NO character acting.
 - NO actions like *action*, (action), or narrative descriptions.
@@ -24,47 +17,32 @@ function getSystemInstruction() {
 - Respond naturally as if chatting.
 ${langInstruction}`;
 }
-
-// ========================================
-// Default Colors
-// ========================================
 const DEFAULT_COLOR = '#ff6b9d';
-
-// ========================================
-// Data Manager
-// ========================================
 const DataManager = {
     cache: null,
     saveTimeout: null,
-    
     async load() {
         if (this.cache) return this.cache;
-        
         if (extension_settings[extensionName]) {
             this.cache = extension_settings[extensionName];
             console.log('[Phone] Data loaded from extension_settings');
             return this.cache;
         }
-        
         this.cache = { enabledApps: {}, wallpapers: {}, themeColors: {}, appData: {} };
         extension_settings[extensionName] = this.cache;
         console.log('[Phone] Created new data');
         return this.cache;
     },
-    
     save() {
         if (this.saveTimeout) clearTimeout(this.saveTimeout);
         this.saveTimeout = setTimeout(() => this._doSave(), 1000);
     },
-    
     _doSave() {
         if (!this.cache) return;
-        
         extension_settings[extensionName] = this.cache;
         saveSettingsDebounced();
         console.log('[Phone] Data saved to extension_settings');
     },
-    
     get() {
         if (!this.cache) {
             this.cache = extension_settings[extensionName] || { enabledApps: {}, wallpapers: {}, themeColors: {}, appData: {} };
@@ -73,10 +51,6 @@ const DataManager = {
         return this.cache;
     },
 };
-
-// ========================================
-// Utilities
-// ========================================
 const Utils = {
     getTodayKey() {
         const now = new Date();
@@ -103,17 +77,14 @@ const Utils = {
     },
     cleanResponse(text) {
         if (!text) return '';
-        
         if (text.includes('parts:') && text.includes("finishReason:")) {
             const matches = [...text.matchAll(/\{\s*text:\s*['"]([^'"]+)['"]/g)];
             if (matches.length > 0) {
                 text = matches[matches.length - 1][1]; 
             }
         }
-        
         text = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
         text = text.replace(/<think>[\s\S]*/gi, '');
-        
         return text
             .replace(/\*[^*]*\*/g, '')
             .replace(/「[^」]*」/g, '')
@@ -123,21 +94,15 @@ const Utils = {
             .replace(/\n{3,}/g, '\n\n')  
             .trim();
     },
-
     splitIntoMessages(text) {
         if (!text) return [text];
-        
         const sentences = text.split(/(?<=[.!?])\s*/).filter(s => s.trim());
-        
         if (sentences.length === 0) return [text];
-        
         const messages = [];
         let current = '';
-        
         for (const sentence of sentences) {
             const trimmed = sentence.trim();
             if (!trimmed) continue;
-            
             if (current && (current + ' ' + trimmed).length > 80) {
                 messages.push(current.trim());
                 current = trimmed;
@@ -146,10 +111,8 @@ const Utils = {
             }
         }
         if (current.trim()) messages.push(current.trim());
-        
         return messages.length > 0 ? messages : [text];
     },
-    
     bindLongPress(element, callback) {
         let pressTimer;
         const startPress = (e) => {
@@ -163,7 +126,6 @@ const Utils = {
         element.addEventListener('touchend', cancelPress);
         element.addEventListener('touchcancel', cancelPress);
     },
-    
     showTextModal(text, title = '전체 보기') {
         const modal = document.getElementById('phone-text-modal');
         const body = document.getElementById('phone-text-modal-body');
@@ -174,21 +136,15 @@ const Utils = {
             modal.style.display = 'flex';
         }
     },
-    
     hideTextModal() {
         const modal = document.getElementById('phone-text-modal');
         if (modal) modal.style.display = 'none';
     },
 };
-
-// ========================================
-// 문답 앱 (Q&A)
-// ========================================
 const MundapApp = {
     id: 'mundap',
     name: '문답',
     icon: '💕',
-    
     initialQuestions: [
         "처음 만났을 때 첫인상이 어땠어?", "나의 어떤 점이 제일 좋아?",
         "우리 사이에서 가장 행복했던 순간은?", "나한테 바라는 게 있어?",
@@ -214,9 +170,7 @@ const MundapApp = {
         "나한테 숨기는 거 있어?", "우리 다음 여행은 어디로 갈까?",
         "나를 처음 좋아하게 된 이유는?",
     ],
-    
     state: { isGenerating: false, currentQuestion: null, selectedDate: null, calYear: null, calMonth: null },
-    
     getData(settings, charId) {
         const key = `mundap_${charId}`;
         if (!settings.appData) settings.appData = {};
@@ -229,7 +183,6 @@ const MundapApp = {
         }
         return settings.appData[key];
     },
-    
     getQuestion(data) {
         if (data.questionPool.length === 0) {
             data.questionPool = [...this.initialQuestions];
@@ -238,7 +191,6 @@ const MundapApp = {
         const idx = Math.floor(Math.random() * data.questionPool.length);
         return data.questionPool.splice(idx, 1)[0];
     },
-    
     getTodayData(settings, charId, charName) {
         const data = this.getData(settings, charId);
         const today = Utils.getTodayKey();
@@ -247,19 +199,15 @@ const MundapApp = {
         }
         return data.history[today];
     },
-    
     async generateResponse(question, userAnswer, charName, userName) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
-
 [Couple Q&A Game]
 Question: "${question}"
 ${userName}'s answer: "${userAnswer}"
-
 As ${charName}, write your answer to this question.
 - Answer: (1-2 sentences, your honest response to the question)
 - Comment: (1 sentence, short sweet reaction to ${userName}'s answer)
-
 Output format exactly:
 Answer: 
 Comment: `;
@@ -274,7 +222,6 @@ Comment: `;
             return { answer: answer.substring(0, 150), comment: comment.substring(0, 100) };
         } catch (e) { return { answer: null, comment: null }; }
     },
-    
     render(charName) {
         return `
         <div class="app-header">
@@ -296,7 +243,6 @@ Comment: `;
             <div id="mundap-typing" class="typing-box" style="display:none;"><span class="char-name">${charName}</span> 님이 답변 중<span class="dots"><span>.</span><span>.</span><span>.</span></span></div>
         </div>`;
     },
-    
     renderHistory() {
         return `
         <div class="app-header">
@@ -309,12 +255,10 @@ Comment: `;
             <div class="card" id="mundap-history-detail"><div class="empty-state">날짜를 선택하세요</div></div>
         </div>`;
     },
-    
     loadUI(settings, charId, charName) {
         const data = this.getTodayData(settings, charId, charName);
         this.state.currentQuestion = data.question;
         document.getElementById('mundap-question').textContent = data.question;
-        
         if (data.revealed) {
             document.getElementById('mundap-input').value = data.myAnswer || '';
             document.getElementById('mundap-input').disabled = true;
@@ -332,13 +276,11 @@ Comment: `;
             document.getElementById('mundap-typing').style.display = 'block';
         }
     },
-    
     async handleSubmit(Core, isRegen = false) {
         if (this.state.isGenerating) return;
         const input = document.getElementById('mundap-input');
         const answer = input?.value.trim();
         if (!answer && !isRegen) { toastr.warning('답변을 입력해주세요!'); return; }
-        
         const ctx = getContext();
         const settings = Core.getSettings();
         const charId = Core.getCharId();
@@ -346,17 +288,14 @@ Comment: `;
         const data = this.getData(settings, charId);
         const todayData = data.history[Utils.getTodayKey()];
         const userAnswer = isRegen ? todayData.myAnswer : answer;
-        
         this.state.isGenerating = true;
         if (!isRegen) input.disabled = true;
         document.getElementById('mundap-submit').disabled = true;
         document.getElementById('mundap-typing').style.display = 'block';
         document.getElementById('mundap-ai-box').style.display = 'none';
         document.getElementById('mundap-comment-box').style.display = 'none';
-        
         const { answer: aiAnswer, comment } = await this.generateResponse(this.state.currentQuestion, userAnswer, charName, ctx.name1 || '나');
         this.state.isGenerating = false;
-        
         if (!aiAnswer) {
             toastr.error('생성 실패');
             if (!isRegen) input.disabled = false;
@@ -364,10 +303,8 @@ Comment: `;
             document.getElementById('mundap-typing').style.display = 'none';
             return;
         }
-        
         data.history[Utils.getTodayKey()] = { question: this.state.currentQuestion, myAnswer: userAnswer, aiAnswer, comment, revealed: true, charName };
         Core.saveSettings();
-        
         document.getElementById('mundap-typing').style.display = 'none';
         document.getElementById('mundap-ai-box').style.display = 'block';
         document.getElementById('mundap-ai-answer').textContent = aiAnswer;
@@ -378,7 +315,6 @@ Comment: `;
         document.getElementById('mundap-submit').textContent = '오늘 완료 ✓';
         toastr.success(isRegen ? '🔄 재생성 완료!' : '💕 답변이 도착했습니다!');
     },
-    
     renderCalendar(settings, charId, year, month) {
         this.state.calYear = year;
         this.state.calMonth = month;
@@ -387,7 +323,6 @@ Comment: `;
         const startDay = new Date(year, month, 1).getDay();
         const totalDays = new Date(year, month + 1, 0).getDate();
         const today = Utils.getTodayKey();
-        
         let html = '<div class="cal-week"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div class="cal-days">';
         for (let i = 0; i < startDay; i++) html += '<span class="cal-day empty"></span>';
         for (let d = 1; d <= totalDays; d++) {
@@ -397,13 +332,11 @@ Comment: `;
         }
         document.getElementById('mundap-calendar').innerHTML = html + '</div>';
     },
-    
     showDetail(settings, charId, dateKey) {
         this.state.selectedDate = dateKey;
         const data = this.getData(settings, charId);
         const record = data.history[dateKey];
         const detail = document.getElementById('mundap-history-detail');
-        
         if (!record?.revealed) {
             detail.innerHTML = `<div class="detail-date">${Utils.formatDate(dateKey)}</div><div class="empty-state">기록이 없습니다</div>`;
             return;
@@ -415,7 +348,6 @@ Comment: `;
             <div class="detail-row"><span class="label">${Utils.escapeHtml(record.charName)}</span><span>${Utils.escapeHtml(record.aiAnswer)}</span></div>
             ${record.comment ? `<div class="detail-row comment"><span class="label">💬</span><span>${Utils.escapeHtml(record.comment)}</span></div>` : ''}`;
     },
-    
     bindEvents(Core) {
         document.getElementById('mundap-submit')?.addEventListener('click', () => this.handleSubmit(Core));
         document.getElementById('mundap-input')?.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.handleSubmit(Core); } });
@@ -429,7 +361,6 @@ Comment: `;
             this.bindHistoryEvents(Core);
         });
     },
-    
     bindHistoryEvents(Core) {
         const settings = Core.getSettings(), charId = Core.getCharId();
         document.getElementById('mundap-cal-prev')?.addEventListener('click', () => {
@@ -444,7 +375,6 @@ Comment: `;
         });
         this.bindCalendarDays(Core);
     },
-    
     bindCalendarDays(Core) {
         document.querySelectorAll('#mundap-calendar .cal-day:not(.empty)').forEach(el => {
             el.onclick = () => {
@@ -455,57 +385,47 @@ Comment: `;
         });
     },
 };
-
 const MessageApp = {
     id: 'message',
     name: '문자',
     icon: '💬',
     state: { isGenerating: false },
-    
     getData(settings, charId) {
         const key = `message_${charId}`;
         if (!settings.appData) settings.appData = {};
         if (!settings.appData[key]) settings.appData[key] = { conversations: [], lastCharMsgDate: null };
         return settings.appData[key];
     },
-    
     async tryCharacterMessage(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const ddayData = DdayApp.getData(settings, charId);
         const today = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
-        
         if (data.lastCharMsgDate === today) return null;
         if (!Utils.chance(40)) {
             data.lastCharMsgDate = today;
             return null;
         }
-        
         const ctx = getContext();
         const msgLang = PhoneCore.getSettings().msgLanguage || 'ko'; 
         const langInstruction = msgLang === 'ko' 
             ? '- MUST respond in Korean (한국어).'
             : '- MUST respond in English.';
-
         const prompt = `[HIGHEST PRIORITY SYSTEM INSTRUCTION]
         - NO roleplay (RP). NO character acting.
         - NO actions like *action*, (action), or narrative descriptions.
         - DO NOT write like a novel or screenplay.
         - Respond naturally as if chatting.
         ${langInstruction}
-
 [Text Message]
 ${charName} is sending a casual text message to ${userName}.
 Write a natural text message to ${userName}.
 Topics: asking about their day, sharing something, random thought, or anything fitting your character.
 Stay in character based on your personality and relationship.
 2-4 sentences.
-
 Write only the message content:`;
-        
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             const content = Utils.cleanResponse(result).substring(0, 300);
-            
             if (content && content.length > 5) {
                 data.conversations.push({
                     id: Utils.generateId(),
@@ -525,18 +445,15 @@ Write only the message content:`;
         }
         return null;
     },
-    
     async generateReply(userMessage, charName, userName, settings, charId) {
         const ctx = getContext();
         const data = this.getData(settings, charId);
-        
         const now = new Date();
         const hour = now.getHours();
         const timeInfo = hour < 6 ? 'late night/early morning' : 
                          hour < 12 ? 'morning' : 
                          hour < 18 ? 'afternoon' : 'evening/night';
         const timeStr = `${hour}:${String(now.getMinutes()).padStart(2, '0')}`;
-        
         let conversationHistory = '';
         if (data.conversations.length > 1) {
             const recent = data.conversations.slice(-11, -1);
@@ -546,42 +463,34 @@ Write only the message content:`;
             }).join('\n');
             conversationHistory = `[Previous messages]\n${conversationHistory}\n\n`;
         }
-        
         const msgLang = PhoneCore.getSettings().msgLanguage || 'ko'; 
         const langInstruction = msgLang === 'ko' 
             ? '- MUST respond in Korean (한국어).'
             : '- MUST respond in English.';
-        
         const prompt = `[HIGHEST PRIORITY SYSTEM INSTRUCTION]
         - NO roleplay (RP). NO character acting.
         - NO actions like *action*, (action), or narrative descriptions.
         - DO NOT write like a novel or screenplay.
         - Respond naturally as if chatting.
         ${langInstruction}
-    
     [Text Message Reply]
     Current time: ${timeStr} (${timeInfo})
     ${conversationHistory}${userName} sent: "${userMessage}"
-    
     As ${charName}, reply to this text message naturally.
     Be aware of the current time when replying.
     Stay in character based on your personality and relationship with ${userName}.
     1-3 sentences.
-    
     Write only the reply:`;
-        
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             return Utils.cleanResponse(result).substring(0, 250);
         } catch { return null; }
     },
-    
     render(charName) {
         const ctx = getContext();
         const avatarUrl = ctx.characters?.[ctx.characterId]?.avatar 
             ? `/characters/${ctx.characters[ctx.characterId].avatar}` 
             : '';
-        
         return `
         <div class="app-header msg-header">
             <button class="app-back-btn" data-back="home">◀</button>
@@ -600,65 +509,52 @@ Write only the message content:`;
             <button id="msg-send" class="msg-send-btn">↑</button>
         </div>`;
     },
-    
     renderMessages(data, charName) {
         if (data.conversations.length === 0) {
             return `<div class="empty-state">💬<br>${charName}와의 대화를 시작해보세요!</div>`;
         }
-        
         let html = '';
         let lastDate = '';
-        
         for (const msg of data.conversations) {
             const msgDate = msg.date || Utils.getTodayKey();
             if (msgDate !== lastDate) {
                 html += `<div class="msg-date-divider">${Utils.formatDate(msgDate)}</div>`;
                 lastDate = msgDate;
             }
-            
             const bubbles = Utils.splitIntoMessages(msg.content);
-            
             for (let i = 0; i < bubbles.length; i++) {
                 html += `
                     <div class="msg-bubble-wrap ${msg.fromMe ? 'sent' : 'received'}">
                         <div class="msg-bubble ${msg.fromMe ? 'sent' : 'received'}" data-msg-id="${msg.id}">${Utils.escapeHtml(bubbles[i])}</div>
                     </div>`;
             }
-            
             if (!msg.fromMe && !msg.read) {
                 msg.read = true;
             }
         }
-        
         return html;
     },
-    
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
         const userName = getContext().name1 || '나';
-        
         if (!this.state.isGenerating) {
             const charMsg = await this.tryCharacterMessage(settings, charId, charName, userName);
             if (charMsg) {
                 toastr.info(`💬 ${charName}에게서 문자가 왔어요!`);
             }
         }
-        
         document.getElementById('msg-container').innerHTML = this.renderMessages(data, charName);
         this.scrollToBottom();
         DataManager.save();
     },
-    
     scrollToBottom() {
         const container = document.getElementById('msg-container');
         if (container) container.scrollTop = container.scrollHeight;
     },
-    
     showTypingIndicator(charName) {
         const container = document.getElementById('msg-container');
         const existing = container.querySelector('.msg-typing');
         if (existing) return;
-        
         const typing = document.createElement('div');
         typing.className = 'msg-bubble-wrap received msg-typing';
         typing.innerHTML = `
@@ -670,28 +566,22 @@ Write only the message content:`;
         container.appendChild(typing);
         this.scrollToBottom();
     },
-    
     hideTypingIndicator() {
         const typing = document.querySelector('.msg-typing');
         if (typing) typing.remove();
     },
-    
     async sendMessage(Core) {
         if (this.state.isGenerating) return;
-        
         const input = document.getElementById('msg-input');
         const content = input?.value.trim();
         if (!content) return;
-        
         const ctx = getContext();
         const settings = Core.getSettings();
         const charId = Core.getCharId();
         const charName = ctx.name2 || '캐릭터';
         const data = this.getData(settings, charId);
-        
         const ddayData = DdayApp.getData(settings, charId);
         const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
-        
         data.conversations.push({
             id: Utils.generateId(),
             timestamp: Date.now(),
@@ -699,22 +589,15 @@ Write only the message content:`;
             content: content,
             fromMe: true,
         });
-        
         input.value = '';
         document.getElementById('msg-container').innerHTML = this.renderMessages(data, charName);
         this.scrollToBottom();
-        
-        
         this.state.isGenerating = true;
         this.showTypingIndicator(charName);
-        
-        
         await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
-        
         const reply = await this.generateReply(content, charName, ctx.name1 || '나', settings, charId);
         this.state.isGenerating = false;
         this.hideTypingIndicator();
-        
         if (reply) {
             data.conversations.push({
                 id: Utils.generateId(),
@@ -726,19 +609,15 @@ Write only the message content:`;
                 read: true,
             });
         }
-        
         Core.saveSettings();
         document.getElementById('msg-container').innerHTML = this.renderMessages(data, charName);
         this.scrollToBottom();
-
         this.injectToContext(settings, charId, charName);
     },
-    
     bindEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
         const charName = getContext().name2 || '캐릭터';
-        
         document.getElementById('msg-send')?.addEventListener('click', () => this.sendMessage(Core));
         document.getElementById('msg-input')?.addEventListener('keydown', e => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -746,7 +625,6 @@ Write only the message content:`;
                 this.sendMessage(Core);
             }
         });
-
         document.querySelectorAll('.msg-bubble').forEach(bubble => {
             Utils.bindLongPress(bubble, () => {
                 const msgId = bubble.dataset.msgId;
@@ -761,66 +639,47 @@ Write only the message content:`;
             });
         });
     },
-
     injectToContext(settings, charId, charName) {
         const data = this.getData(settings, charId);
         if (data.conversations.length === 0) return;
-        
         const recent = data.conversations.slice(-10);
         const summary = recent.map(msg => {
             const sender = msg.fromMe ? '{{user}}' : '{{char}}';
             const time = msg.timestamp ? Utils.formatTime(new Date(msg.timestamp)) : '';
             return `[${time}] ${sender}: ${msg.content}`;
         }).join('\n');
-        
         const injection = `[Recent text messages between {{user}} and {{char}}]\n${summary}`;
-        
-        
         const ctx = getContext();
         if (ctx.setExtensionPrompt) {
             ctx.setExtensionPrompt('phone_messages', injection, 1, 0);
         }
     },  
 };
-
-
-
-// ========================================
-// 편지 앱 (Letter)
-// ========================================
 const LetterApp = {
     id: 'letter',
     name: '편지',
     icon: '💌',
     state: { currentLetter: null, viewMode: 'list', isGenerating: false },
-    
     getData(settings, charId) {
         const key = `letter_${charId}`;
         if (!settings.appData) settings.appData = {};
         if (!settings.appData[key]) settings.appData[key] = { letters: [], lastCharLetterDate: null };
         return settings.appData[key];
     },
-    
     async generateCharacterLetter(charName, userName) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
-    
     [Love Letter Writing]
     ${charName} is writing a heartfelt letter to ${userName}.
-    
    Write a letter that fits your character and relationship with ${userName}. Express:
     - Your honest thoughts and feelings
     - Memories or moments you remember
     - Things you want to say to them
     - Your perspective on your relationship
-    
     Stay in character. Write authentically based on your personality.
-    
     IMPORTANT: Separate each paragraph with a blank line for readability.
     Write 3-4 paragraphs. Pour your heart out.
-    
     Write only the letter content (no greeting/signature):`;
-        
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             return Utils.cleanResponse(result).substring(0, 1200);
@@ -829,20 +688,16 @@ const LetterApp = {
             return null;
         }
     },
-    
     async tryCharacterLetter(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const ddayData = DdayApp.getData(settings, charId);
         const today = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
-        
         if (data.lastCharLetterDate === today) return null;
         if (!Utils.chance(10)) {
             data.lastCharLetterDate = today;
             return null;
         }
-        
         const content = await this.generateCharacterLetter(charName, userName);
-        
         if (content && content.length > 20) {
             data.letters.push({
                 id: Utils.generateId(),
@@ -857,11 +712,9 @@ const LetterApp = {
         }
         return null;
     },
-    
     getUnreadCount(data) {
         return data.letters.filter(l => !l.fromMe && !l.read).length;
     },
-    
     render(charName) {
         return `
         <div class="app-header">
@@ -871,15 +724,12 @@ const LetterApp = {
         </div>
         <div class="app-content" id="letter-content"></div>`;
     },
-    
     renderList(data, charName) {
         const unread = this.getUnreadCount(data);
         let header = unread > 0 ? `<div class="notification-banner">💌 새 편지가 ${unread}통 도착했어요!</div>` : '';
-        
         if (data.letters.length === 0) {
             return header + `<div class="empty-state">💌<br>아직 편지가 없어요<br><small>✏️ 버튼으로 편지를 써보세요</small></div>`;
         }
-        
         return header + data.letters.map((l, i) => `
             <div class="list-item ${!l.fromMe && !l.read ? 'unread' : ''}" data-idx="${i}">
                 <div class="list-icon">${l.fromMe ? '📤' : '📩'}</div>
@@ -891,7 +741,6 @@ const LetterApp = {
             </div>
         `).reverse().join('');
     },
-    
     renderWrite(charName) {
         return `
         <div class="letter-paper">
@@ -901,7 +750,6 @@ const LetterApp = {
             <button id="letter-send" class="btn-primary">💌 편지 보내기</button>
         </div>`;
     },
-    
     renderView(letter, charName, isFromChar, idx) {
         return `
         <div class="letter-fullscreen">
@@ -922,34 +770,27 @@ const LetterApp = {
             <button id="letter-back-list" class="btn-secondary">목록으로</button>
         </div>`;
     },
-    
     async generateReply(content, charName) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
-
 [Love Letter Reply]
 ${ctx.name1 || '나'} sent this heartfelt letter: "${content}"
-
 As ${charName}, write a reply to this letter.
 Express your honest feelings and thoughts.
 Stay in character based on your personality and relationship.
 3-5 sentences.
-
 Write only the reply content:`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
             return Utils.cleanResponse(result).substring(0, 400);
         } catch { return null; }
     },
-    
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
         const userName = getContext().name1 || '나';
-        
         if (!this.state.isGenerating) {
             this.state.isGenerating = true;
             document.getElementById('letter-content').innerHTML = '<div class="loading-state">💌 우편함 확인 중...</div>';
-            
             const charLetter = await this.tryCharacterLetter(settings, charId, charName, userName);
             if (charLetter) {
                 DataManager.save();
@@ -957,21 +798,17 @@ Write only the reply content:`;
             }
             this.state.isGenerating = false;
         }
-        
         document.getElementById('letter-content').innerHTML = this.renderList(data, charName);
         this.bindListEvents(settings, charId, charName);
     },
-    
     bindEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
         const charName = getContext().name2 || '캐릭터';
-        
         document.getElementById('letter-write-btn')?.addEventListener('click', () => {
             document.getElementById('letter-content').innerHTML = this.renderWrite(charName);
             this.bindWriteEvents(Core);
         });
-
         document.querySelectorAll('#letter-content .list-item').forEach(item => {
             Utils.bindLongPress(item, () => {
                 const idx = parseInt(item.dataset.idx);
@@ -986,41 +823,34 @@ Write only the reply content:`;
             });
         });
     },
-    
     bindListEvents(settings, charId, charName) {
         document.querySelectorAll('#letter-content .list-item').forEach(el => {
             el.onclick = () => {
                 const data = this.getData(settings, charId);
                 const idx = parseInt(el.dataset.idx);
                 const letter = data.letters[idx];
-                
                 if (!letter.fromMe && !letter.read) {
                     letter.read = true;
                     DataManager.save();
                 }
-                
                 const isFromChar = !letter.fromMe;
                 document.getElementById('letter-content').innerHTML = this.renderView(letter, charName, isFromChar, idx);
                 this.bindViewEvents(settings, charId, charName, idx);
             };
         });
     },
-    
     bindViewEvents(settings, charId, charName, idx) {
         document.getElementById('letter-back-list')?.addEventListener('click', () => {
             const data = this.getData(settings, charId);
             document.getElementById('letter-content').innerHTML = this.renderList(data, charName);
             this.bindListEvents(settings, charId, charName);
         });
-        
         document.getElementById('letter-regen-content')?.addEventListener('click', async () => {
             const data = this.getData(settings, charId);
             const letter = data.letters[idx];
-            
             const btn = document.getElementById('letter-regen-content');
             btn.disabled = true;
             btn.textContent = '⏳';
-            
             const content = await this.generateCharacterLetter(charName, getContext().name1 || '나');
             if (content) {
                 letter.content = content;
@@ -1034,15 +864,12 @@ Write only the reply content:`;
                 toastr.error('재생성 실패');
             }
         });
-        
         document.getElementById('letter-regen-reply')?.addEventListener('click', async () => {
             const data = this.getData(settings, charId);
             const letter = data.letters[idx];
-            
             const btn = document.getElementById('letter-regen-reply');
             btn.disabled = true;
             btn.textContent = '⏳';
-            
             const reply = await this.generateReply(letter.content, charName);
             if (reply) {
                 letter.reply = reply;
@@ -1057,26 +884,20 @@ Write only the reply content:`;
             }
         });
     },
-    
     bindWriteEvents(Core) {
         document.getElementById('letter-send')?.addEventListener('click', async () => {
             const content = document.getElementById('letter-textarea')?.value.trim();
             if (!content) { toastr.warning('편지 내용을 입력해주세요!'); return; }
-            
             const settings = Core.getSettings();
             const charId = Core.getCharId();
             const charName = getContext().name2 || '캐릭터';
             const data = this.getData(settings, charId);
-            
             const btn = document.getElementById('letter-send');
             btn.disabled = true;
             btn.textContent = `${charName} 님이 읽는 중...`;
-            
             const reply = await this.generateReply(content, charName);
-            
             const ddayData = DdayApp.getData(settings, charId);
             const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
-            
             data.letters.push({
                 id: Utils.generateId(),
                 date: currentDate,
@@ -1085,42 +906,32 @@ Write only the reply content:`;
                 reply: reply,
             });
             Core.saveSettings();
-            
             toastr.success('💌 편지를 보냈습니다!');
             document.getElementById('letter-content').innerHTML = this.renderList(data, charName);
             this.bindListEvents(settings, charId, charName);
         });
     },
 };
-
-// ========================================
-// 독서기록 앱 (Book)
-// ========================================
 const BookApp = {
     id: 'book',
     name: '독서',
     icon: '📚',
     state: { isGenerating: false },
-    
     getData(settings, charId) {
         const key = `book_${charId}`;
         if (!settings.appData) settings.appData = {};
         if (!settings.appData[key]) settings.appData[key] = { books: [], lastCharRecommendDate: null };
         return settings.appData[key];
     },
-    
     async generateCharacterRecommend(charName, userName) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
-
 [Book Recommendation]
 ${charName} wants to recommend a book to ${userName}.
-
 Suggest a real or realistic book and explain why.
 Format:
 Title: (book title)
 Reason: (why you recommend it, 1-2 sentences, make it personal)`;
-        
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             let title = '', reason = '';
@@ -1135,19 +946,15 @@ Reason: (why you recommend it, 1-2 sentences, make it personal)`;
             return null;
         }
     },
-    
     async tryCharacterRecommend(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const today = Utils.getTodayKey();
-        
         if (data.lastCharRecommendDate === today) return null;
         if (!Utils.chance(25)) {
             data.lastCharRecommendDate = today;
             return null;
         }
-        
         const result = await this.generateCharacterRecommend(charName, userName);
-        
         if (result?.title) {
             data.books.push({
                 date: today,
@@ -1164,7 +971,6 @@ Reason: (why you recommend it, 1-2 sentences, make it personal)`;
         }
         return null;
     },
-    
     render() {
         return `
         <div class="app-header">
@@ -1174,11 +980,9 @@ Reason: (why you recommend it, 1-2 sentences, make it personal)`;
         </div>
         <div class="app-content" id="book-content"></div>`;
     },
-    
     renderList(data, charName) {
         const unread = data.books.filter(b => b.fromChar && !b.read).length;
         let header = unread > 0 ? `<div class="notification-banner">📚 ${charName}의 새 추천이 ${unread}개 있어요!</div>` : '';
-        
         if (data.books.length === 0) {
             return header + `<div class="empty-state">📚<br>아직 기록이 없어요<br><small>➕ 버튼으로 책을 추가해보세요</small></div>`;
         }
@@ -1193,7 +997,6 @@ Reason: (why you recommend it, 1-2 sentences, make it personal)`;
             </div>
         `).reverse().join('');
     },
-    
     renderAdd() {
         return `
         <div class="form-card">
@@ -1210,7 +1013,6 @@ Reason: (why you recommend it, 1-2 sentences, make it personal)`;
             <button id="book-save" class="btn-primary">저장하기</button>
         </div>`;
     },
-    
     renderView(book, charName, idx) {
         return `
         <div class="detail-card">
@@ -1229,30 +1031,24 @@ Reason: (why you recommend it, 1-2 sentences, make it personal)`;
             <button id="book-back-list" class="btn-secondary">목록으로</button>
         </div>`;
     },
-    
     async getRecommendation(title, charName) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
-
 [Book Discussion]
 ${ctx.name1} says they're reading "${title}".
 As ${charName}, share your thoughts or reaction about this book in 1-2 sentences.
-
 Write only your response:`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
             return Utils.cleanResponse(result).substring(0, 150);
         } catch { return null; }
     },
-    
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
         const userName = getContext().name1 || '나';
-        
         if (!this.state.isGenerating) {
             this.state.isGenerating = true;
             document.getElementById('book-content').innerHTML = '<div class="loading-state">📚 책장 확인 중...</div>';
-            
             const charBook = await this.tryCharacterRecommend(settings, charId, charName, userName);
             if (charBook) {
                 DataManager.save();
@@ -1260,51 +1056,42 @@ Write only your response:`;
             }
             this.state.isGenerating = false;
         }
-        
         document.getElementById('book-content').innerHTML = this.renderList(data, charName);
         this.bindListEvents(settings, charId, charName);
     },
-    
     bindEvents(Core) {
         document.getElementById('book-add-btn')?.addEventListener('click', () => {
             document.getElementById('book-content').innerHTML = this.renderAdd();
             this.bindAddEvents(Core);
         });
     },
-    
     bindListEvents(settings, charId, charName) {
         document.querySelectorAll('#book-content .list-item').forEach(el => {
             el.onclick = () => {
                 const data = this.getData(settings, charId);
                 const idx = parseInt(el.dataset.idx);
                 const book = data.books[idx];
-                
                 if (book.fromChar && !book.read) {
                     book.read = true;
                     DataManager.save();
                 }
-                
                 document.getElementById('book-content').innerHTML = this.renderView(book, charName, idx);
                 this.bindViewEvents(settings, charId, charName, idx);
             };
         });
     },
-    
     bindViewEvents(settings, charId, charName, idx) {
         document.getElementById('book-back-list')?.addEventListener('click', () => {
             const data = this.getData(settings, charId);
             document.getElementById('book-content').innerHTML = this.renderList(data, charName);
             this.bindListEvents(settings, charId, charName);
         });
-        
         document.getElementById('book-regen')?.addEventListener('click', async () => {
             const data = this.getData(settings, charId);
             const book = data.books[idx];
-            
             const btn = document.getElementById('book-regen');
             btn.disabled = true;
             btn.textContent = '⏳';
-            
             let comment;
             if (book.fromChar) {
                 const result = await this.generateCharacterRecommend(charName, getContext().name1 || '나');
@@ -1312,7 +1099,6 @@ Write only your response:`;
             } else {
                 comment = await this.getRecommendation(book.title, charName);
             }
-            
             if (comment) {
                 book.charComment = comment;
                 DataManager.save();
@@ -1326,18 +1112,15 @@ Write only your response:`;
             }
         });
     },
-    
     bindAddEvents(Core) {
         let rating = 0;
         let charComment = null;
-        
         document.querySelectorAll('#book-rating span').forEach(el => {
             el.onclick = () => {
                 rating = parseInt(el.dataset.n);
                 document.querySelectorAll('#book-rating span').forEach((s, i) => s.textContent = i < rating ? '⭐' : '☆');
             };
         });
-        
         document.getElementById('book-recommend')?.addEventListener('click', async () => {
             const title = document.getElementById('book-title')?.value.trim();
             if (!title) { toastr.warning('책 제목을 먼저 입력해주세요!'); return; }
@@ -1347,13 +1130,11 @@ Write only your response:`;
             document.getElementById('book-recommend-result').innerHTML = charComment ? `"${Utils.escapeHtml(charComment)}"` : '응답 실패';
             document.getElementById('book-recommend').disabled = false;
         });
-        
         document.getElementById('book-save')?.addEventListener('click', () => {
             const title = document.getElementById('book-title')?.value.trim();
             const author = document.getElementById('book-author')?.value.trim();
             const review = document.getElementById('book-review')?.value.trim();
             if (!title) { toastr.warning('책 제목을 입력해주세요!'); return; }
-            
             const settings = Core.getSettings();
             const charId = Core.getCharId();
             const data = this.getData(settings, charId);
@@ -1365,35 +1146,26 @@ Write only your response:`;
         });
     },
 };
-
-// ========================================
-// 영화기록 앱 (Movie)
-// ========================================
 const MovieApp = {
     id: 'movie',
     name: '영화',
     icon: '🎬',
     state: { isGenerating: false },
-    
     getData(settings, charId) {
         const key = `movie_${charId}`;
         if (!settings.appData) settings.appData = {};
         if (!settings.appData[key]) settings.appData[key] = { movies: [], lastCharRecommendDate: null };
         return settings.appData[key];
     },
-    
     async generateCharacterRecommend(charName, userName) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
-
 [Movie Recommendation]
 ${charName} wants to recommend a movie to watch together with ${userName}.
-
 Format:
 Title: (movie title)
 Genre: (genre)
 Reason: (why you want to watch it together, 1 sentence)`;
-        
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             let title = '', genre = '', reason = '';
@@ -1413,19 +1185,15 @@ Reason: (why you want to watch it together, 1 sentence)`;
             return null;
         }
     },
-    
     async tryCharacterRecommend(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const today = Utils.getTodayKey();
-        
         if (data.lastCharRecommendDate === today) return null;
         if (!Utils.chance(25)) {
             data.lastCharRecommendDate = today;
             return null;
         }
-        
         const result = await this.generateCharacterRecommend(charName, userName);
-        
         if (result?.title) {
             data.movies.push({
                 date: today,
@@ -1442,7 +1210,6 @@ Reason: (why you want to watch it together, 1 sentence)`;
         }
         return null;
     },
-    
     render() {
         return `
         <div class="app-header">
@@ -1452,11 +1219,9 @@ Reason: (why you want to watch it together, 1 sentence)`;
         </div>
         <div class="app-content" id="movie-content"></div>`;
     },
-    
     renderList(data, charName) {
         const unread = data.movies.filter(m => m.fromChar && !m.read).length;
         let header = unread > 0 ? `<div class="notification-banner">🎬 ${charName}의 새 추천이 ${unread}개 있어요!</div>` : '';
-        
         if (data.movies.length === 0) {
             return header + `<div class="empty-state">🎬<br>아직 기록이 없어요<br><small>➕ 버튼으로 영화를 추가해보세요</small></div>`;
         }
@@ -1471,7 +1236,6 @@ Reason: (why you want to watch it together, 1 sentence)`;
             </div>
         `).reverse().join('');
     },
-    
     renderAdd() {
         return `
         <div class="form-card">
@@ -1488,7 +1252,6 @@ Reason: (why you want to watch it together, 1 sentence)`;
             <button id="movie-save" class="btn-primary">저장하기</button>
         </div>`;
     },
-    
     renderView(movie, charName, idx) {
         return `
         <div class="detail-card">
@@ -1507,35 +1270,27 @@ Reason: (why you want to watch it together, 1 sentence)`;
             <button id="movie-back-list" class="btn-secondary">목록으로</button>
         </div>`;
     },
-    
     async getDiscussion(title, charName) {
     const ctx = getContext();
     const prompt = `${getSystemInstruction()}
-
 [Movie Discussion]
 ${ctx.name1} watched "${title}" together with you.
 As ${charName}, share your thoughts about this movie in 1-2 sentences.
-
 Write only your response:`;
     try {
         let result = await ctx.generateQuietPrompt(prompt, false, false);
-        
         const cleaned = Utils.cleanResponse(result);
-        
         return cleaned.substring(0, 150);
     } catch (e) { 
         return null; 
     }
 },
-    
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
         const userName = getContext().name1 || '나';
-        
         if (!this.state.isGenerating) {
             this.state.isGenerating = true;
             document.getElementById('movie-content').innerHTML = '<div class="loading-state">🎬 영화관 확인 중...</div>';
-            
             const charMovie = await this.tryCharacterRecommend(settings, charId, charName, userName);
             if (charMovie) {
                 DataManager.save();
@@ -1543,51 +1298,42 @@ Write only your response:`;
             }
             this.state.isGenerating = false;
         }
-        
         document.getElementById('movie-content').innerHTML = this.renderList(data, charName);
         this.bindListEvents(settings, charId, charName);
     },
-    
     bindEvents(Core) {
         document.getElementById('movie-add-btn')?.addEventListener('click', () => {
             document.getElementById('movie-content').innerHTML = this.renderAdd();
             this.bindAddEvents(Core);
         });
     },
-    
     bindListEvents(settings, charId, charName) {
         document.querySelectorAll('#movie-content .list-item').forEach(el => {
             el.onclick = () => {
                 const data = this.getData(settings, charId);
                 const idx = parseInt(el.dataset.idx);
                 const movie = data.movies[idx];
-                
                 if (movie.fromChar && !movie.read) {
                     movie.read = true;
                     DataManager.save();
                 }
-                
                 document.getElementById('movie-content').innerHTML = this.renderView(movie, charName, idx);
                 this.bindViewEvents(settings, charId, charName, idx);
             };
         });
     },
-    
     bindViewEvents(settings, charId, charName, idx) {
         document.getElementById('movie-back-list')?.addEventListener('click', () => {
             const data = this.getData(settings, charId);
             document.getElementById('movie-content').innerHTML = this.renderList(data, charName);
             this.bindListEvents(settings, charId, charName);
         });
-        
         document.getElementById('movie-regen')?.addEventListener('click', async () => {
             const data = this.getData(settings, charId);
             const movie = data.movies[idx];
-            
             const btn = document.getElementById('movie-regen');
             btn.disabled = true;
             btn.textContent = '⏳';
-            
             let comment;
             if (movie.fromChar) {
                 const result = await this.generateCharacterRecommend(charName, getContext().name1 || '나');
@@ -1595,7 +1341,6 @@ Write only your response:`;
             } else {
                 comment = await this.getDiscussion(movie.title, charName);
             }
-            
             if (comment) {
                 movie.charComment = comment;
                 DataManager.save();
@@ -1609,18 +1354,15 @@ Write only your response:`;
             }
         });
     },
-    
     bindAddEvents(Core) {
         let rating = 0;
         let charComment = null;
-        
         document.querySelectorAll('#movie-rating span').forEach(el => {
             el.onclick = () => {
                 rating = parseInt(el.dataset.n);
                 document.querySelectorAll('#movie-rating span').forEach((s, i) => s.textContent = i < rating ? '⭐' : '☆');
             };
         });
-        
         document.getElementById('movie-discuss')?.addEventListener('click', async () => {
             const title = document.getElementById('movie-title')?.value.trim();
             if (!title) { toastr.warning('영화 제목을 먼저 입력해주세요!'); return; }
@@ -1630,13 +1372,11 @@ Write only your response:`;
             document.getElementById('movie-discuss-result').innerHTML = charComment ? `"${Utils.escapeHtml(charComment)}"` : '응답 실패';
             document.getElementById('movie-discuss').disabled = false;
         });
-        
         document.getElementById('movie-save')?.addEventListener('click', () => {
             const title = document.getElementById('movie-title')?.value.trim();
             const genre = document.getElementById('movie-genre')?.value.trim();
             const review = document.getElementById('movie-review')?.value.trim();
             if (!title) { toastr.warning('영화 제목을 입력해주세요!'); return; }
-            
             const settings = Core.getSettings();
             const charId = Core.getCharId();
             const data = this.getData(settings, charId);
@@ -1648,16 +1388,11 @@ Write only your response:`;
         });
     },
 };
-
-// ========================================
-// 일기장 앱 (Diary)
-// ========================================
 const DiaryApp = {
     id: 'diary',
     name: '일기장',
     icon: '📔',
     state: { selectedDate: null, calYear: null, calMonth: null, isGenerating: false, currentTab: 'realtime' },
-    
     getData(settings, charId) {
         const key = `diary_${charId}`;
         if (!settings.appData) settings.appData = {};
@@ -1667,23 +1402,18 @@ const DiaryApp = {
             lastCharDiaryDate: null,
             lastRpCharDiaryDate: null
         };
-        
         if (!settings.appData[key].rpEntries) settings.appData[key].rpEntries = {};
         return settings.appData[key];
     },
-    
     async generateCharacterDiary(charName, userName, mood) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
-
 [Diary Entry]
 ${charName} is writing a diary entry for today.
 Write about thoughts of ${userName}, things that happened today, feelings, or random musings.
 Mood: ${mood}
 Make it personal and heartfelt, 2-4 sentences.
-
 Write only the diary content:`;
-        
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             return Utils.cleanResponse(result).substring(0, 300);
@@ -1692,23 +1422,18 @@ Write only the diary content:`;
             return null;
         }
     },
-    
     async tryCharacterDiary(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const today = Utils.getTodayKey();
-        
         if (data.lastCharDiaryDate === today) return null;
         if (data.entries[today]?.charDiary) return null;
         if (!Utils.chance(20)) {
             data.lastCharDiaryDate = today;
             return null;
         }
-        
         const moods = ['😊', '🥰', '😴', '🤔', '😎'];
         const mood = moods[Math.floor(Math.random() * moods.length)];
-        
         const content = await this.generateCharacterDiary(charName, userName, mood);
-        
         if (content && content.length > 10) {
             if (!data.entries[today]) data.entries[today] = {};
             data.entries[today].charDiary = {
@@ -1722,27 +1447,21 @@ Write only the diary content:`;
         }
         return null;
     },
-    
     async tryCharacterDiaryRP(settings, charId, charName, userName) {
         const data = this.getData(settings, charId);
         const ddayData = DdayApp.getData(settings, charId);
         const rpDate = ddayData.currentRpDate;
-        
         if (!rpDate) return null;
         const dateKey = rpDate.dateKey;
-        
         if (data.lastRpCharDiaryDate === dateKey) return null;
         if (data.rpEntries[dateKey]?.charDiary) return null;
         if (!Utils.chance(20)) {
             data.lastRpCharDiaryDate = dateKey;
             return null;
         }
-        
         const moods = ['😊', '🥰', '😴', '🤔', '😎'];
         const mood = moods[Math.floor(Math.random() * moods.length)];
-        
         const content = await this.generateCharacterDiary(charName, userName, mood);
-        
         if (content && content.length > 10) {
             if (!data.rpEntries[dateKey]) data.rpEntries[dateKey] = {};
             data.rpEntries[dateKey].charDiary = {
@@ -1759,22 +1478,17 @@ Write only the diary content:`;
     async generateAutoSummaryDiary(charName, settings, charId) {
         const ctx = getContext();
         const data = this.getData(settings, charId);
-        
         const isRpTime = this.state.currentTab === 'rptime';
         const dateKey = isRpTime 
             ? (DdayApp.getData(settings, charId).currentRpDate?.dateKey || this.state.selectedDate)
             : this.state.selectedDate;
-        
         if (!dateKey) {
             toastr.warning('날짜를 선택해주세요');
             return null;
         }
-        
         const chat = ctx.chat || [];
         const recentMessages = chat.slice(-20).filter(msg => !msg.is_system);
-        
         const charDesc = ctx.characters?.[ctx.characterId]?.description || '';
-        
         let conversationSummary = '';
         if (recentMessages.length > 0) {
             conversationSummary = recentMessages.map(msg => {
@@ -1783,18 +1497,13 @@ Write only the diary content:`;
                 return `${sender}: ${content}`;
             }).join('\n');
         }
-        
         const prompt = `${getSystemInstruction()}
-
 [Character's Daily Diary Entry]
 You are ${charName}. Write a personal diary entry summarizing your day.
-
 Character background:
 ${charDesc.substring(0, 500)}
-
 Today's events and conversations:
 ${conversationSummary || '(A quiet day)'}
-
 Write a diary entry as ${charName} would actually write it:
 - Reflect on today's events and feelings
 - Write in first person, as if writing in a private diary
@@ -1802,17 +1511,13 @@ Write a diary entry as ${charName} would actually write it:
 - Keep it natural and authentic to the character
 - 3-5 sentences, heartfelt and personal
 - Do NOT write like a narrator - write like the character themselves
-
 Diary entry:`;
-
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             const content = Utils.cleanResponse(result).substring(0, 400);
-            
             if (content && content.length > 10) {
                 const entries = isRpTime ? data.rpEntries : data.entries;
                 if (!entries[dateKey]) entries[dateKey] = {};
-                
                 entries[dateKey].charDiary = {
                     content: content,
                     mood: this.detectMood(content),
@@ -1820,7 +1525,6 @@ Diary entry:`;
                     read: false,
                     autoGenerated: true
                 };
-                
                 DataManager.save();
                 return content;
             }
@@ -1830,7 +1534,6 @@ Diary entry:`;
             return null;
         }
     },
-    
     detectMood(content) {
         const lowerContent = content.toLowerCase();
         if (lowerContent.match(/happy|joy|excited|wonderful|great|love|행복|기쁘|좋|사랑|설레/)) return '😊';
@@ -1841,8 +1544,11 @@ Diary entry:`;
         if (lowerContent.match(/love|heart|romantic|사랑|두근|심쿵/)) return '🥰';
         return '😊';
     },
-    
     render() {
+        const settings = PhoneCore.getSettings();
+        const charId = PhoneCore.getCharId();
+        const ddayData = DdayApp.getData(settings, charId);
+        const isSynced = !!ddayData?.currentRpDate;
         return `
         <div class="app-header">
             <button class="app-back-btn" data-back="home">◀</button>
@@ -1850,9 +1556,9 @@ Diary entry:`;
             <button class="app-nav-btn" id="diary-today-btn">오늘</button>
         </div>
         <div class="app-content">
-            <div class="diary-tabs">
+            <div class="diary-tabs ${isSynced ? '' : 'single-tab'}">
                 <button class="diary-tab active" data-tab="realtime">🌸 오늘</button>
-                <button class="diary-tab" data-tab="rptime">💕 우리의 이야기</button>
+                ${isSynced ? `<button class="diary-tab" data-tab="rptime">💕 우리의 이야기</button>` : ''}
                 <button class="diary-moon-btn" id="diary-auto-write" title="캐릭터가 오늘의 일기를 씁니다">🌙</button>
             </div>
             <div class="calendar-nav"><button id="diary-cal-prev">◀</button><span id="diary-cal-title"></span><button id="diary-cal-next">▶</button></div>
@@ -1860,13 +1566,10 @@ Diary entry:`;
             <div id="diary-entry-area"></div>
         </div>`;
     },
-    
     renderEntry(entry, dateKey, charName, userName, settings, charId) {
         const hasMyEntry = entry?.content;
         const hasCharEntry = entry?.charDiary;
-        
         let html = '';
-        
         if (hasCharEntry) {
             const charEntry = entry.charDiary;
             html += `
@@ -1878,7 +1581,6 @@ Diary entry:`;
                 <div class="diary-content">${Utils.escapeHtml(charEntry.content)}</div>
             </div>`;
         }
-        
         if (hasMyEntry) {
             html += `
             <div class="card">
@@ -1903,40 +1605,31 @@ Diary entry:`;
                 <button id="diary-save" class="btn-primary">저장하기</button>
             </div>`;
         }
-        
         return html;
     },
-    
     async generateReply(content, mood, charName) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
-
 [Diary Reply]
 ${ctx.name1}'s diary entry (mood: ${mood}): "${content}"
-
 As ${charName}, write a warm, supportive reply.
 Offer comfort, encouragement, or empathy. 1-2 sentences.
-
 Write only the reply:`;
         try {
             let result = await ctx.generateQuietPrompt(prompt, false, false);
             return Utils.cleanResponse(result).substring(0, 150);
         } catch { return null; }
     },
-    
     async loadUI(settings, charId, charName) {
         const now = new Date();
         this.state.calYear = now.getFullYear();
         this.state.calMonth = now.getMonth();
         this.state.selectedDate = Utils.getTodayKey();
         this.state.currentTab = 'realtime';
-        
         const data = this.getData(settings, charId);
         const userName = getContext().name1 || '나';
-        
         if (!this.state.isGenerating) {
             this.state.isGenerating = true;
-            
             const charDiary = await this.tryCharacterDiary(settings, charId, charName, userName);
             if (charDiary) {
                 DataManager.save();
@@ -1944,26 +1637,21 @@ Write only the reply:`;
             }
             this.state.isGenerating = false;
         }
-        
         this.renderCalendar(settings, charId, charName);
         this.showEntry(settings, charId, charName);
         this.bindCalendarNav(settings, charId, charName);
     },
-    
     getCurrentEntries(data) {
         return this.state.currentTab === 'rptime' ? data.rpEntries : data.entries;
     },
-    
     renderCalendar(settings, charId, charName) {
         const { calYear: year, calMonth: month, currentTab } = this.state;
         const tabLabel = currentTab === 'rptime' ? ' (롤플)' : '';
         document.getElementById('diary-cal-title').textContent = `${year}년 ${month + 1}월${tabLabel}`;
-        
         const data = this.getData(settings, charId);
         const entries = this.getCurrentEntries(data);
         const startDay = new Date(year, month, 1).getDay();
         const totalDays = new Date(year, month + 1, 0).getDate();
-        
         let today;
         if (currentTab === 'rptime') {
             const ddayData = DdayApp.getData(settings, charId);
@@ -1971,7 +1659,6 @@ Write only the reply:`;
         } else {
             today = Utils.getTodayKey();
         }
-        
         let html = '<div class="cal-week"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div class="cal-days">';
         for (let i = 0; i < startDay; i++) html += '<span class="cal-day empty"></span>';
         for (let d = 1; d <= totalDays; d++) {
@@ -1986,39 +1673,31 @@ Write only the reply:`;
         document.getElementById('diary-calendar').innerHTML = html + '</div>';
         this.bindCalendarDays(settings, charId, charName);
     },
-    
     showEntry(settings, charId, charName) {
         const data = this.getData(settings, charId);
         const entries = this.getCurrentEntries(data);
         const entry = entries[this.state.selectedDate];
         const userName = getContext().name1 || '나';
-        
         if (entry?.charDiary && !entry.charDiary.read) {
             entry.charDiary.read = true;
             DataManager.save();
         }
-        
         document.getElementById('diary-entry-area').innerHTML = this.renderEntry(entry, this.state.selectedDate, charName, userName, settings, charId);
-        
         if (!entry?.content) {
             this.bindEntryEvents(settings, charId, charName);
         }
         this.bindRegenEvents(settings, charId, charName);
     },
-    
     bindEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
         const charName = getContext().name2 || '캐릭터';
-        
         document.querySelectorAll('.diary-tab').forEach(tab => {
             tab.addEventListener('click', async () => {
                 document.querySelectorAll('.diary-tab').forEach(t => t.classList.remove('active'));
                 tab.classList.add('active');
-                
                 this.state.currentTab = tab.dataset.tab;
                 const data = this.getData(settings, charId);
-                
                 if (this.state.currentTab === 'rptime') {
                     const ddayData = DdayApp.getData(settings, charId);
                     if (ddayData.currentRpDate) {
@@ -2026,7 +1705,6 @@ Write only the reply:`;
                         this.state.calYear = rp.year;
                         this.state.calMonth = rp.month;
                         this.state.selectedDate = rp.dateKey;
-                        
                         if (!this.state.isGenerating) {
                             this.state.isGenerating = true;
                             const userName = getContext().name1 || '나';
@@ -2044,12 +1722,10 @@ Write only the reply:`;
                     this.state.calMonth = now.getMonth();
                     this.state.selectedDate = Utils.getTodayKey();
                 }
-                
                 this.renderCalendar(settings, charId, charName);
                 this.showEntry(settings, charId, charName);
             });
         });
-        
         document.getElementById('diary-today-btn')?.addEventListener('click', () => {
             if (this.state.currentTab === 'rptime') {
                 const ddayData = DdayApp.getData(settings, charId);
@@ -2073,23 +1749,18 @@ Write only the reply:`;
                 toastr.info('🌙 이 기능은 롤플타임에서만 사용할 수 있어요');
                 return;
             }
-            
             if (this.state.isGenerating) {
                 toastr.warning('이미 생성 중이에요...');
                 return;
             }
-            
             const btn = document.getElementById('diary-auto-write');
             btn.disabled = true;
             btn.textContent = '⏳';
             this.state.isGenerating = true;
-            
             const content = await this.generateAutoSummaryDiary(charName, settings, charId);
-            
             this.state.isGenerating = false;
             btn.disabled = false;
             btn.textContent = '🌙';
-            
             if (content) {
                 toastr.success(`🌙 ${charName}가 오늘의 일기를 썼어요!`);
                 this.renderCalendar(settings, charId, charName);
@@ -2099,7 +1770,6 @@ Write only the reply:`;
             }
         });
     },
-    
     bindCalendarNav(settings, charId, charName) {
         document.getElementById('diary-cal-prev')?.addEventListener('click', () => {
             if (--this.state.calMonth < 0) { this.state.calMonth = 11; this.state.calYear--; }
@@ -2110,7 +1780,6 @@ Write only the reply:`;
             this.renderCalendar(settings, charId, charName);
         });
     },
-    
     bindCalendarDays(settings, charId, charName) {
         document.querySelectorAll('#diary-calendar .cal-day:not(.empty)').forEach(el => {
             el.onclick = () => {
@@ -2120,20 +1789,16 @@ Write only the reply:`;
             };
         });
     },
-    
     bindRegenEvents(settings, charId, charName) {
         document.getElementById('diary-regen-char')?.addEventListener('click', async () => {
             const data = this.getData(settings, charId);
             const entries = this.getCurrentEntries(data);
             const entry = entries[this.state.selectedDate];
-            
             const btn = document.getElementById('diary-regen-char');
             btn.disabled = true;
             btn.textContent = '⏳';
-            
             const mood = entry?.charDiary?.mood || '😊';
             const content = await this.generateCharacterDiary(charName, getContext().name1 || '나', mood);
-            
             if (content) {
                 if (!entry.charDiary) entry.charDiary = {};
                 entry.charDiary.content = content;
@@ -2146,16 +1811,13 @@ Write only the reply:`;
                 toastr.error('재생성 실패');
             }
         });
-        
         document.getElementById('diary-regen-reply')?.addEventListener('click', async () => {
             const data = this.getData(settings, charId);
             const entries = this.getCurrentEntries(data);
             const entry = entries[this.state.selectedDate];
-            
             const btn = document.getElementById('diary-regen-reply');
             btn.disabled = true;
             btn.textContent = '⏳';
-            
             const charReply = await this.generateReply(entry.content, entry.mood, charName);
             if (charReply) {
                 entry.charReply = charReply;
@@ -2169,7 +1831,6 @@ Write only the reply:`;
             }
         });
     },
-    
     bindEntryEvents(settings, charId, charName) {
         let selectedMood = '';
         document.querySelectorAll('#diary-mood span').forEach(el => {
@@ -2179,17 +1840,13 @@ Write only the reply:`;
                 el.classList.add('selected');
             };
         });
-        
         document.getElementById('diary-save')?.addEventListener('click', async () => {
             const content = document.getElementById('diary-content')?.value.trim();
             if (!content) { toastr.warning('일기 내용을 입력해주세요!'); return; }
-            
             const btn = document.getElementById('diary-save');
             btn.disabled = true;
             btn.textContent = `${charName} 님이 읽는 중...`;
-            
             const charReply = await this.generateReply(content, selectedMood, charName);
-            
             const data = this.getData(settings, charId);
             const entries = this.getCurrentEntries(data);
             if (!entries[this.state.selectedDate]) entries[this.state.selectedDate] = {};
@@ -2198,7 +1855,6 @@ Write only the reply:`;
             entries[this.state.selectedDate].charReply = charReply;
             entries[this.state.selectedDate].date = this.state.selectedDate;
             DataManager.save();
-            
             toastr.success('📔 저장되었습니다!');
             this.renderCalendar(settings, charId, charName);
             this.showEntry(settings, charId, charName);
@@ -2210,7 +1866,6 @@ const SettingsApp = {
     name: '설정',
     icon: '⚙️',
     state: {},
-    
     getData(settings, charId) {
         const key = `settings_${charId}`;
         if (!settings.appData) settings.appData = {};
@@ -2225,75 +1880,56 @@ const SettingsApp = {
         };
         return settings.appData[key];
     },
-    
     async syncAllApps(settings, charId, charName) {
         const ddayData = DdayApp.getData(settings, charId);
-        
         const rpDate = DdayApp.updateFromInfoblock();
-        
         if (!rpDate) {
             return { success: false, message: 'INFOBLOCK에서 날짜를 찾을 수 없어요' };
         }
-        
         ddayData.currentRpDate = rpDate;
-        
         const syncResults = [];
         syncResults.push(`📅 D-DAY: ${rpDate.year}/${rpDate.month + 1}/${rpDate.day}`);
-        
         const msgData = MessageApp.getData(settings, charId);
         if (msgData) {
             msgData.currentRpDate = rpDate;
             syncResults.push('💬 문자');
         }
-        
         const instaData = InstaApp.getData(settings, charId);
         if (instaData) {
             instaData.currentRpDate = rpDate;
             syncResults.push('📸 챗시타그램');
         }
-        
         const letterData = LetterApp.getData(settings, charId);
         if (letterData) {
             letterData.currentRpDate = rpDate;
             syncResults.push('💌 편지');
         }
-        
         const diaryData = DiaryApp.getData(settings, charId);
         if (diaryData) {
             diaryData.currentRpDate = rpDate;
             syncResults.push('📔 일기장');
         }
-        
         DataManager.save();
-        
         return { 
             success: true, 
             message: `동기화 완료!\n${syncResults.join('\n')}`,
             rpDate: rpDate
         };
     },
-    
     unsyncAllApps(settings, charId) {
         const ddayData = DdayApp.getData(settings, charId);
         ddayData.currentRpDate = null;
-        
         const msgData = MessageApp.getData(settings, charId);
         if (msgData) msgData.currentRpDate = null;
-        
         const instaData = InstaApp.getData(settings, charId);
         if (instaData) instaData.currentRpDate = null;
-        
         const letterData = LetterApp.getData(settings, charId);
         if (letterData) letterData.currentRpDate = null;
-        
         const diaryData = DiaryApp.getData(settings, charId);
         if (diaryData) diaryData.currentRpDate = null;
-        
         DataManager.save();
-        
         return { success: true, message: '동기화가 해제되었어요.\n이제 실제 날짜를 사용합니다.' };
     },
-    
     render(charName) {
         return `
         <div class="app-header">
@@ -2302,7 +1938,6 @@ const SettingsApp = {
         </div>
         <div class="app-content" id="settings-content"></div>`;
     },
-    
     renderMain(data, charName, ddayData) {
         const rpDate = ddayData?.currentRpDate;
         const isSynced = !!rpDate;
@@ -2310,7 +1945,6 @@ const SettingsApp = {
         if (rpDate) {
             rpDateStr = `${rpDate.year}년 ${rpDate.month + 1}월 ${rpDate.day}일 (${rpDate.dayOfWeek})`;
         }
-        
         return `
         <div class="card pink">
             <div class="card-label">🔄 시간 동기화</div>
@@ -2330,7 +1964,6 @@ const SettingsApp = {
                 INFOBLOCK의 날짜를 읽어 모든 앱에 적용합니다
             </div>
         </div>
-        
         <div class="card" style="margin-top:15px;">
             <div class="card-label">📱 동기화 대상 앱</div>
             <div class="settings-app-list">
@@ -2356,7 +1989,6 @@ const SettingsApp = {
                 </div>
             </div>
         </div>
-        
         <div class="card" style="margin-top:15px;">
             <div class="card-label">ℹ️ 동기화 안내</div>
             <div class="settings-info-text">
@@ -2365,31 +1997,24 @@ const SettingsApp = {
             </div>
         </div>`;
     },
-    
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
         const ddayData = DdayApp.getData(settings, charId);
         document.getElementById('settings-content').innerHTML = this.renderMain(data, charName, ddayData);
     },
-    
     bindEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
         const charName = getContext().name2 || '캐릭터';
-        
         document.getElementById('settings-sync-btn')?.addEventListener('click', async () => {
             const btn = document.getElementById('settings-sync-btn');
             btn.disabled = true;
             btn.textContent = '⏳ 동기화 중...';
-            
             const result = await this.syncAllApps(settings, charId, charName);
-            
             btn.disabled = false;
             btn.textContent = '🔄 동기화';
-            
             if (result.success) {
                 toastr.success(result.message);
-                
                 const ddayData = DdayApp.getData(settings, charId);
                 document.getElementById('settings-content').innerHTML = this.renderMain(this.getData(settings, charId), charName, ddayData);
                 this.bindEvents(Core);
@@ -2397,13 +2022,10 @@ const SettingsApp = {
                 toastr.warning(result.message);
             }
         });
-        
         document.getElementById('settings-unsync-btn')?.addEventListener('click', () => {
             const result = this.unsyncAllApps(settings, charId);
-            
             if (result.success) {
                 toastr.info(result.message);
-                
                 const ddayData = DdayApp.getData(settings, charId);
                 document.getElementById('settings-content').innerHTML = this.renderMain(this.getData(settings, charId), charName, ddayData);
                 this.bindEvents(Core);
@@ -2411,13 +2033,11 @@ const SettingsApp = {
         });
     }
 };
-
 const DdayApp = {
     id: 'dday',
     name: 'D-DAY',
     icon: '📅',
     state: {},
-    
     getData(settings, charId) {
         const key = `dday_${charId}`;
         if (!settings.appData) settings.appData = {};
@@ -2428,16 +2048,12 @@ const DdayApp = {
         };
         return settings.appData[key];
     },
-    
-    
     updateFromInfoblock() {
         const ctx = getContext();
         const settings = PhoneCore.getSettings();
         const charId = PhoneCore.getCharId();
         const data = this.getData(settings, charId);
-        
         if (!data.syncEnabled) return null;
-        
         const rpDate = this.parseInfoblockDate(ctx.chat);
         if (rpDate) {
             data.currentRpDate = rpDate;
@@ -2446,7 +2062,6 @@ const DdayApp = {
         }
         return data.currentRpDate;
     },
-    
     parseInfoblockDate(chat) {
         if (!chat || chat.length === 0) return null;
         for (let i = chat.length - 1; i >= 0; i--) {
@@ -2470,7 +2085,6 @@ const DdayApp = {
         }
         return null;
     },
-    
     render(charName) {
         return `
         <div class="app-header">
@@ -2480,7 +2094,6 @@ const DdayApp = {
         </div>
         <div class="app-content" id="dday-content"></div>`;
     },
-    
     renderMain(data, charName) {
         let rpDateStr = '동기화 필요';
         let rpDateFull = '';
@@ -2489,7 +2102,6 @@ const DdayApp = {
             rpDateStr = `${rp.year}년 ${rp.month + 1}월 ${rp.day}일`;
             rpDateFull = `${rp.dateKey} (${rp.dayOfWeek})`;
         }
-        
         let ddaysHtml = '';
         if (data.ddays && data.ddays.length > 0) {
             ddaysHtml = `<div class="card" style="margin-top:15px;">
@@ -2504,18 +2116,15 @@ const DdayApp = {
                 }).join('')}
             </div>`;
         }
-        
         return `
         <div class="card pink">
             <div class="card-label">🎭 우리의 시간</div>
             <div class="dday-date-big">${rpDateStr}</div>
             <div class="dday-date-sub">${rpDateFull}</div>
-            <div class="dday-sync-hint">⚙️ 설정 앱에서 동기화할 수 있어요</div>
         </div>
         ${ddaysHtml}
         <button class="btn-secondary" id="dday-add-btn" style="margin-top:15px;">➕ 기념일 추가</button>`;
     },
-    
     renderAddDday() {
         return `
         <div class="form-card">
@@ -2531,33 +2140,27 @@ const DdayApp = {
             <button class="btn-secondary" id="dday-add-cancel">취소</button>
         </div>`;
     },
-    
     calculateDday(targetDate, baseDate) {
         const target = new Date(targetDate);
         const base = new Date(baseDate);
         const diff = Math.ceil((target - base) / (1000 * 60 * 60 * 24));
         return diff;
     },
-    
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
         if (data.syncEnabled) this.updateFromInfoblock();
         document.getElementById('dday-content').innerHTML = this.renderMain(data, charName);
         this.bindMainEvents(settings, charId, charName);
     },
-    
     bindEvents(Core) {
         this.bindMainEvents(Core.getSettings(), Core.getCharId(), getContext().name2 || '캐릭터');
     },
-    
     bindMainEvents(settings, charId, charName) {
         const data = this.getData(settings, charId);
-        
         document.getElementById('dday-add-btn')?.addEventListener('click', () => {
             document.getElementById('dday-content').innerHTML = this.renderAddDday();
             this.bindAddDdayEvents(settings, charId, charName);
         });
-        
         document.querySelectorAll('.dday-item').forEach(el => {
             Utils.bindLongPress(el, () => {
                 const idx = parseInt(el.dataset.idx);
@@ -2571,41 +2174,33 @@ const DdayApp = {
             });
         });
     },
-    
     bindAddDdayEvents(settings, charId, charName) {
         const data = this.getData(settings, charId);
-        
         document.getElementById('dday-save')?.addEventListener('click', () => {
             const name = document.getElementById('dday-name').value.trim();
             const date = document.getElementById('dday-date').value;
-            
             if (!name || !date) {
                 toastr.warning('이름과 날짜를 모두 입력해주세요');
                 return;
             }
-            
             if (!data.ddays) data.ddays = [];
             data.ddays.push({ name, date });
             DataManager.save();
-            
             toastr.success('📌 기념일이 추가되었어요!');
             document.getElementById('dday-content').innerHTML = this.renderMain(data, charName);
             this.bindMainEvents(settings, charId, charName);
         });
-        
         document.getElementById('dday-add-cancel')?.addEventListener('click', () => {
             document.getElementById('dday-content').innerHTML = this.renderMain(data, charName);
             this.bindMainEvents(settings, charId, charName);
         });
     }
 };
-
 const InstaApp = {
     id: 'insta',
     name: '챗시타그램',
     icon: '📸',
     state: { currentView: 'feed', selectedPost: null, isGenerating: false },
-    
     getData(settings, charId) {
         const key = `insta_${charId}`;
         if (!settings.appData) settings.appData = {};
@@ -2617,7 +2212,6 @@ const InstaApp = {
         };
         return settings.appData[key];
     },
-    
     getCharacterAvatar(charId) {
         const ctx = getContext();
         if (ctx.groupId) {
@@ -2628,12 +2222,10 @@ const InstaApp = {
             ? `/characters/${ctx.characters[ctx.characterId].avatar}` 
             : '';
     },
-    
     getUserAvatar() {
         const ctx = getContext();
         return ctx.user_avatar ? `/User Avatars/${ctx.user_avatar}` : '';
     },
-    
     getCharacterList() {
         const ctx = getContext();
         if (ctx.groupId && ctx.groups) {
@@ -2656,18 +2248,13 @@ const InstaApp = {
             avatar: char.avatar ? `/characters/${char.avatar}` : ''
         }] : [];
     },
-    
     async shouldAutoPost(recentMessage, charName) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
-
 Based on this roleplay message, would ${charName} post on CHATSITARGRAM?
 (traveling, taking photos, special event, date, food, scenery, selfie, etc.)
-
 Message: "${recentMessage.substring(0, 500)}"
-
 Answer only: YES or NO`;
-
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             return result.toUpperCase().includes('YES');
@@ -2675,21 +2262,16 @@ Answer only: YES or NO`;
             return false;
         }
     },
-    
     async getImageType(postContent, charName) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
-
 This CHATSITARGRAM post caption: "${postContent}"
 Posted by: ${charName}
-
 What type of photo would this be?
 - SELFIE: photos of people, self-portraits, portraits, photos with people, mirror selfies, group photos
 - SCENERY: landscapes, food, objects, places without people, products
-
 Most personal CHATSITARGRAM posts are SELFIE type.
 Answer only: SELFIE or SCENERY`;
-
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             return result.toUpperCase().includes('SCENERY') ? 'scenery' : 'selfie';
@@ -2697,63 +2279,45 @@ Answer only: SELFIE or SCENERY`;
             return 'selfie';
         }
     },
-    
     async generateCharacterPost(charName, charId, settings) {
         const ctx = getContext();
         const data = this.getData(settings, PhoneCore.getCharId());
         const ddayData = DdayApp.getData(settings, charId);
         const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
-        
         const charDescription = ctx.characters?.[ctx.characterId]?.description || '';
-        
         const chat = ctx.chat || [];
         const recentMessages = chat.slice(-15).filter(msg => !msg.is_system);
         const historyText = recentMessages.map(msg => {
             const sender = msg.is_user ? (ctx.name1 || 'User') : charName;
             return `${sender}: ${(msg.mes || '').substring(0, 150)}`;
         }).join('\n');
-        
         const combinedPrompt = `${getSystemInstruction()}
-
 [CHATSITARGRAM Post]
 ${charName} is posting on CHATSITARGRAM.
-
 Character: ${charDescription.substring(0, 300)}
-
 Recent events:
 ${historyText.substring(0, 800)}
-
 Based on the character and recent events, generate a post with this exact format:
-
 CAPTION: (1-3 sentences with emojis, stay in character, relate to recent events if relevant)
 IMAGE_TYPE: (SELFIE if photo has people, SCENERY if landscape/food/objects)
 IMAGE_PROMPT: (comma-separated tags for image generation, under 80 words. If SELFIE: character appearance, pose, expression, setting. If SCENERY: describe the scene)`;
-
         try {
             const result = await ctx.generateQuietPrompt(combinedPrompt, false, false);
-            
             let caption = '', imageType = 'selfie', imagePrompt = '';
-            
             const captionMatch = result.match(/CAPTION:\s*(.+?)(?=IMAGE_TYPE:|$)/s);
             if (captionMatch) caption = Utils.cleanResponse(captionMatch[1]).substring(0, 300);
-            
             const typeMatch = result.match(/IMAGE_TYPE:\s*(\w+)/i);
             if (typeMatch) imageType = typeMatch[1].toUpperCase().includes('SCENERY') ? 'scenery' : 'selfie';
-            
             const promptMatch = result.match(/IMAGE_PROMPT:\s*(.+?)$/s);
             if (promptMatch) imagePrompt = Utils.cleanResponse(promptMatch[1]).substring(0, 400);
-            
             let imageUrl = '';
             if (imageType === 'selfie') {
                 imageUrl = await this.generateNovelAIImage(imagePrompt || `${charName}, selfie, instagram photo`);
             } else {
-                imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt || 'beautiful scenery')}?nologo=true`;
+                imageUrl = `https:
             }
-            
             if (!data.charPosts[charId]) data.charPosts[charId] = [];
-            
             const likes = await this.generateLikes(false);
-            
             const post = {
                 id: Utils.generateId(),
                 date: currentDate,
@@ -2766,35 +2330,27 @@ IMAGE_PROMPT: (comma-separated tags for image generation, under 80 words. If SEL
                 charId: charId,
                 charName: charName
             };
-            
             data.charPosts[charId].unshift(post);
             data.lastAutoPost = currentDate;
             DataManager.save();
-            
             return post;
         } catch (e) {
             console.error('[Insta] Post generation failed:', e);
             return null;
         }
     },
-    
     async generateImagePrompt(caption, charName, imageType) {
         const ctx = getContext();
-        
         if (imageType === 'selfie') {
             const charDescription = ctx.characters?.[ctx.characterId]?.description || '';
             const prompt = `${getSystemInstruction()}
-
 Create a short image generation prompt for NovelAI.
 Character: ${charName}
 Character description: ${charDescription.substring(0, 300)}
 CHATSITARGRAM caption: "${caption}"
-
 Write a concise prompt focusing on: character appearance, pose, expression, setting.
 Use tags separated by commas. Keep under 100 words.
-
 Write only the prompt:`;
-            
             try {
                 const result = await ctx.generateQuietPrompt(prompt, false, false);
                 return Utils.cleanResponse(result).substring(0, 400);
@@ -2803,14 +2359,10 @@ Write only the prompt:`;
             }
         } else {
             const prompt = `${getSystemInstruction()}
-
 Create a short image prompt for this CHATSITARGRAM post: "${caption}"
-
 Describe the scenery or object in the photo.
 Use descriptive tags separated by commas. Keep under 50 words.
-
 Write only the prompt:`;
-            
             try {
                 const result = await ctx.generateQuietPrompt(prompt, false, false);
                 return Utils.cleanResponse(result).substring(0, 200);
@@ -2819,7 +2371,6 @@ Write only the prompt:`;
             }
         }
     },
-    
     async generateNovelAIImage(prompt) {
         try {
             const { SlashCommandParser } = await import('../../../slash-commands/SlashCommandParser.js');
@@ -2833,35 +2384,26 @@ Write only the prompt:`;
             return '';
         }
     },
-
     async generateLikes(isUserPost) {
         const likes = [];
-        
         if (isUserPost) {
             likes.push('char');
         } else {
             likes.push('user');
         }
-        
         let baseFollowers = 20;
         let maxFollowers = 200;
-        
         try {
             const ctx = getContext();
             const charDescription = (ctx.characters?.[ctx.characterId]?.description || '').toLowerCase();
             const charPersonality = (ctx.characters?.[ctx.characterId]?.personality || '').toLowerCase();
             const combined = charDescription + ' ' + charPersonality;
-            
             const veryPopularKeywords = ['아이돌', 'idol', '연예인', 'celebrity', '스타', 'star', '인플루언서', 'influencer', '유튜버', 'youtuber', '배우', 'actor', 'actress', '가수', 'singer', '모델', 'model'];
-            
             const popularKeywords = ['인기', 'popular', '유명', 'famous', '팔로워', 'follower', '외향적', 'extrovert', '사교적', 'social', '활발', '명문', '재벌', '부자', 'rich', 'wealthy'];
-            
             const shyKeywords = ['내성적', 'shy', '조용', 'quiet', '은둔', '혼자', 'introvert', '소심', '숨어', 'hidden', '히키코모리', 'hikikomori'];
-            
             const isVeryPopular = veryPopularKeywords.some(k => combined.includes(k));
             const isPopular = popularKeywords.some(k => combined.includes(k));
             const isShy = shyKeywords.some(k => combined.includes(k));
-            
             if (isVeryPopular) {
                 baseFollowers = 1000;
                 maxFollowers = 5000;
@@ -2878,59 +2420,43 @@ Write only the prompt:`;
         } catch (e) {
             console.log('[Insta] Using default like range');
         }
-        
         const followerCount = Math.floor(Math.random() * (maxFollowers - baseFollowers + 1)) + baseFollowers;
         for (let i = 0; i < followerCount; i++) {
             likes.push(`follower_${i}`);
         }
-        
         return likes;
     },
-
     async generateNPCComments(caption, charName, isUserPost) {
         const comments = [];
         const ctx = getContext();
         const settings = PhoneCore.getSettings();
         const lang = settings.language || 'ko';
-        
-        
         const lorebookChars = this.extractLorebookCharacters();
-        
         const npcNames = [
             'sunny_life', 'cool_j_kim', 'minjae_daily', 'hyuna_xx', 'jisu_0412',
             'yuna_smile', 'minsu_k', 'sera_moon', 'jinwoo_95', 'haeun_diary',
             'subin_art', 'dohyun_fit', 'yeji_photo', 'taehyung_v', 'sooyoung_s',
             'cherry_blossom', 'night_owl_99', 'coffee_lover_kr', 'travel_with_me', 'foodie_seoul'
         ];
-        
-        
         const allCommenters = [...npcNames];
         lorebookChars.forEach(char => {
             const handle = char.toLowerCase().replace(/\s+/g, '_') + '_official';
             allCommenters.unshift(handle);
         });
-        
         const commentCount = Math.floor(Math.random() * 5) + 2; 
         const usedNames = new Set();
-        
-        
         const generateContextualComment = async (commenterName, isLorebookChar) => {
             const prompt = `${getSystemInstruction()}
-
 [CHATSITARGRAM Comment]
 Someone posted: "${caption}"
 Posted by: ${isUserPost ? ctx.name1 : charName}
-
 ${isLorebookChar 
     ? `As ${commenterName.replace(/_official$/, '').replace(/_/g, ' ')}, write a comment based on your relationship with the poster.`
     : `As a random follower (${commenterName}), write a casual comment.`}
-
 Write a short, natural social media comment (1 sentence max).
 Be specific to the post content, not generic.
 ${lang === 'ko' ? 'Write in Korean with appropriate slang/emojis.' : 'Write in English with emojis.'}
-
 Write only the comment:`;
-
             try {
                 const result = await ctx.generateQuietPrompt(prompt, false, false);
                 return Utils.cleanResponse(result).substring(0, 100);
@@ -2941,23 +2467,17 @@ Write only the comment:`;
                 return fallbackComments[Math.floor(Math.random() * fallbackComments.length)];
             }
         };
-        
         for (let i = 0; i < commentCount; i++) {
             let name;
             let isLorebookChar = false;
-            
             do {
                 const idx = Math.floor(Math.random() * allCommenters.length);
                 name = allCommenters[idx];
                 isLorebookChar = name.endsWith('_official');
             } while (usedNames.has(name) && usedNames.size < allCommenters.length);
-            
             usedNames.add(name);
-            
-            
             const useAI = i < 2 || Utils.chance(50);
             let text;
-            
             if (useAI) {
                 text = await generateContextualComment(name, isLorebookChar);
             } else {
@@ -2966,7 +2486,6 @@ Write only the comment:`;
                     : ['Amazing! 🔥', 'So pretty!', 'Love this ✨', 'Wow!', 'Beautiful 💕', 'Goals!', 'Stunning!'];
                 text = genericComments[Math.floor(Math.random() * genericComments.length)];
             }
-            
             comments.push({
                 id: Utils.generateId(),
                 text: text,
@@ -2977,11 +2496,8 @@ Write only the comment:`;
                 timestamp: Date.now() - Math.floor(Math.random() * 3600000)
             });
         }
-        
         return comments;
     },
-    
-    
     extractLorebookCharacters() {
         const ctx = getContext();
         const characters = new Set();
@@ -3004,22 +2520,17 @@ Write only the comment:`;
         } catch (e) { console.log('[Phone] Lorebook extraction error:', e); }
         return Array.from(characters).slice(0, 10);
     },
-    
     async generateCharacterComment(postCaption, charName, imageUrl = null) {
         const ctx = getContext();
         const prompt = `${getSystemInstruction()}
-    
     [CHATSITARGRAM Comment]
     ${ctx.name1 || 'User'} posted on CHATSITARGRAM.
     ${postCaption ? `Caption: "${postCaption}"` : '(No caption)'}
-    
     As ${charName}, write a short comment (1-2 sentences).
     React naturally as if you saw a nice photo.
     Stay in character based on your personality and relationship.
     Can include emojis.
-    
     Write only the comment:`;
-
         try {
             const result = await ctx.generateQuietPrompt(prompt, false, false);
             return Utils.cleanResponse(result).substring(0, 200);
@@ -3027,8 +2538,6 @@ Write only the comment:`;
             return null;
         }
     },
-    
-    
     render(charName) {
         return `
         <div class="app-header">
@@ -3042,12 +2551,10 @@ Write only the comment:`;
         </div>
         <div class="app-content" id="insta-content"></div>`;
     },
-    
     renderFeed(data, charList) {
         const ctx = getContext();
         const userName = ctx.name1 || 'User';
         const userAvatar = this.getUserAvatar();
-        
         let allPosts = [];
         for (const charId in data.charPosts) {
             const charInfo = charList.find(c => c.id == charId);
@@ -3057,17 +2564,11 @@ Write only the comment:`;
                 );
             }
         }
-        
         allPosts.sort((a, b) => b.timestamp - a.timestamp);
-        
         if (allPosts.length === 0) {
             return `<div class="empty-state">📸<br>아직 게시물이 없어요</div>`;
         }
-        
-        
         let profilesHtml = `<div class="insta-profiles">`;
-        
-       
         const userPostCount = data.userPosts?.length || 0;
         profilesHtml += `
             <div class="insta-profile" data-user="true">
@@ -3078,7 +2579,6 @@ Write only the comment:`;
                 <span class="insta-profile-name">${userName}</span>
                 <span class="insta-profile-count">${userPostCount}</span>
             </div>`;
-        
         charList.forEach(char => {
             const postCount = data.charPosts[char.id]?.length || 0;
             profilesHtml += `
@@ -3092,7 +2592,6 @@ Write only the comment:`;
                 </div>`;
         });
         profilesHtml += `</div>`;
-        
         let gridHtml = `<div class="insta-grid">`;
         allPosts.forEach(post => {
             gridHtml += `
@@ -3104,16 +2603,12 @@ Write only the comment:`;
                 </div>`;
         });
         gridHtml += `</div>`;
-        
         return profilesHtml + gridHtml;
     },
-    
     renderMyPosts(data) {
         const ctx = getContext();
         const userName = ctx.name1 || 'User';
         const userAvatar = this.getUserAvatar();
-        
-        
         let profileHtml = `
         <div class="insta-my-profile">
             ${userAvatar 
@@ -3125,11 +2620,9 @@ Write only the comment:`;
                 <div class="insta-my-stats">${data.userPosts.length} 게시물</div>
             </div>
         </div>`;
-        
         if (data.userPosts.length === 0) {
             return profileHtml + `<div class="empty-state">📸<br>아직 게시물이 없어요<br><small>➕ 버튼으로 게시물을 올려보세요</small></div>`;
         }
-        
         let gridHtml = `<div class="insta-grid">`;
         data.userPosts.forEach(post => {
             gridHtml += `
@@ -3141,15 +2634,12 @@ Write only the comment:`;
                 </div>`;
         });
         gridHtml += `</div>`;
-        
         return profileHtml + gridHtml;
     },
-    
     renderPostDetail(post, isUserPost, charList) {
         const ctx = getContext();
         const userName = ctx.name1 || 'User';
         const userAvatar = this.getUserAvatar();
-        
         let authorAvatar, authorName;
         if (isUserPost) {
             authorAvatar = userAvatar;
@@ -3159,18 +2649,14 @@ Write only the comment:`;
             authorAvatar = charInfo?.avatar || '';
             authorName = post.charName || charInfo?.name || '캐릭터';
         }
-        
         const isLiked = post.likes?.includes('user');
-        
         let commentsHtml = '';
         if (post.comments && post.comments.length > 0) {
             commentsHtml = post.comments.map((comment, idx) => {
                 const isUserComment = comment.isUser;
                 const isNPC = comment.isNPC;
                 const isReply = comment.isReply;
-                
                 let commentAvatar, commentName;
-                
                 if (isNPC) {
                     commentAvatar = '';
                     commentName = comment.npcName || 'user';
@@ -3181,9 +2667,7 @@ Write only the comment:`;
                     commentAvatar = charList.find(c => c.id == comment.charId)?.avatar || '';
                     commentName = comment.charName;
                 }
-                
                 const replyClass = isReply ? 'insta-comment-reply' : '';
-                
                 return `
                     <div class="insta-comment ${replyClass}">
                         ${commentAvatar 
@@ -3197,7 +2681,6 @@ Write only the comment:`;
                     </div>`;
             }).join('');
         }
-        
         return `
         <div class="insta-fullscreen">
             <div class="insta-detail-header">
@@ -3238,7 +2721,6 @@ Write only the comment:`;
             </div>
         </div>`;
     },
-    
     renderUpload() {
         return `
         <div class="insta-upload">
@@ -3258,15 +2740,12 @@ Write only the comment:`;
             <textarea id="insta-upload-caption" placeholder="문구 입력..."></textarea>
         </div>`;
     },
-    
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
         const charList = this.getCharacterList();
-        
         this.state.currentView = 'feed';
         document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
     },
-    
     bindEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
@@ -3274,12 +2753,10 @@ Write only the comment:`;
         const data = this.getData(settings, charId);
         const ctx = getContext();
         const charName = ctx.name2 || '캐릭터';
-        
         document.querySelectorAll('.insta-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
                 tab.classList.add('active');
-                
                 const tabType = tab.dataset.tab;
                 if (tabType === 'feed') {
                     document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
@@ -3289,21 +2766,17 @@ Write only the comment:`;
                 this.bindGridEvents(Core);
             });
         });
-        
         document.getElementById('insta-upload-btn')?.addEventListener('click', () => {
             document.getElementById('insta-content').innerHTML = this.renderUpload();
             this.bindUploadEvents(Core);
         });
-        
         this.bindGridEvents(Core);
     },
-    
     bindGridEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
         const charList = this.getCharacterList();
         const data = this.getData(settings, charId);
-        
         document.querySelectorAll('.insta-thumb').forEach(thumb => {
             Utils.bindLongPress(thumb, () => {
                 const postId = thumb.dataset.postId;
@@ -3321,19 +2794,16 @@ Write only the comment:`;
                     toastr.success('게시물이 삭제되었어요');
                 }
             });
-            
             thumb.addEventListener('click', () => {
                 const postId = thumb.dataset.postId;
                 const isUser = thumb.dataset.isUser === 'true';
                 const postCharId = thumb.dataset.charId;
-                
                 let post;
                 if (isUser) {
                     post = data.userPosts.find(p => p.id === postId);
                 } else {
                     post = data.charPosts[postCharId]?.find(p => p.id === postId);
                 }
-                
                 if (post) {
                     this.state.selectedPost = { post, isUser, postCharId };
                     document.getElementById('insta-content').innerHTML = this.renderPostDetail(post, isUser, charList);
@@ -3341,27 +2811,21 @@ Write only the comment:`;
                 }
             });
         });
-        
-        
         document.querySelector('.insta-profile[data-user="true"]')?.addEventListener('click', () => {
             document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
             document.querySelector('.insta-tab[data-tab="my"]')?.classList.add('active');
             document.getElementById('insta-content').innerHTML = this.renderMyPosts(data);
             this.bindGridEvents(Core);
         });
-        
-        
         document.querySelectorAll('.insta-profile[data-char-id]').forEach(profile => {
             profile.addEventListener('click', () => {
                 const clickedCharId = profile.dataset.charId;
                 const posts = data.charPosts[clickedCharId] || [];
-                
                 let gridHtml = `
                     <div class="insta-char-header">
                         <button class="app-back-btn" id="insta-back-main">◀</button>
                         <span>${profile.querySelector('.insta-profile-name').textContent}</span>
                     </div>`;
-                
                 if (posts.length === 0) {
                     gridHtml += `<div class="empty-state">📸<br>아직 게시물이 없어요</div>`;
                 } else {
@@ -3377,26 +2841,21 @@ Write only the comment:`;
                     });
                     gridHtml += `</div>`;
                 }
-                
                 document.getElementById('insta-content').innerHTML = gridHtml;
-                
                 document.getElementById('insta-back-main')?.addEventListener('click', () => {
                     document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
                     this.bindGridEvents(Core);
                 });
-                
                 this.bindGridEvents(Core);
             });
         });
     },
-    
     bindDetailEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
         const charList = this.getCharacterList();
         const data = this.getData(settings, charId);
         const ctx = getContext();
-        
         document.getElementById('insta-back-feed')?.addEventListener('click', () => {
             const { isUser } = this.state.selectedPost;
             if (isUser) {
@@ -3410,14 +2869,11 @@ Write only the comment:`;
             }
             this.bindGridEvents(Core);
         });
-        
         document.querySelector('.insta-like-btn')?.addEventListener('click', (e) => {
             const btn = e.currentTarget;
             const postId = btn.dataset.postId;
             const { post, isUser, postCharId } = this.state.selectedPost;
-            
             if (!post.likes) post.likes = [];
-            
             const idx = post.likes.indexOf('user');
             if (idx > -1) {
                 post.likes.splice(idx, 1);
@@ -3428,28 +2884,22 @@ Write only the comment:`;
                 btn.classList.add('liked');
                 btn.innerHTML = `❤️ ${post.likes.length}`;
             }
-            
             Core.saveSettings();
         });
-        
         document.getElementById('insta-comment-send')?.addEventListener('click', async () => {
             const input = document.getElementById('insta-comment-text');
             const text = input.value.trim();
             if (!text) return;
-            
             const { post, isUser, postCharId } = this.state.selectedPost;
             if (!post.comments) post.comments = [];
-            
             post.comments.push({
                 id: Utils.generateId(),
                 text: text,
                 isUser: true,
                 timestamp: Date.now()
             });
-            
             input.value = '';
             Core.saveSettings();
-            
             if (!isUser) {
                 const charName = post.charName;
                 const reply = await this.generateCharacterComment(text, charName);
@@ -3466,9 +2916,7 @@ Write only the comment:`;
                     Core.saveSettings();
                 }
             }
-            
             if (isUser && post.comments.filter(c => !c.isUser).length === 0) {
-                
                 const charName = ctx.name2 || '캐릭터';
                 const charComment = await this.generateCharacterComment(post.caption, charName);
                 if (charComment) {
@@ -3483,12 +2931,10 @@ Write only the comment:`;
                     Core.saveSettings();
                 }
             }
-            
             document.getElementById('insta-content').innerHTML = this.renderPostDetail(post, isUser, charList);
             this.bindDetailEvents(Core);
         });
     },
-    
     bindUploadEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
@@ -3496,13 +2942,10 @@ Write only the comment:`;
         const charList = this.getCharacterList();
         const ctx = getContext();
         const charName = ctx.name2 || '캐릭터';
-        
         let selectedImage = null;
-        
         document.getElementById('insta-upload-select')?.addEventListener('click', () => {
             document.getElementById('insta-upload-file').click();
         });
-        
         document.getElementById('insta-upload-file')?.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
@@ -3515,52 +2958,38 @@ Write only the comment:`;
                 reader.readAsDataURL(file);
             }
         });
-        
         document.getElementById('insta-upload-cancel')?.addEventListener('click', () => {
             document.getElementById('insta-content').innerHTML = this.renderMyPosts(data);
             document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
             document.querySelector('.insta-tab[data-tab="my"]')?.classList.add('active');
             this.bindGridEvents(Core);
         });
-        
         document.getElementById('insta-upload-submit')?.addEventListener('click', async () => {
             const caption = document.getElementById('insta-upload-caption').value.trim();
-            
             if (!selectedImage) {
                 toastr.warning('사진을 선택해주세요');
                 return;
             }
-            
             const submitBtn = document.getElementById('insta-upload-submit');
             submitBtn.disabled = true;
             submitBtn.textContent = '업로드 중...';
-            
             const likes = await this.generateLikes(true);
-            
             const lang = PhoneCore.getSettings().language || 'ko';
             const lorebookChars = this.extractLorebookCharacters();
             const lorebookNames = lorebookChars.slice(0, 2).map(c => c.toLowerCase().replace(/\s+/g, '_') + '_official');
             const npcNames = ['sunny_life', 'cool_j_kim', 'minjae_daily'];
             const commenters = [...lorebookNames, ...npcNames].slice(0, 4);
-            
             const commentPrompt = `${getSystemInstruction()}
-
 [CHATSITARGRAM Comments]
 ${ctx.name1 || 'User'} posted a photo on CHATSITARGRAM.
 Caption: "${caption || '(no caption)'}"
-
 Generate comments for this post:
-
 ${charName.toUpperCase()}_COMMENT: (As ${charName}, write a comment based on your relationship with ${ctx.name1}. Be personal and in character. 1 sentence with emoji)
 ${commenters.map((name, i) => `COMMENT_${i+1}: ${name}: (casual follower comment, 1 sentence with emoji)`).join('\n')}
-
 ${lang === 'ko' ? 'Write all comments in Korean.' : 'Write in English.'}`;
-
             let allComments = [];
-            
             try {
                 const result = await ctx.generateQuietPrompt(commentPrompt, false, false);
-                
                 const charMatch = result.match(new RegExp(`${charName.toUpperCase()}_COMMENT:\\s*(.+?)(?=COMMENT_|$)`, 's'));
                 if (charMatch) {
                     allComments.push({
@@ -3572,7 +3001,6 @@ ${lang === 'ko' ? 'Write all comments in Korean.' : 'Write in English.'}`;
                         timestamp: Date.now()
                     });
                 }
-                
                 for (let i = 0; i < commenters.length; i++) {
                     const match = result.match(new RegExp(`COMMENT_${i+1}:\\s*${commenters[i]}:\\s*(.+?)(?=COMMENT_|$)`, 's'));
                     if (match) {
@@ -3598,12 +3026,9 @@ ${lang === 'ko' ? 'Write all comments in Korean.' : 'Write in English.'}`;
                     timestamp: Date.now()
                 });
             }
-            
             allComments = allComments.sort(() => Math.random() - 0.5);
-            
             const ddayData = DdayApp.getData(settings, charId);
             const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
-            
             const post = {
                 id: Utils.generateId(),
                 date: currentDate,
@@ -3613,79 +3038,59 @@ ${lang === 'ko' ? 'Write all comments in Korean.' : 'Write in English.'}`;
                 likes: likes,
                 comments: allComments
             };
-            
             data.userPosts.unshift(post);
             Core.saveSettings();
-            
             toastr.success('📸 게시물이 업로드되었어요!');
             const hasCharComment = allComments.some(c => c.charName === charName);
             if (hasCharComment) {
                 toastr.info(`💬 ${charName}님이 댓글을 달았어요!`);
             }
-            
             submitBtn.disabled = false;
             submitBtn.textContent = '업로드';
-            
             document.getElementById('insta-content').innerHTML = this.renderMyPosts(data);
             document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
             document.querySelector('.insta-tab[data-tab="my"]')?.classList.add('active');
             this.bindGridEvents(Core);
         });
     },
-    
     async triggerCharacterPost() {
         if (this.state.isGenerating) {
             toastr.warning('이미 생성 중이에요...');
             return;
         }
-        
         const ctx = getContext();
         const charName = ctx.name2 || '캐릭터';
         const charId = ctx.characterId;
         const settings = PhoneCore.getSettings();
-        
         this.state.isGenerating = true;
         toastr.info('📸 챗시타그램 올리는 중...');
-        
         const post = await this.generateCharacterPost(charName, charId, settings);
-        
         this.state.isGenerating = false;
-        
         if (post) {
             toastr.success(`📸 ${charName}님이 챗시타그램에 올렸어요!`);
         } else {
             toastr.error('포스트 생성에 실패했어요');
         }
     },
-    
     async checkAutoPost(recentMessage) {
         const ctx = getContext();
         const settings = PhoneCore.getSettings();
         const charId = PhoneCore.getCharId();
         const data = this.getData(settings, charId);
-        
         if (data.lastAutoPost === Utils.getTodayKey()) return;
-        
         if (!Utils.chance(20)) return;
-        
         const charName = ctx.name2 || '캐릭터';
         const shouldPost = await this.shouldAutoPost(recentMessage, charName);
-        
         if (shouldPost) {
             await this.triggerCharacterPost();
         }
     }
 };
-
-// ========================================
-// Phone Core
-// ========================================
 const PhoneCore = {
     apps: { mundap: MundapApp, message: MessageApp, letter: LetterApp, book: BookApp, movie: MovieApp, diary: DiaryApp, dday: DdayApp, insta: InstaApp, settings: SettingsApp },
     pageHistory: [],
     currentPage: 'home',
     initialized: false,
-    
     getContext,
     getSettings() {
         return DataManager.get();
@@ -3709,28 +3114,23 @@ const PhoneCore = {
             home.style.backgroundImage = wp ? `url(${wp})` : '';
         }
     },
-
     addInstaTriggerButton() {
         $('#insta-trigger-container').remove();
-        
         const buttonHtml = `
             <div id="insta-trigger-container" class="interactable" title="캐릭터 챗시타그램 올리기" style="cursor:pointer;">
                 <div class="fa-solid fa-camera extensionsMenuExtensionButton" style="color:var(--phone-primary, #ff6b9d);"></div>
             </div>`;
-        
         if ($('#data_bank_wand_container').length) {
             $('#data_bank_wand_container').after(buttonHtml);
         } else {
             $('#extensionsMenu').append(buttonHtml);
         }
-        
         $('#insta-trigger-container').on('click', () => {
             if (this.apps.insta) {
                 this.apps.insta.triggerCharacterPost();
             }
         });
     },
-    
     createHTML() {
         const time = new Date();
         return `
@@ -3760,7 +3160,6 @@ const PhoneCore = {
             </div>
         </div>`;
     },
-    
     renderAppGrid() {
         const grid = document.getElementById('phone-app-grid');
         if (!grid) return;
@@ -3770,12 +3169,10 @@ const PhoneCore = {
         grid.querySelectorAll('.phone-app-icon').forEach(el => el.onclick = () => this.openApp(el.dataset.app));
         this.applyWallpaper();
     },
-    
     switchPage(pageName) {
         this.currentPage = pageName;
         document.querySelectorAll('.phone-page').forEach(p => p.classList.toggle('active', p.dataset.page === pageName || (pageName !== 'home' && p.dataset.page === 'app')));
     },
-    
     openPage(pageId, html) {
         this.pageHistory.push(this.currentPage);
         const appPage = document.getElementById('phone-app-page');
@@ -3784,7 +3181,6 @@ const PhoneCore = {
         this.switchPage(pageId);
         this.bindBackButtons();
     },
-    
     goBack() {
         if (this.pageHistory.length > 0) {
             const prev = this.pageHistory.pop();
@@ -3799,7 +3195,6 @@ const PhoneCore = {
             this.switchPage('home');
         }
     },
-    
     bindBackButtons() {
         document.querySelectorAll('.app-back-btn').forEach(btn => {
             btn.onclick = () => {
@@ -3816,26 +3211,21 @@ const PhoneCore = {
             };
         });
     },
-    
     async openApp(appId) {
         const ctx = getContext();
         if (ctx.characterId === undefined && !ctx.groupId) { toastr.warning('먼저 캐릭터를 선택해주세요.'); return; }
-        
         const app = this.apps[appId];
         if (!app) return;
-        
         this.pageHistory = [];
         const charName = ctx.name2 || '캐릭터';
         const appPage = document.getElementById('phone-app-page');
         appPage.innerHTML = app.render(charName);
         appPage.dataset.currentPage = appId;
         this.switchPage(appId);
-        
         await app.loadUI(this.getSettings(), this.getCharId(), charName);
         app.bindEvents(this);
         this.bindBackButtons();
     },
-    
     openModal() {
         document.getElementById('phone-modal').style.display = 'flex';
         this.switchPage('home');
@@ -3844,13 +3234,10 @@ const PhoneCore = {
         this.applyThemeColor();
     },
     closeModal() { document.getElementById('phone-modal').style.display = 'none'; },
-    
     setupEvents() {
         document.getElementById('phone-modal')?.addEventListener('click', e => { if (e.target.id === 'phone-modal') this.closeModal(); });
         document.getElementById('phone-text-modal')?.addEventListener('click', e => { if (e.target.id === 'phone-text-modal') Utils.hideTextModal(); });
         document.getElementById('phone-text-modal-close')?.addEventListener('click', () => Utils.hideTextModal());
-        
-        // char-comment 클릭 시 전체 텍스트 모달 표시 (이벤트 위임)
         document.getElementById('phone-app-page')?.addEventListener('click', e => {
             const charComment = e.target.closest('.char-comment');
             if (charComment) {
@@ -3860,8 +3247,6 @@ const PhoneCore = {
                 const title = headerEl?.textContent || '💬 전체 보기';
                 if (text) Utils.showTextModal(text, title);
             }
-            
-            // diary-content 클릭 시 전체 텍스트 모달 표시
             const diaryContent = e.target.closest('.diary-content');
             if (diaryContent) {
                 const card = diaryContent.closest('.card');
@@ -3869,18 +3254,14 @@ const PhoneCore = {
                 const text = diaryContent.textContent?.trim();
                 if (text) Utils.showTextModal(text, label);
             }
-            
-            // msg-bubble 클릭 시 전체 텍스트 모달 표시
             const msgBubble = e.target.closest('.msg-bubble');
             if (msgBubble && !msgBubble.classList.contains('typing')) {
                 const text = msgBubble.textContent?.trim();
                 if (text && text.length > 30) Utils.showTextModal(text, '💬 메시지');
             }
         });
-        
         setInterval(() => { const t = new Date(); document.querySelector('.phone-time').textContent = `${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`; }, 60000);
     },
-    
     createSettingsUI() {
         const settings = this.getSettings();
         const html = `
@@ -3929,25 +3310,20 @@ const PhoneCore = {
             </div>
         </div>`;
         $('#extensions_settings').append(html);
-        
         $('.phone-app-toggle').on('change', function() { const s = PhoneCore.getSettings(); if (!s.enabledApps) s.enabledApps = {}; s.enabledApps[$(this).data('app')] = this.checked; PhoneCore.saveSettings(); });
-        
         $('#phone-wp-btn').on('click', () => $('#phone-wp-input').click());
         $('#phone-wp-input').on('change', function() { if (this.files[0]) { const r = new FileReader(); r.onload = e => { PhoneCore.setWallpaper(e.target.result); toastr.success('배경 변경!'); }; r.readAsDataURL(this.files[0]); } });
         $('#phone-wp-reset').on('click', () => { PhoneCore.setWallpaper(''); toastr.info('기본으로'); });
-
         $('#phone-theme-color').on('change', function() {
             PhoneCore.setThemeColor(this.value);
             toastr.success('테마 색상 변경!');
         });
-
         $('input[name="phone-lang"]').on('change', function() {
             const s = PhoneCore.getSettings();
             s.language = this.value;
             PhoneCore.saveSettings();
             toastr.success(this.value === 'ko' ? '한국어로 설정됨' : 'Set to English');
         });
-
         $('#msg-lang-select').on('change', function() {
             const s = PhoneCore.getSettings();
             s.msgLanguage = this.value;
@@ -3955,20 +3331,16 @@ const PhoneCore = {
             toastr.success(this.value === 'ko' ? '문자: 한국어' : 'Message: English');
         });
     },
-    
     addMenuButton() {
         $('#sumone-phone-btn-container').remove();
         $('#extensionsMenu').prepend(`<div id="sumone-phone-btn-container" class="extension_container interactable"><div id="sumone-phone-btn" class="list-group-item flex-container flexGap5 interactable"><div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton" style="color:var(--phone-theme-color, #ff6b9d);"></div><span>폰</span></div></div>`);
         $('#sumone-phone-btn').on('click', () => this.openModal());
     },
-    
     async init() {
         console.log('[Phone] v2.1.0 로딩...');
-        
         await DataManager.load();
         this.applyThemeColor();
         this.initialized = true;
-        
         this.createSettingsUI();
         $('body').append(this.createHTML());
         this.setupEvents();
@@ -3976,31 +3348,22 @@ const PhoneCore = {
         eventSource.on(event_types.CHAT_CHANGED, () => {
             this.applyWallpaper();
         });
-
         this.addInstaTriggerButton();
-
         eventSource.on(event_types.MESSAGE_RECEIVED, async () => {
             const ctx = getContext();
             const lastMessage = ctx.chat?.[ctx.chat.length - 1];
             if (!lastMessage || lastMessage.is_user) return;
-            
             const messageText = lastMessage.mes || '';
-            
-            // 챗시타그램 자동 포스트 체크
             if (this.apps.insta) {
                 await this.apps.insta.checkAutoPost(messageText);
             }
-            
-            // 문자 트리거 체크
             if (this.apps.message) {
                 await this.checkMessageTrigger(messageText);
             }
         });
         console.log('[Phone] 로딩 완료!');
     },
-    
     async checkMessageTrigger(text) {
-        // 문자 보냈다는 뉘앙스를 감지하는 패턴
         const triggerPatterns = [
             /문자[를을]?\s*(보냈|보내|썼|전송)/i,
             /메시지[를을]?\s*(보냈|보내|썼|전송)/i,
@@ -4009,35 +3372,26 @@ const PhoneCore = {
             /(sent|send|texted|messaged)\s*(a\s*)?(text|message)/i,
             /문자가\s*왔|문자\s*도착|메시지가\s*왔/i,
         ];
-        
         const hasTrigger = triggerPatterns.some(pattern => pattern.test(text));
         if (!hasTrigger) return;
-        
         const ctx = getContext();
         const settings = this.getSettings();
         const charId = this.getCharId();
         const charName = ctx.name2 || '캐릭터';
         const userName = ctx.name1 || '나';
-        
-        // 문자 내용 추출 시도 (따옴표 안의 내용)
         let messageContent = null;
         const quoteMatch = text.match(/[""「『]([^""」』]+)[""」』]/);
         if (quoteMatch) {
             messageContent = quoteMatch[1];
         }
-        
-        // 따옴표 안에 내용이 없으면 AI로 생성
         if (!messageContent || messageContent.length < 3) {
             try {
                 const prompt = `${getSystemInstruction()}
-
 [Text Message Generation]
 ${charName} just mentioned sending a text message to ${userName} in the story.
 Based on context, write what that text message would say.
 Keep it short and natural, 1-2 sentences.
-
 Write only the message content:`;
-                
                 const result = await ctx.generateQuietPrompt(prompt, false, false);
                 messageContent = Utils.cleanResponse(result).substring(0, 200);
             } catch (e) {
@@ -4045,14 +3399,10 @@ Write only the message content:`;
                 return;
             }
         }
-        
         if (!messageContent || messageContent.length < 3) return;
-        
-        // 문자 앱에 메시지 추가
         const msgData = MessageApp.getData(settings, charId);
         const ddayData = DdayApp.getData(settings, charId);
         const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
-        
         msgData.conversations.push({
             id: Utils.generateId(),
             timestamp: Date.now(),
@@ -4063,11 +3413,9 @@ Write only the message content:`;
             read: false,
             triggered: true,
         });
-        
         DataManager.save();
         toastr.info(`💬 ${charName}에게서 문자가 왔어요!`, '', { timeOut: 3000 });
     },
-
     setThemeColor(color) {
         const s = this.getSettings();
         if (!s.themeColors) s.themeColors = {};
@@ -4075,22 +3423,18 @@ Write only the message content:`;
         this.saveSettings();
         this.applyThemeColor();
     },
-    
     getThemeColor() {
         return this.getSettings().themeColors?.[this.getCharId()] || '#ff6b9d';
     },
-    
     applyThemeColor() {
         const color = this.getThemeColor();
         const r = parseInt(color.slice(1,3), 16);
         const g = parseInt(color.slice(3,5), 16);
         const b = parseInt(color.slice(5,7), 16);
         const dark = `#${Math.round(r*0.8).toString(16).padStart(2,'0')}${Math.round(g*0.8).toString(16).padStart(2,'0')}${Math.round(b*0.8).toString(16).padStart(2,'0')}`;
-        
         document.documentElement.style.setProperty('--phone-primary', color);
         document.documentElement.style.setProperty('--phone-primary-dark', dark);
         document.documentElement.style.setProperty('--phone-primary-rgb', `${r}, ${g}, ${b}`);
     },
 };
-
 jQuery(() => PhoneCore.init());
