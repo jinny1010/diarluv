@@ -1963,7 +1963,7 @@ Write only the reply:`;
     
     renderCalendar(settings, charId, charName) {
         const { calYear: year, calMonth: month, currentTab } = this.state;
-        const tabLabel = currentTab === 'rptime' ? ' (롤플)' : '';
+        const tabLabel = currentTab === 'rptime';
         document.getElementById('diary-cal-title').textContent = `${year}년 ${month + 1}월${tabLabel}`;
         
         const data = this.getData(settings, charId);
@@ -3739,6 +3739,7 @@ const PhoneCore = {
         const buttonHtml = `
             <div id="insta-trigger-container" class="interactable" title="캐릭터 챗시타그램 올리기" style="cursor:pointer;">
                 <div class="fa-solid fa-camera extensionsMenuExtensionButton" style="color:var(--phone-primary, #ff6b9d);"></div>
+                <span>포스트</span>
             </div>`;
         
         if ($('#data_bank_wand_container').length) {
