@@ -3122,7 +3122,7 @@ Write only the comment:`;
                 <div class="insta-thumb" data-post-id="${post.id}" data-char-id="${post.charId}">
                     ${post.imageUrl 
                         ? `<img src="${post.imageUrl}" alt="">`
-                        : `<div class="insta-thumb-placeholder">📷포스트</div>`
+                        : `<div class="insta-thumb-placeholder">📷 포스트</div>`
                     }
                 </div>`;
         });
