@@ -1835,8 +1835,8 @@ Diary entry:`;
         </div>
         <div class="app-content">
             <div class="diary-tabs">
-                <button class="diary-tab active" data-tab="realtime">🕐 리얼타임</button>
-                <button class="diary-tab" data-tab="rptime">🎭 롤플타임</button>
+                <button class="diary-tab active" data-tab="realtime">🌸 오늘</button>
+                <button class="diary-tab" data-tab="rptime">💕 우리의 이야기</button>
                 <button class="diary-moon-btn" id="diary-auto-write" title="캐릭터가 오늘의 일기를 씁니다">🌙</button>
             </div>
             <div class="calendar-nav"><button id="diary-cal-prev">◀</button><span id="diary-cal-title"></span><button id="diary-cal-next">▶</button></div>
