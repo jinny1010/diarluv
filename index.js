@@ -2421,7 +2421,6 @@ const DdayApp = {
         <div class="app-header">
             <button class="app-back-btn" data-back="home">◀</button>
             <span class="app-title">D-DAY</span>
-            <button class="app-nav-btn" id="dday-settings-btn">⚙️</button>
         </div>
         <div class="app-content" id="dday-content"></div>`;
     },
@@ -2455,44 +2454,12 @@ const DdayApp = {
         
         return `
         <div class="card pink">
-            <div class="card-label">🎭 롤플타임 (RP)</div>
+            <div class="card-label">💕 우리의 이야기</div>
             <div class="dday-date-big">${rpDateStr}</div>
             <div class="dday-date-sub">${rpDateFull}</div>
-            <button class="btn-secondary" id="dday-sync-btn" style="margin-top:10px;">🔄 INFOBLOCK에서 동기화</button>
-        </div>
-        <div class="card" style="margin-top:15px;">
-            <div class="card-label">🕐 리얼타임</div>
-            <div class="dday-date-big">${realDateStr}</div>
         </div>
         ${ddaysHtml}
         <button class="btn-secondary" id="dday-add-btn" style="margin-top:15px;">➕ 기념일 추가</button>`;
-    },
-    
-    renderSettings(data) {
-        return `
-        <div class="card">
-            <div class="card-label">⚙️ 동기화 설정</div>
-            <div class="dday-setting-item">
-                <label>
-                    <input type="checkbox" id="dday-sync-enabled" ${data.syncEnabled ? 'checked' : ''}>
-                    INFOBLOCK 날짜 자동 동기화
-                </label>
-            </div>
-            <div class="dday-setting-desc">
-                활성화 시 INFOBLOCK의 📅 날짜를 자동으로 읽어옵니다.
-            </div>
-        </div>
-        <div class="card" style="margin-top:15px;">
-            <div class="card-label">📱 동기화 대상 앱</div>
-            <div class="dday-setting-desc">
-                롤플타임 동기화 시 아래 앱들이 RP 날짜를 사용합니다:
-            </div>
-            <ul style="margin:10px 0;padding-left:20px;color:rgba(255,255,255,0.7);font-size:13px;">
-                <li>📔 일기장 (롤플타임 탭)</li>
-                <li>📸 챗시타그램</li>
-            </ul>
-        </div>
-        <button class="btn-secondary" id="dday-settings-back">← 돌아가기</button>`;
     },
     
     renderAddDday() {
@@ -2540,18 +2507,7 @@ const DdayApp = {
     
     bindMainEvents(settings, charId, charName) {
         const data = this.getData(settings, charId);
-        
-        document.getElementById('dday-sync-btn')?.addEventListener('click', () => {
-            const rpDate = this.updateFromInfoblock();
-            if (rpDate) {
-                toastr.success(`📅 동기화 완료: ${rpDate.year}/${rpDate.month + 1}/${rpDate.day}`);
-                document.getElementById('dday-content').innerHTML = this.renderMain(data, charName);
-                this.bindMainEvents(settings, charId, charName);
-            } else {
-                toastr.warning('INFOBLOCK에서 날짜를 찾을 수 없어요');
-            }
-        });
-        
+                
         document.getElementById('dday-add-btn')?.addEventListener('click', () => {
             document.getElementById('dday-content').innerHTML = this.renderAddDday();
             this.bindAddDdayEvents(settings, charId, charName);
