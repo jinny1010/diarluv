@@ -1963,6 +1963,7 @@ Write only the reply:`;
     
     renderCalendar(settings, charId, charName) {
         const { calYear: year, calMonth: month, currentTab } = this.state;
+        const tabLabel = currentTab === 'rptime' ? '' : '';
         document.getElementById('diary-cal-title').textContent = `${year}년 ${month + 1}월${tabLabel}`;
         
         const data = this.getData(settings, charId);
