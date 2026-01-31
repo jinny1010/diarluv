@@ -1545,10 +1545,6 @@ Diary entry:`;
         return '😊';
     },
     render() {
-        const settings = PhoneCore.getSettings();
-        const charId = PhoneCore.getCharId();
-        const ddayData = DdayApp.getData(settings, charId);
-        const isSynced = !!ddayData?.currentRpDate;
         return `
         <div class="app-header">
             <button class="app-back-btn" data-back="home">◀</button>
@@ -1556,9 +1552,9 @@ Diary entry:`;
             <button class="app-nav-btn" id="diary-today-btn">오늘</button>
         </div>
         <div class="app-content">
-            <div class="diary-tabs ${isSynced ? '' : 'single-tab'}">
+            <div class="diary-tabs">
                 <button class="diary-tab active" data-tab="realtime">🌸 오늘</button>
-                ${isSynced ? `<button class="diary-tab" data-tab="rptime">💕 우리의 이야기</button>` : ''}
+                <button class="diary-tab" data-tab="rptime" id="diary-rptime-tab">💕 우리의 이야기</button>
                 <button class="diary-moon-btn" id="diary-auto-write" title="캐릭터가 오늘의 일기를 씁니다">🌙</button>
             </div>
             <div class="calendar-nav"><button id="diary-cal-prev">◀</button><span id="diary-cal-title"></span><button id="diary-cal-next">▶</button></div>
@@ -1626,6 +1622,13 @@ Write only the reply:`;
         this.state.calMonth = now.getMonth();
         this.state.selectedDate = Utils.getTodayKey();
         this.state.currentTab = 'realtime';
+        const ddayData = DdayApp.getData(settings, charId);
+        const isSynced = !!ddayData?.currentRpDate;
+        const rpTimeTab = document.getElementById('diary-rptime-tab');
+        if (rpTimeTab) {
+            rpTimeTab.style.display = isSynced ? '' : 'none';
+            rpTimeTab.parentElement?.classList.toggle('single-tab', !isSynced);
+        }
         const data = this.getData(settings, charId);
         const userName = getContext().name1 || '나';
         if (!this.state.isGenerating) {
