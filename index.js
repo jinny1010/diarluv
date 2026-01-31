@@ -2426,8 +2426,6 @@ const DdayApp = {
     },
     
     renderMain(data, charName) {
-        const today = new Date();
-        const realDateStr = `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일`;
         
         let rpDateStr = '동기화 필요';
         let rpDateFull = '';
