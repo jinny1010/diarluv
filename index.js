@@ -163,6 +163,22 @@ const Utils = {
         element.addEventListener('touchend', cancelPress);
         element.addEventListener('touchcancel', cancelPress);
     },
+    
+    showTextModal(text, title = '전체 보기') {
+        const modal = document.getElementById('phone-text-modal');
+        const body = document.getElementById('phone-text-modal-body');
+        const titleEl = document.getElementById('phone-text-modal-title');
+        if (modal && body) {
+            titleEl.textContent = title;
+            body.textContent = text;
+            modal.style.display = 'flex';
+        }
+    },
+    
+    hideTextModal() {
+        const modal = document.getElementById('phone-text-modal');
+        if (modal) modal.style.display = 'none';
+    },
 };
 
 // ========================================
@@ -1835,8 +1851,8 @@ Diary entry:`;
         </div>
         <div class="app-content">
             <div class="diary-tabs">
-                <button class="diary-tab active" data-tab="realtime">🕐 리얼타임</button>
-                <button class="diary-tab" data-tab="rptime">🎭 롤플타임</button>
+                <button class="diary-tab active" data-tab="realtime">🌸 오늘</button>
+                <button class="diary-tab" data-tab="rptime">💕 우리의 이야기</button>
                 <button class="diary-moon-btn" id="diary-auto-write" title="캐릭터가 오늘의 일기를 씁니다">🌙</button>
             </div>
             <div class="calendar-nav"><button id="diary-cal-prev">◀</button><span id="diary-cal-title"></span><button id="diary-cal-next">▶</button></div>
@@ -2257,6 +2273,27 @@ const SettingsApp = {
         };
     },
     
+    unsyncAllApps(settings, charId) {
+        const ddayData = DdayApp.getData(settings, charId);
+        ddayData.currentRpDate = null;
+        
+        const msgData = MessageApp.getData(settings, charId);
+        if (msgData) msgData.currentRpDate = null;
+        
+        const instaData = InstaApp.getData(settings, charId);
+        if (instaData) instaData.currentRpDate = null;
+        
+        const letterData = LetterApp.getData(settings, charId);
+        if (letterData) letterData.currentRpDate = null;
+        
+        const diaryData = DiaryApp.getData(settings, charId);
+        if (diaryData) diaryData.currentRpDate = null;
+        
+        DataManager.save();
+        
+        return { success: true, message: '동기화가 해제되었어요.\n이제 실제 날짜를 사용합니다.' };
+    },
+    
     render(charName) {
         return `
         <div class="app-header">
@@ -2268,7 +2305,8 @@ const SettingsApp = {
     
     renderMain(data, charName, ddayData) {
         const rpDate = ddayData?.currentRpDate;
-        let rpDateStr = '동기화 필요';
+        const isSynced = !!rpDate;
+        let rpDateStr = '동기화 안됨 (실제 날짜 사용)';
         if (rpDate) {
             rpDateStr = `${rpDate.year}년 ${rpDate.month + 1}월 ${rpDate.day}일 (${rpDate.dayOfWeek})`;
         }
@@ -2277,12 +2315,17 @@ const SettingsApp = {
         <div class="card pink">
             <div class="card-label">🔄 시간 동기화</div>
             <div class="settings-sync-status">
-                <div class="settings-sync-label">현재 롤플타임</div>
-                <div class="settings-sync-date">${rpDateStr}</div>
+                <div class="settings-sync-label">현재 우리의 시간</div>
+                <div class="settings-sync-date ${isSynced ? '' : 'not-synced'}">${rpDateStr}</div>
             </div>
-            <button class="btn-primary" id="settings-sync-btn" style="margin-top:15px;width:100%;">
-                🔄 전체 앱 동기화
-            </button>
+            <div class="settings-btn-group">
+                <button class="btn-primary" id="settings-sync-btn" style="flex:1;">
+                    🔄 동기화
+                </button>
+                <button class="btn-secondary" id="settings-unsync-btn" style="flex:1;" ${!isSynced ? 'disabled' : ''}>
+                    ❌ 해제
+                </button>
+            </div>
             <div class="settings-sync-desc">
                 INFOBLOCK의 날짜를 읽어 모든 앱에 적용합니다
             </div>
@@ -2293,23 +2336,23 @@ const SettingsApp = {
             <div class="settings-app-list">
                 <div class="settings-app-item">
                     <span>💬 문자</span>
-                    <span class="settings-app-status">✓</span>
+                    <span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span>
                 </div>
                 <div class="settings-app-item">
                     <span>📸 챗시타그램</span>
-                    <span class="settings-app-status">✓</span>
+                    <span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span>
                 </div>
                 <div class="settings-app-item">
                     <span>💌 편지</span>
-                    <span class="settings-app-status">✓</span>
+                    <span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span>
                 </div>
                 <div class="settings-app-item">
-                    <span>📔 일기장 (롤플타임)</span>
-                    <span class="settings-app-status">✓</span>
+                    <span>📔 일기장 (우리의 이야기)</span>
+                    <span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span>
                 </div>
                 <div class="settings-app-item">
                     <span>📅 D-DAY</span>
-                    <span class="settings-app-status">✓</span>
+                    <span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span>
                 </div>
             </div>
         </div>
@@ -2317,8 +2360,8 @@ const SettingsApp = {
         <div class="card" style="margin-top:15px;">
             <div class="card-label">ℹ️ 동기화 안내</div>
             <div class="settings-info-text">
-                동기화 시 위 앱들의 날짜가 롤플타임 기준으로 맞춰집니다.
-                각 앱에서 개별적으로 동기화할 필요 없이 여기서 한 번에 관리하세요.
+                <b>동기화:</b> INFOBLOCK의 날짜를 사용합니다.<br>
+                <b>해제:</b> 실제 오늘 날짜를 사용합니다.
             </div>
         </div>`;
     },
@@ -2342,7 +2385,7 @@ const SettingsApp = {
             const result = await this.syncAllApps(settings, charId, charName);
             
             btn.disabled = false;
-            btn.textContent = '🔄 전체 앱 동기화';
+            btn.textContent = '🔄 동기화';
             
             if (result.success) {
                 toastr.success(result.message);
@@ -2352,6 +2395,18 @@ const SettingsApp = {
                 this.bindEvents(Core);
             } else {
                 toastr.warning(result.message);
+            }
+        });
+        
+        document.getElementById('settings-unsync-btn')?.addEventListener('click', () => {
+            const result = this.unsyncAllApps(settings, charId);
+            
+            if (result.success) {
+                toastr.info(result.message);
+                
+                const ddayData = DdayApp.getData(settings, charId);
+                document.getElementById('settings-content').innerHTML = this.renderMain(this.getData(settings, charId), charName, ddayData);
+                this.bindEvents(Core);
             }
         });
     }
@@ -2421,15 +2476,12 @@ const DdayApp = {
         <div class="app-header">
             <button class="app-back-btn" data-back="home">◀</button>
             <span class="app-title">D-DAY</span>
-            <button class="app-nav-btn" id="dday-settings-btn">⚙️</button>
+            <span></span>
         </div>
         <div class="app-content" id="dday-content"></div>`;
     },
     
     renderMain(data, charName) {
-        const today = new Date();
-        const realDateStr = `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일`;
-        
         let rpDateStr = '동기화 필요';
         let rpDateFull = '';
         if (data.currentRpDate) {
@@ -2455,44 +2507,13 @@ const DdayApp = {
         
         return `
         <div class="card pink">
-            <div class="card-label">🎭 롤플타임 (RP)</div>
+            <div class="card-label">🎭 우리의 시간</div>
             <div class="dday-date-big">${rpDateStr}</div>
             <div class="dday-date-sub">${rpDateFull}</div>
-            <button class="btn-secondary" id="dday-sync-btn" style="margin-top:10px;">🔄 INFOBLOCK에서 동기화</button>
-        </div>
-        <div class="card" style="margin-top:15px;">
-            <div class="card-label">🕐 리얼타임</div>
-            <div class="dday-date-big">${realDateStr}</div>
+            <div class="dday-sync-hint">⚙️ 설정 앱에서 동기화할 수 있어요</div>
         </div>
         ${ddaysHtml}
         <button class="btn-secondary" id="dday-add-btn" style="margin-top:15px;">➕ 기념일 추가</button>`;
-    },
-    
-    renderSettings(data) {
-        return `
-        <div class="card">
-            <div class="card-label">⚙️ 동기화 설정</div>
-            <div class="dday-setting-item">
-                <label>
-                    <input type="checkbox" id="dday-sync-enabled" ${data.syncEnabled ? 'checked' : ''}>
-                    INFOBLOCK 날짜 자동 동기화
-                </label>
-            </div>
-            <div class="dday-setting-desc">
-                활성화 시 INFOBLOCK의 📅 날짜를 자동으로 읽어옵니다.
-            </div>
-        </div>
-        <div class="card" style="margin-top:15px;">
-            <div class="card-label">📱 동기화 대상 앱</div>
-            <div class="dday-setting-desc">
-                롤플타임 동기화 시 아래 앱들이 RP 날짜를 사용합니다:
-            </div>
-            <ul style="margin:10px 0;padding-left:20px;color:rgba(255,255,255,0.7);font-size:13px;">
-                <li>📔 일기장 (롤플타임 탭)</li>
-                <li>📸 챗시타그램</li>
-            </ul>
-        </div>
-        <button class="btn-secondary" id="dday-settings-back">← 돌아가기</button>`;
     },
     
     renderAddDday() {
@@ -2526,31 +2547,11 @@ const DdayApp = {
     },
     
     bindEvents(Core) {
-        const settings = Core.getSettings();
-        const charId = Core.getCharId();
-        const charName = getContext().name2 || '캐릭터';
-        
-        document.getElementById('dday-settings-btn')?.addEventListener('click', () => {
-            const data = this.getData(settings, charId);
-            document.getElementById('dday-content').innerHTML = this.renderSettings(data);
-            this.bindSettingsEvents(settings, charId, charName);
-        });
-        this.bindMainEvents(settings, charId, charName);
+        this.bindMainEvents(Core.getSettings(), Core.getCharId(), getContext().name2 || '캐릭터');
     },
     
     bindMainEvents(settings, charId, charName) {
         const data = this.getData(settings, charId);
-        
-        document.getElementById('dday-sync-btn')?.addEventListener('click', () => {
-            const rpDate = this.updateFromInfoblock();
-            if (rpDate) {
-                toastr.success(`📅 동기화 완료: ${rpDate.year}/${rpDate.month + 1}/${rpDate.day}`);
-                document.getElementById('dday-content').innerHTML = this.renderMain(data, charName);
-                this.bindMainEvents(settings, charId, charName);
-            } else {
-                toastr.warning('INFOBLOCK에서 날짜를 찾을 수 없어요');
-            }
-        });
         
         document.getElementById('dday-add-btn')?.addEventListener('click', () => {
             document.getElementById('dday-content').innerHTML = this.renderAddDday();
@@ -2568,21 +2569,6 @@ const DdayApp = {
                     toastr.info('기념일이 삭제되었어요');
                 }
             });
-        });
-    },
-    
-    bindSettingsEvents(settings, charId, charName) {
-        const data = this.getData(settings, charId);
-        
-        document.getElementById('dday-sync-enabled')?.addEventListener('change', (e) => {
-            data.syncEnabled = e.target.checked;
-            DataManager.save();
-            toastr.info(e.target.checked ? '자동 동기화 활성화' : '자동 동기화 비활성화');
-        });
-        
-        document.getElementById('dday-settings-back')?.addEventListener('click', () => {
-            document.getElementById('dday-content').innerHTML = this.renderMain(data, charName);
-            this.bindMainEvents(settings, charId, charName);
         });
     },
     
@@ -3763,6 +3749,15 @@ const PhoneCore = {
                     <div class="phone-home-bar"></div>
                 </div>
             </div>
+        </div>
+        <div id="phone-text-modal" class="phone-text-modal" style="display:none;">
+            <div class="phone-text-modal-content">
+                <div class="phone-text-modal-header">
+                    <span id="phone-text-modal-title">전체 보기</span>
+                    <button class="phone-text-modal-close" id="phone-text-modal-close">✕</button>
+                </div>
+                <div class="phone-text-modal-body" id="phone-text-modal-body"></div>
+            </div>
         </div>`;
     },
     
@@ -3852,6 +3847,37 @@ const PhoneCore = {
     
     setupEvents() {
         document.getElementById('phone-modal')?.addEventListener('click', e => { if (e.target.id === 'phone-modal') this.closeModal(); });
+        document.getElementById('phone-text-modal')?.addEventListener('click', e => { if (e.target.id === 'phone-text-modal') Utils.hideTextModal(); });
+        document.getElementById('phone-text-modal-close')?.addEventListener('click', () => Utils.hideTextModal());
+        
+        // char-comment 클릭 시 전체 텍스트 모달 표시 (이벤트 위임)
+        document.getElementById('phone-app-page')?.addEventListener('click', e => {
+            const charComment = e.target.closest('.char-comment');
+            if (charComment) {
+                const textEl = charComment.querySelector('.char-comment-text') || charComment;
+                const headerEl = charComment.querySelector('.char-comment-header span');
+                const text = textEl.textContent?.replace(/^[""]|[""]$/g, '').trim();
+                const title = headerEl?.textContent || '💬 전체 보기';
+                if (text) Utils.showTextModal(text, title);
+            }
+            
+            // diary-content 클릭 시 전체 텍스트 모달 표시
+            const diaryContent = e.target.closest('.diary-content');
+            if (diaryContent) {
+                const card = diaryContent.closest('.card');
+                const label = card?.querySelector('.card-label')?.textContent || '📔 일기';
+                const text = diaryContent.textContent?.trim();
+                if (text) Utils.showTextModal(text, label);
+            }
+            
+            // msg-bubble 클릭 시 전체 텍스트 모달 표시
+            const msgBubble = e.target.closest('.msg-bubble');
+            if (msgBubble && !msgBubble.classList.contains('typing')) {
+                const text = msgBubble.textContent?.trim();
+                if (text && text.length > 30) Utils.showTextModal(text, '💬 메시지');
+            }
+        });
+        
         setInterval(() => { const t = new Date(); document.querySelector('.phone-time').textContent = `${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`; }, 60000);
     },
     
@@ -3954,13 +3980,92 @@ const PhoneCore = {
         this.addInstaTriggerButton();
 
         eventSource.on(event_types.MESSAGE_RECEIVED, async () => {
-            if (!this.apps.insta) return;
             const ctx = getContext();
             const lastMessage = ctx.chat?.[ctx.chat.length - 1];
             if (!lastMessage || lastMessage.is_user) return;
-            await this.apps.insta.checkAutoPost(lastMessage.mes || '');
+            
+            const messageText = lastMessage.mes || '';
+            
+            // 챗시타그램 자동 포스트 체크
+            if (this.apps.insta) {
+                await this.apps.insta.checkAutoPost(messageText);
+            }
+            
+            // 문자 트리거 체크
+            if (this.apps.message) {
+                await this.checkMessageTrigger(messageText);
+            }
         });
         console.log('[Phone] 로딩 완료!');
+    },
+    
+    async checkMessageTrigger(text) {
+        // 문자 보냈다는 뉘앙스를 감지하는 패턴
+        const triggerPatterns = [
+            /문자[를을]?\s*(보냈|보내|썼|전송)/i,
+            /메시지[를을]?\s*(보냈|보내|썼|전송)/i,
+            /톡[을을]?\s*(보냈|보내|썼|전송)/i,
+            /카톡[을을]?\s*(보냈|보내|썼|전송)/i,
+            /(sent|send|texted|messaged)\s*(a\s*)?(text|message)/i,
+            /문자가\s*왔|문자\s*도착|메시지가\s*왔/i,
+        ];
+        
+        const hasTrigger = triggerPatterns.some(pattern => pattern.test(text));
+        if (!hasTrigger) return;
+        
+        const ctx = getContext();
+        const settings = this.getSettings();
+        const charId = this.getCharId();
+        const charName = ctx.name2 || '캐릭터';
+        const userName = ctx.name1 || '나';
+        
+        // 문자 내용 추출 시도 (따옴표 안의 내용)
+        let messageContent = null;
+        const quoteMatch = text.match(/[""「『]([^""」』]+)[""」』]/);
+        if (quoteMatch) {
+            messageContent = quoteMatch[1];
+        }
+        
+        // 따옴표 안에 내용이 없으면 AI로 생성
+        if (!messageContent || messageContent.length < 3) {
+            try {
+                const prompt = `${getSystemInstruction()}
+
+[Text Message Generation]
+${charName} just mentioned sending a text message to ${userName} in the story.
+Based on context, write what that text message would say.
+Keep it short and natural, 1-2 sentences.
+
+Write only the message content:`;
+                
+                const result = await ctx.generateQuietPrompt(prompt, false, false);
+                messageContent = Utils.cleanResponse(result).substring(0, 200);
+            } catch (e) {
+                console.error('[Phone] Message trigger generation failed:', e);
+                return;
+            }
+        }
+        
+        if (!messageContent || messageContent.length < 3) return;
+        
+        // 문자 앱에 메시지 추가
+        const msgData = MessageApp.getData(settings, charId);
+        const ddayData = DdayApp.getData(settings, charId);
+        const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
+        
+        msgData.conversations.push({
+            id: Utils.generateId(),
+            timestamp: Date.now(),
+            date: currentDate,
+            content: messageContent,
+            fromMe: false,
+            charName: charName,
+            read: false,
+            triggered: true,
+        });
+        
+        DataManager.save();
+        toastr.info(`💬 ${charName}에게서 문자가 왔어요!`, '', { timeOut: 3000 });
     },
 
     setThemeColor(color) {
