@@ -1552,7 +1552,7 @@ Diary entry:`;
             <button class="app-nav-btn" id="diary-today-btn">오늘</button>
         </div>
         <div class="app-content">
-            <div class="diary-tabs">
+            <div class="diary-tabs" id="diary-tabs">
                 <button class="diary-tab active" data-tab="realtime">🌸 오늘</button>
                 <button class="diary-tab" data-tab="rptime" id="diary-rptime-tab">💕 우리의 이야기</button>
                 <button class="diary-moon-btn" id="diary-auto-write" title="캐릭터가 오늘의 일기를 씁니다">🌙</button>
@@ -1625,10 +1625,9 @@ Write only the reply:`;
         const ddayData = DdayApp.getData(settings, charId);
         const isSynced = !!ddayData?.currentRpDate;
         const rpTimeTab = document.getElementById('diary-rptime-tab');
-        if (rpTimeTab) {
-            rpTimeTab.style.display = isSynced ? '' : 'none';
-            rpTimeTab.parentElement?.classList.toggle('single-tab', !isSynced);
-        }
+        const tabsContainer = document.getElementById('diary-tabs');
+        if (rpTimeTab) rpTimeTab.style.display = isSynced ? '' : 'none';
+        if (tabsContainer) tabsContainer.classList.toggle('single-tab', !isSynced);
         const data = this.getData(settings, charId);
         const userName = getContext().name1 || '나';
         if (!this.state.isGenerating) {
@@ -1893,31 +1892,15 @@ const SettingsApp = {
         const syncResults = [];
         syncResults.push(`📅 D-DAY: ${rpDate.year}/${rpDate.month + 1}/${rpDate.day}`);
         const msgData = MessageApp.getData(settings, charId);
-        if (msgData) {
-            msgData.currentRpDate = rpDate;
-            syncResults.push('💬 문자');
-        }
+        if (msgData) { msgData.currentRpDate = rpDate; syncResults.push('💬 문자'); }
         const instaData = InstaApp.getData(settings, charId);
-        if (instaData) {
-            instaData.currentRpDate = rpDate;
-            syncResults.push('📸 챗시타그램');
-        }
+        if (instaData) { instaData.currentRpDate = rpDate; syncResults.push('📸 챗시타그램'); }
         const letterData = LetterApp.getData(settings, charId);
-        if (letterData) {
-            letterData.currentRpDate = rpDate;
-            syncResults.push('💌 편지');
-        }
+        if (letterData) { letterData.currentRpDate = rpDate; syncResults.push('💌 편지'); }
         const diaryData = DiaryApp.getData(settings, charId);
-        if (diaryData) {
-            diaryData.currentRpDate = rpDate;
-            syncResults.push('📔 일기장');
-        }
+        if (diaryData) { diaryData.currentRpDate = rpDate; syncResults.push('📔 일기장'); }
         DataManager.save();
-        return { 
-            success: true, 
-            message: `동기화 완료!\n${syncResults.join('\n')}`,
-            rpDate: rpDate
-        };
+        return { success: true, message: `동기화 완료!\n${syncResults.join('\n')}`, rpDate: rpDate };
     },
     unsyncAllApps(settings, charId) {
         const ddayData = DdayApp.getData(settings, charId);
@@ -1944,7 +1927,7 @@ const SettingsApp = {
     renderMain(data, charName, ddayData) {
         const rpDate = ddayData?.currentRpDate;
         const isSynced = !!rpDate;
-        let rpDateStr = '동기화 안됨 (실제 날짜 사용)';
+        let rpDateStr = '동기화 안됨 (실제 날짜 사용 중)';
         if (rpDate) {
             rpDateStr = `${rpDate.year}년 ${rpDate.month + 1}월 ${rpDate.day}일 (${rpDate.dayOfWeek})`;
         }
@@ -1955,49 +1938,25 @@ const SettingsApp = {
                 <div class="settings-sync-label">현재 우리의 시간</div>
                 <div class="settings-sync-date ${isSynced ? '' : 'not-synced'}">${rpDateStr}</div>
             </div>
-            <div class="settings-btn-group">
-                <button class="btn-primary" id="settings-sync-btn" style="flex:1;">
-                    🔄 동기화
-                </button>
-                <button class="btn-secondary" id="settings-unsync-btn" style="flex:1;" ${!isSynced ? 'disabled' : ''}>
-                    ❌ 해제
-                </button>
+            <div class="settings-btn-row">
+                <button class="btn-primary" id="settings-sync-btn">🔄 동기화</button>
+                <button class="btn-secondary" id="settings-unsync-btn" ${!isSynced ? 'disabled' : ''}>❌ 해제</button>
             </div>
-            <div class="settings-sync-desc">
-                INFOBLOCK의 날짜를 읽어 모든 앱에 적용합니다
-            </div>
+            <div class="settings-sync-desc">INFOBLOCK의 날짜를 읽어 모든 앱에 적용합니다</div>
         </div>
         <div class="card" style="margin-top:15px;">
             <div class="card-label">📱 동기화 대상 앱</div>
             <div class="settings-app-list">
-                <div class="settings-app-item">
-                    <span>💬 문자</span>
-                    <span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span>
-                </div>
-                <div class="settings-app-item">
-                    <span>📸 챗시타그램</span>
-                    <span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span>
-                </div>
-                <div class="settings-app-item">
-                    <span>💌 편지</span>
-                    <span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span>
-                </div>
-                <div class="settings-app-item">
-                    <span>📔 일기장 (우리의 이야기)</span>
-                    <span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span>
-                </div>
-                <div class="settings-app-item">
-                    <span>📅 D-DAY</span>
-                    <span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span>
-                </div>
+                <div class="settings-app-item"><span>💬 문자</span><span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span></div>
+                <div class="settings-app-item"><span>📸 챗시타그램</span><span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span></div>
+                <div class="settings-app-item"><span>💌 편지</span><span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span></div>
+                <div class="settings-app-item"><span>📔 일기장 (우리의 이야기)</span><span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span></div>
+                <div class="settings-app-item"><span>📅 D-DAY</span><span class="settings-app-status ${isSynced ? 'active' : ''}">${isSynced ? '✓' : '−'}</span></div>
             </div>
         </div>
         <div class="card" style="margin-top:15px;">
             <div class="card-label">ℹ️ 동기화 안내</div>
-            <div class="settings-info-text">
-                <b>동기화:</b> INFOBLOCK의 날짜를 사용합니다.<br>
-                <b>해제:</b> 실제 오늘 날짜를 사용합니다.
-            </div>
+            <div class="settings-info-text"><b>동기화:</b> INFOBLOCK의 날짜를 사용합니다.<br><b>해제:</b> 실제 오늘 날짜를 사용합니다.</div>
         </div>`;
     },
     async loadUI(settings, charId, charName) {
@@ -2012,7 +1971,7 @@ const SettingsApp = {
         document.getElementById('settings-sync-btn')?.addEventListener('click', async () => {
             const btn = document.getElementById('settings-sync-btn');
             btn.disabled = true;
-            btn.textContent = '⏳ 동기화 중...';
+            btn.textContent = '⏳';
             const result = await this.syncAllApps(settings, charId, charName);
             btn.disabled = false;
             btn.textContent = '🔄 동기화';
@@ -3244,16 +3203,15 @@ const PhoneCore = {
         document.getElementById('phone-app-page')?.addEventListener('click', e => {
             const charComment = e.target.closest('.char-comment');
             if (charComment) {
-                const textEl = charComment.querySelector('.char-comment-text') || charComment;
+                const text = charComment.textContent?.replace(/^[""]|[""]$/g, '').replace(/🔄/g, '').trim();
                 const headerEl = charComment.querySelector('.char-comment-header span');
-                const text = textEl.textContent?.replace(/^[""]|[""]$/g, '').trim();
                 const title = headerEl?.textContent || '💬 전체 보기';
                 if (text) Utils.showTextModal(text, title);
             }
             const diaryContent = e.target.closest('.diary-content');
             if (diaryContent) {
                 const card = diaryContent.closest('.card');
-                const label = card?.querySelector('.card-label')?.textContent || '📔 일기';
+                const label = card?.querySelector('.card-label span')?.textContent || '📔 일기';
                 const text = diaryContent.textContent?.trim();
                 if (text) Utils.showTextModal(text, label);
             }
@@ -3357,12 +3315,8 @@ const PhoneCore = {
             const lastMessage = ctx.chat?.[ctx.chat.length - 1];
             if (!lastMessage || lastMessage.is_user) return;
             const messageText = lastMessage.mes || '';
-            if (this.apps.insta) {
-                await this.apps.insta.checkAutoPost(messageText);
-            }
-            if (this.apps.message) {
-                await this.checkMessageTrigger(messageText);
-            }
+            if (this.apps.insta) await this.apps.insta.checkAutoPost(messageText);
+            if (this.apps.message) await this.checkMessageTrigger(messageText);
         });
         console.log('[Phone] 로딩 완료!');
     },
@@ -3370,8 +3324,8 @@ const PhoneCore = {
         const triggerPatterns = [
             /문자[를을]?\s*(보냈|보내|썼|전송)/i,
             /메시지[를을]?\s*(보냈|보내|썼|전송)/i,
-            /톡[을을]?\s*(보냈|보내|썼|전송)/i,
-            /카톡[을을]?\s*(보냈|보내|썼|전송)/i,
+            /톡[을를]?\s*(보냈|보내|썼|전송)/i,
+            /카톡[을를]?\s*(보냈|보내|썼|전송)/i,
             /(sent|send|texted|messaged)\s*(a\s*)?(text|message)/i,
             /문자가\s*왔|문자\s*도착|메시지가\s*왔/i,
         ];
@@ -3384,23 +3338,13 @@ const PhoneCore = {
         const userName = ctx.name1 || '나';
         let messageContent = null;
         const quoteMatch = text.match(/[""「『]([^""」』]+)[""」』]/);
-        if (quoteMatch) {
-            messageContent = quoteMatch[1];
-        }
+        if (quoteMatch) messageContent = quoteMatch[1];
         if (!messageContent || messageContent.length < 3) {
             try {
-                const prompt = `${getSystemInstruction()}
-[Text Message Generation]
-${charName} just mentioned sending a text message to ${userName} in the story.
-Based on context, write what that text message would say.
-Keep it short and natural, 1-2 sentences.
-Write only the message content:`;
+                const prompt = `${getSystemInstruction()}\n\n[Text Message Generation]\n${charName} just mentioned sending a text message to ${userName} in the story.\nBased on context, write what that text message would say.\nKeep it short and natural, 1-2 sentences.\n\nWrite only the message content:`;
                 const result = await ctx.generateQuietPrompt(prompt, false, false);
                 messageContent = Utils.cleanResponse(result).substring(0, 200);
-            } catch (e) {
-                console.error('[Phone] Message trigger generation failed:', e);
-                return;
-            }
+            } catch (e) { return; }
         }
         if (!messageContent || messageContent.length < 3) return;
         const msgData = MessageApp.getData(settings, charId);
