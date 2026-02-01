@@ -2311,6 +2311,8 @@ const SettingsApp = {
             { icon: '📔', name: '일기장 (롤플타임)', key: 'diary' },
             { icon: '📅', name: 'D-DAY', key: 'dday' }
         ];
+    
+        const customPattern = ddayData.customDatePattern || '';
         
         return `
         <div class="card pink">
@@ -2344,6 +2346,19 @@ const SettingsApp = {
         </div>
         
         <div class="card" style="margin-top:15px;">
+            <div class="card-label">📅 날짜 양식 설정</div>
+            <div class="settings-info-text" style="margin-bottom:10px;">
+                채팅에서 날짜 부분을 복사해서 붙여넣으세요<br>
+                <small>예: 🗓️2025/2/8/토요일 또는 📅 : 7월 1일 [월]</small>
+            </div>
+            <input type="text" id="date-pattern-input" value="${Utils.escapeHtml(customPattern)}" 
+                placeholder="날짜 텍스트 붙여넣기..." style="width:100%;padding:8px;margin-bottom:8px;">
+            <button class="btn-primary" id="date-pattern-save">패턴 저장</button>
+            <button class="btn-secondary" id="date-pattern-test">테스트</button>
+            ${customPattern ? `<div class="settings-info-text" style="margin-top:8px;">✓ 저장된 패턴: ${Utils.escapeHtml(customPattern)}</div>` : ''}
+        </div>
+        
+        <div class="card" style="margin-top:15px;">
             <div class="card-label">ℹ️ 동기화 안내</div>
             <div class="settings-info-text">
                 🔄 동기화: 롤플타임 기준으로 날짜 맞춤<br>
@@ -2352,6 +2367,45 @@ const SettingsApp = {
         </div>`;
     },
     
+    generatePatternFromExample(example) {
+        let regex = example
+            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')  
+            .replace(/\d+/g, '(\\d+)')             
+            .replace(/([월화수목금토일]요일?|MON|TUE|WED|THU|FRI|SAT|SUN)/gi, '([^\\s\\]]+)');  
+        
+        return { 
+            regex: new RegExp(regex),
+            example: example 
+        };
+    },
+    
+    parseDateWithCustomPattern(mes, pattern) {
+        const match = mes.match(pattern.regex);
+        if (!match) return null;
+        
+        const numbers = match.slice(1).filter(m => /^\d+$/.test(m)).map(Number);
+        
+        if (numbers.length >= 2) {
+            let year, month, day;
+            if (numbers.length >= 3 && numbers[0] > 1000) {
+                [year, month, day] = numbers;
+            } else if (numbers.length >= 3 && numbers[2] > 1000) {
+                [month, day, year] = numbers;
+            } else {
+                year = new Date().getFullYear();
+                [month, day] = numbers;
+            }
+            month = month - 1;
+            
+            const dayNames = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+            const dayOfWeek = dayNames[new Date(year, month, day).getDay()];
+            
+            return { year, month, day, dayOfWeek,
+                dateKey: `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` };
+        }
+        return null;
+    },
+        
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
         const ddayData = DdayApp.getData(settings, charId);
@@ -2382,6 +2436,38 @@ const SettingsApp = {
             } else {
                 toastr.warning(result.message);
             }
+        });document.getElementById('date-pattern-save')?.addEventListener('click', () => {
+        const input = document.getElementById('date-pattern-input').value.trim();
+        if (!input) {
+            toastr.warning('날짜 텍스트를 입력해주세요');
+            return;
+        }
+        
+        const ddayData = DdayApp.getData(settings, charId);
+        ddayData.customDatePattern = input;
+        ddayData.customDateRegex = this.generatePatternFromExample(input);
+        DataManager.save();
+        
+        toastr.success('📅 패턴이 저장되었어요!');
+        document.getElementById('settings-content').innerHTML = this.renderMain(this.getData(settings, charId), charName, ddayData);
+        this.bindEvents(Core);
+    });
+    
+        document.getElementById('date-pattern-test')?.addEventListener('click', () => {
+            const input = document.getElementById('date-pattern-input').value.trim();
+            if (!input) {
+                toastr.warning('날짜 텍스트를 입력해주세요');
+                return;
+            }
+            
+            const pattern = this.generatePatternFromExample(input);
+            const result = this.parseDateWithCustomPattern(input, pattern);
+            
+            if (result) {
+                toastr.success(`✅ ${result.year}년 ${result.month + 1}월 ${result.day}일 (${result.dayOfWeek})`);
+            } else {
+                toastr.error('❌ 파싱 실패 - 날짜를 인식할 수 없어요');
+            }
         });
         
         document.getElementById('settings-unsync-btn')?.addEventListener('click', () => {
@@ -2395,7 +2481,7 @@ const SettingsApp = {
                 this.bindEvents(Core);
             }
         });
-    }
+    },
 };
 
 const DdayApp = {
@@ -2435,8 +2521,17 @@ const DdayApp = {
     
     parseInfoblockDate(chat) {
         if (!chat || chat.length === 0) return null;
+        const settings = PhoneCore.getSettings();
+        const charId = PhoneCore.getCharId();
+        const ddayData = this.getData(settings, charId);
+        
         for (let i = chat.length - 1; i >= 0; i--) {
             const mes = chat[i]?.mes || '';
+
+            if (ddayData.customDateRegex) {
+                const result = SettingsApp.parseDateWithCustomPattern(mes, ddayData.customDateRegex);
+                if (result) return result;
+            }
             
             const match = mes.match(/📅\s*:\s*(\w+)\s+(\d+)\s*\[(\w+)\]/);
             if (match) {
