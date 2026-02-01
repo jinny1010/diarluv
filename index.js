@@ -104,7 +104,6 @@ const Utils = {
     cleanResponse(text) {
         if (!text) return '';
         
-        // Handle raw API response objects
         if (text.includes('parts:') && text.includes("finishReason:")) {
             const matches = [...text.matchAll(/\{\s*text:\s*['"]([^'"]+)['"]/g)];
             if (matches.length > 0) {
@@ -112,19 +111,15 @@ const Utils = {
             }
         }
         
-        // Remove <think> blocks
         text = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
         text = text.replace(/<think>[\s\S]*/gi, '');
         
-        // Strip ALL HTML tags (critical: prevents CSS/font leaks like "Segoe UI")
         text = text.replace(/<[^>]*>/g, '');
         
-        // Remove common CSS/font artifacts that leak through
         text = text.replace(/font-family\s*:[^;]*/gi, '');
         text = text.replace(/\b(Segoe UI|Arial|Helvetica|sans-serif|serif|monospace|Times New Roman|Courier)\b/gi, '');
         text = text.replace(/style\s*=\s*["'][^"']*["']/gi, '');
         
-        // Remove HTML entities
         text = text.replace(/&[a-z]+;/gi, ' ');
         text = text.replace(/&#\d+;/g, ' ');
         
