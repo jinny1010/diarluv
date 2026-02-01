@@ -2466,6 +2466,17 @@ const DdayApp = {
                 return { year, month, day, dayOfWeek,
                     dateKey: `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` };
             }
+
+            const match3 = mes.match(/📅\s*:\s*(\d+)월\s*(\d+)일\s*\[([^\]]+)\]/);
+            if (match3) {
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = parseInt(match3[1]) - 1;
+                const day = parseInt(match3[2]);
+                const dayOfWeek = match3[3].toUpperCase();
+                return { year, month, day, dayOfWeek,
+                    dateKey: `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` };
+            }
         }
         return null;
     },
