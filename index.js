@@ -2440,7 +2440,6 @@ const SettingsApp = {
         
         const ddayData = DdayApp.getData(settings, charId);
         ddayData.customDatePattern = input;
-        ddayData.customDateRegex = this.generatePatternFromExample(input);
         DataManager.save();
         
         toastr.success('📅 패턴이 저장되었어요!');
@@ -2524,7 +2523,8 @@ const DdayApp = {
             const mes = chat[i]?.mes || '';
 
             if (ddayData.customDateRegex) {
-                const result = SettingsApp.parseDateWithCustomPattern(mes, ddayData.customDateRegex);
+                const pattern = SettingsApp.generatePatternFromExample(ddayData.customDatePattern);
+                const result = SettingsApp.parseDateWithCustomPattern(mes, pattern);
                 if (result) return result;
             }
             
