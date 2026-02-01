@@ -2363,15 +2363,14 @@ const SettingsApp = {
     },
     
     generatePatternFromExample(example) {
-        let regex = example
-            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')  
-            .replace(/\d+/g, '(\\d+)')             
-            .replace(/([월화수목금토일]요일?|MON|TUE|WED|THU|FRI|SAT|SUN)/gi, '([^\\s\\]]+)');  
+        let processed = example
+            .replace(/[월화수목금토일]요?일?/g, '__DAY__')
+            .replace(/\d+/g, '__NUM__')
+            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            .replace(/__NUM__/g, '(\\d+)')
+            .replace(/__DAY__/g, '([^\\s\\]]+)');
         
-        return { 
-            regex: new RegExp(regex),
-            example: example 
-        };
+        return { regex: new RegExp(processed), example: example };
     },
     
     parseDateWithCustomPattern(mes, pattern) {
