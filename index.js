@@ -2365,6 +2365,7 @@ const SettingsApp = {
     generatePatternFromExample(example) {
         let processed = example
             .replace(/[월화수목금토일]요?일?/g, '__DAY__')
+            .replace(/\b(?:Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sun|Mon|Tue|Wed|Thu|Fri|Sat)\b/gi, '__DAY__')
             .replace(/\d+/g, '__NUM__')
             .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
             .replace(/__NUM__/g, '(\\d+)')
