@@ -2367,9 +2367,11 @@ const SettingsApp = {
             .replace(/[월화수목금토일]요?일?/g, '__DAY__')
             .replace(/\b(?:Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sun|Mon|Tue|Wed|Thu|Fri|Sat)\b/gi, '__DAY__')
             .replace(/\d+/g, '__NUM__')
+            .replace(/\b(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/gi, '__MONTH__')
             .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
             .replace(/__NUM__/g, '(\\d+)')
-            .replace(/__DAY__/g, '([^\\s\\]]+)');
+            .replace(/__DAY__/g, '([^\\s\\]]+)')
+            .replace(/__MONTH__/g, '([A-Za-z]+)');
         
         return { regex: new RegExp(processed), example: example };
     },
@@ -2377,28 +2379,62 @@ const SettingsApp = {
     parseDateWithCustomPattern(mes, pattern) {
         const match = mes.match(pattern.regex);
         if (!match) return null;
+    
+        const monthMap = {
+            'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'may': 4, 'jun': 5,
+            'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11,
+            'january': 0, 'february': 1, 'march': 2, 'april': 3, 'june': 5,
+            'july': 6, 'august': 7, 'september': 8, 'october': 9, 'november': 10, 'december': 11
+        };
+    
+        const numbers = [];
+        let monthFromText = null;
         
-        const numbers = match.slice(1).filter(m => /^\d+$/.test(m)).map(Number);
+        for (const m of match.slice(1)) {
+            if (/^\d+$/.test(m)) {
+                numbers.push(Number(m));
+            } else if (monthMap[m.toLowerCase()] !== undefined) {
+                monthFromText = monthMap[m.toLowerCase()];
+            }
+        }
         
-        if (numbers.length >= 2) {
-            let year, month, day;
+        let year, month, day;
+        
+        if (monthFromText !== null) {
+            month = monthFromText;
+            if (numbers.length >= 2 && numbers[0] > 1000) {
+                year = numbers[0];
+                day = numbers[1];
+            } else if (numbers.length >= 2 && numbers[1] > 1000) {
+                day = numbers[0];
+                year = numbers[1];
+            } else if (numbers.length >= 1) {
+                day = numbers[0];
+                year = new Date().getFullYear();
+            } else {
+                return null;
+            }
+        } else if (numbers.length >= 2) {
             if (numbers.length >= 3 && numbers[0] > 1000) {
                 [year, month, day] = numbers;
+                month = month - 1;
             } else if (numbers.length >= 3 && numbers[2] > 1000) {
                 [month, day, year] = numbers;
+                month = month - 1;
             } else {
                 year = new Date().getFullYear();
                 [month, day] = numbers;
+                month = month - 1;
             }
-            month = month - 1;
-            
-            const dayNames = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
-            const dayOfWeek = dayNames[new Date(year, month, day).getDay()];
-            
-            return { year, month, day, dayOfWeek,
-                dateKey: `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` };
+        } else {
+            return null;
         }
-        return null;
+        
+        const dayNames = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+        const dayOfWeek = dayNames[new Date(year, month, day).getDay()];
+        
+        return { year, month, day, dayOfWeek,
+            dateKey: `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` };
     },
         
     async loadUI(settings, charId, charName) {
