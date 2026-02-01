@@ -1136,7 +1136,7 @@ Reason: (why you recommend it, 1-2 sentences, make it personal)`;
                 if (line.match(/Reason:|이유:/i)) reason = Utils.cleanResponse(line.replace(/.*(?:Reason|이유):\s*/i, ''));
             }
             if (!title) title = Utils.cleanResponse(result.split('\n')[0]) || '추천 도서';
-            return { title: title.substring(0, 50), reason: reason.substring(0, 150) || `${userName}이 좋아할 것 같아서!` };
+            return { title: title.substring(0, 50), reason: reason.substring(0, 400) || `${userName}이 좋아할 것 같아서!` };
         } catch (e) {
             console.error('[Book] Recommend failed:', e);
             return null;
@@ -1413,7 +1413,7 @@ Reason: (why you want to watch it together, 1 sentence)`;
             return { 
                 title: title.substring(0, 50), 
                 genre: genre.substring(0, 20), 
-                reason: reason.substring(0, 150) || `${userName}이랑 같이 보고 싶어!` 
+                reason: reason.substring(0, 400) || `${userName}이랑 같이 보고 싶어!` 
             };
         } catch (e) {
             console.error('[Movie] Recommend failed:', e);
@@ -1938,20 +1938,6 @@ Write only the reply:`;
         this.state.selectedDate = Utils.getTodayKey();
         this.state.currentTab = 'realtime';
         
-        const data = this.getData(settings, charId);
-        const userName = getContext().name1 || '나';
-        
-        if (!this.state.isGenerating) {
-            this.state.isGenerating = true;
-            
-            const charDiary = await this.tryCharacterDiary(settings, charId, charName, userName);
-            if (charDiary) {
-                DataManager.save();
-                toastr.info(`📔 ${charName}가 일기를 썼어요!`);
-            }
-            this.state.isGenerating = false;
-        }
-        
         this.renderCalendar(settings, charId, charName);
         this.showEntry(settings, charId, charName);
         this.bindCalendarNav(settings, charId, charName);
@@ -2040,7 +2026,7 @@ Write only the reply:`;
                             const charDiary = await this.tryCharacterDiaryRP(settings, charId, charName, userName);
                             if (charDiary) {
                                 DataManager.save();
-                                toastr.info(`📔 ${charName}가 롤플 일기를 썼어요!`);
+                                toastr.info(`📔 ${charName}가 오늘의 일기를 썼어요!`);
                             }
                             this.state.isGenerating = false;
                         }
@@ -2451,12 +2437,12 @@ const DdayApp = {
         if (!chat || chat.length === 0) return null;
         for (let i = chat.length - 1; i >= 0; i--) {
             const mes = chat[i]?.mes || '';
+            
             const match = mes.match(/📅\s*:\s*(\w+)\s+(\d+)\s*\[(\w+)\]/);
             if (match) {
-                const monthStr = match[1].toLowerCase();
                 const monthMapLower = { 'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'may': 4, 'jun': 5,
                     'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11 };
-                const month = monthMapLower[monthStr];
+                const month = monthMapLower[match[1].toLowerCase()];
                 const day = parseInt(match[2]);
                 const dayOfWeek = match[3];
                 if (month !== undefined && day) {
@@ -2467,6 +2453,18 @@ const DdayApp = {
                     return { year, month, day, dayOfWeek,
                         dateKey: `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` };
                 }
+            }
+            
+            const match2 = mes.match(/🗓️\s*(\d{4})-(\d{2})-(\d{2})/);
+            if (match2) {
+                const year = parseInt(match2[1]);
+                const month = parseInt(match2[2]) - 1;
+                const day = parseInt(match2[3]);
+                const dateObj = new Date(year, month, day);
+                const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+                const dayOfWeek = dayNames[dateObj.getDay()];
+                return { year, month, day, dayOfWeek,
+                    dateKey: `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` };
             }
         }
         return null;
@@ -3772,16 +3770,6 @@ const PhoneCore = {
                         <div class="phone-page" data-page="app" id="phone-app-page"></div>
                     </div>
                     <div class="phone-home-bar"></div>
-                    <div id="phone-fulltext-modal" class="phone-fulltext-modal" style="display:none;">
-                        <div class="phone-fulltext-backdrop"></div>
-                        <div class="phone-fulltext-content">
-                            <div class="phone-fulltext-header">
-                                <span class="phone-fulltext-title">전체보기</span>
-                                <button class="phone-fulltext-close">✕</button>
-                            </div>
-                            <div class="phone-fulltext-body" id="phone-fulltext-body"></div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>`;
@@ -3875,37 +3863,11 @@ const PhoneCore = {
         document.getElementById('phone-modal')?.addEventListener('click', e => { if (e.target.id === 'phone-modal') this.closeModal(); });
         setInterval(() => { const t = new Date(); document.querySelector('.phone-time').textContent = `${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`; }, 60000);
         
-        // Fulltext modal close events
         document.querySelector('.phone-fulltext-close')?.addEventListener('click', () => this.closeFullTextModal());
         document.querySelector('.phone-fulltext-backdrop')?.addEventListener('click', () => this.closeFullTextModal());
         
-        // Delegate click on clickable text elements for fulltext modal
-        document.addEventListener('click', (e) => {
-            const target = e.target.closest('.clickable-text');
-            if (target) {
-                const text = target.dataset.fulltext || target.textContent;
-                const title = target.dataset.fulltextTitle || '전체보기';
-                this.showFullTextModal(text, title);
-            }
-        });
     },
-    
-    showFullTextModal(text, title = '전체보기') {
-        const modal = document.getElementById('phone-fulltext-modal');
-        const body = document.getElementById('phone-fulltext-body');
-        const titleEl = modal.querySelector('.phone-fulltext-title');
-        if (modal && body) {
-            body.textContent = text;
-            if (titleEl) titleEl.textContent = title;
-            modal.style.display = 'flex';
-        }
-    },
-    
-    closeFullTextModal() {
-        const modal = document.getElementById('phone-fulltext-modal');
-        if (modal) modal.style.display = 'none';
-    },
-    
+        
     createSettingsUI() {
         const settings = this.getSettings();
         const html = `
@@ -4010,119 +3972,8 @@ const PhoneCore = {
             const lastMessage = ctx.chat?.[ctx.chat.length - 1];
             if (!lastMessage || lastMessage.is_user) return;
             await this.apps.insta.checkAutoPost(lastMessage.mes || '');
-            
-            // Message trigger: check if character mentions sending a text
-            await this.checkMessageTrigger(lastMessage.mes || '', ctx);
         });
         console.log('[Phone] 로딩 완료!');
-    },
-
-    // ========================================
-    // Message Trigger System
-    // ========================================
-    messageTriggerPatterns: [
-        /문자를?\s*보냈/i, /메시지를?\s*보냈/i, /톡을?\s*보냈/i,
-        /문자가?\s*왔/i, /메시지가?\s*왔/i, /톡이?\s*왔/i,
-        /문자를?\s*남겼/i, /메시지를?\s*남겼/i,
-        /문자를?\s*전송/i, /메시지를?\s*전송/i,
-        /sent\s+a\s+text/i, /texted/i, /sent\s+a\s+message/i,
-        /text\s+message/i, /sends?\s+a\s+text/i, /sends?\s+a\s+message/i,
-    ],
-    
-    extractMessageContent(text) {
-        // Try to extract quoted text content near trigger
-        const quotePatterns = [
-            /[「]([^」]+)[」]/,
-            /[『]([^』]+)[』]/,
-            /[""]([^""]+)[""]/, 
-            /['']([^'']+)['']/,
-            /"([^"]+)"/,
-            /'([^']+)'/,
-        ];
-        
-        for (const pattern of quotePatterns) {
-            const match = text.match(pattern);
-            if (match && match[1].length > 2 && match[1].length < 200) {
-                return match[1].trim();
-            }
-        }
-        return null;
-    },
-    
-    async checkMessageTrigger(messageText, ctx) {
-        if (!messageText || !this.apps.message) return;
-        
-        const settings = this.getSettings();
-        if (settings.enabledApps?.message === false) return;
-        
-        const hasMatch = this.messageTriggerPatterns.some(p => p.test(messageText));
-        if (!hasMatch) return;
-        
-        const charId = this.getCharId();
-        const charName = ctx.name2 || '캐릭터';
-        const userName = ctx.name1 || '나';
-        const msgData = MessageApp.getData(settings, charId);
-        
-        const ddayData = DdayApp.getData(settings, charId);
-        const currentDate = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
-        
-        // Try to extract content from the RP message
-        let msgContent = this.extractMessageContent(messageText);
-        
-        if (!msgContent) {
-            // No quoted content found — generate one via AI
-            try {
-                const msgLang = settings.msgLanguage || 'ko';
-                const langInstruction = msgLang === 'ko' 
-                    ? '- MUST respond in Korean (한국어).'
-                    : '- MUST respond in English.';
-                    
-                const prompt = `[HIGHEST PRIORITY SYSTEM INSTRUCTION]
-- NO roleplay (RP). NO character acting.
-- NO actions like *action*, (action), or narrative descriptions.
-- DO NOT write like a novel or screenplay.
-- Respond naturally as if chatting.
-${langInstruction}
-
-[Text Message Content Generation]
-In the roleplay, ${charName} sent a text message to ${userName}.
-Context: "${messageText.substring(0, 300)}"
-
-Based on this context, write ONLY the text message content that ${charName} would have sent.
-Keep it natural and short (1-2 sentences).
-Write only the message:`;
-                
-                const result = await ctx.generateQuietPrompt(prompt, false, false);
-                msgContent = Utils.cleanResponse(result).substring(0, 200);
-            } catch (e) {
-                console.error('[Phone] Message trigger AI generation failed:', e);
-                return;
-            }
-        }
-        
-        if (!msgContent || msgContent.length < 2) return;
-        
-        // Add to message app conversations
-        msgData.conversations.push({
-            id: Utils.generateId(),
-            timestamp: Date.now(),
-            date: currentDate,
-            content: msgContent,
-            fromMe: false,
-            charName: charName,
-            read: false,
-            triggeredFromRP: true,
-        });
-        
-        DataManager.save();
-        
-        // Show toast notification
-        toastr.info(`💬 ${charName}에게서 문자가 왔어요!`, '', { timeOut: 3000 });
-        
-        // Inject to context
-        MessageApp.injectToContext(settings, charId, charName);
-        
-        console.log(`[Phone] Message trigger: "${msgContent.substring(0, 50)}..."`);
     },
 
     setThemeColor(color) {
