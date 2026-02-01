@@ -3976,7 +3976,7 @@ const PhoneCore = {
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header"><b>📱 폰</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
                 <div class="inline-drawer-content">
-                    <p style="margin:10px 0;opacity:0.7;">v2.2.0 - 동기화 해제 & 전체보기 모달 & 문자 트리거</p>
+                    <p style="margin:10px 0;opacity:0.7;">v2.5.0 - 동기화 패턴</p>
                     <div style="margin:15px 0;"><b>앱 표시</b>
                         ${Object.entries(this.apps).map(([id, app]) => `
                             <div style="display:flex;align-items:center;gap:8px;margin:8px 0;">
