@@ -2522,7 +2522,7 @@ const DdayApp = {
         for (let i = chat.length - 1; i >= 0; i--) {
             const mes = chat[i]?.mes || '';
 
-            if (ddayData.customDateRegex) {
+            if (ddayData.customDatePattern) {
                 const pattern = SettingsApp.generatePatternFromExample(ddayData.customDatePattern);
                 const result = SettingsApp.parseDateWithCustomPattern(mes, pattern);
                 if (result) return result;
