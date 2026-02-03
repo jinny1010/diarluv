@@ -2955,11 +2955,7 @@ IMAGE_PROMPT: (comma-separated tags for image generation, under 80 words. If SEL
             if (promptMatch) imagePrompt = Utils.cleanResponse(promptMatch[1]).substring(0, 400);
             
             let imageUrl = '';
-            if (imageType === 'selfie') {
-                imageUrl = await this.generateNovelAIImage(imagePrompt || `${charName}, selfie, instagram photo`);
-            } else {
-                imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt || 'beautiful scenery')}?nologo=true`;
-            }
+            let imageUrl = await this.generateSDImage(imagePrompt || defaultPrompt, imageType);
             
             if (!data.charPosts[charId]) data.charPosts[charId] = [];
             
@@ -3605,6 +3601,9 @@ Write only the comment:`;
         
         this.state.currentView = 'feed';
         document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
+        document.getElementById('insta-settings-btn')?.addEventListener('click', () => {
+        document.getElementById('insta-content').innerHTML = this.renderSettings(data);
+        this.bindSettingsEvents(Core);
     },
 
     bindSettingsEvents(Core) {
