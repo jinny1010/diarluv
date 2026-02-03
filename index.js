@@ -3290,12 +3290,24 @@ Write only the comment:`;
             scenery: { source: 'default', style: 'default' }
         };
         
-        const renderSelect = (id, options, selected) => {
-            return `<select id="${id}" class="insta-settings-select" style="background:#333;color:#fff;border:1px solid #555;padding:8px;border-radius:6px;width:100%;">
-                ${options.map(opt => 
-                    `<option value="${opt.value}" ${opt.value === selected ? 'selected' : ''} style="background:#333;color:#fff;">${opt.name}</option>`
-                ).join('')}
-            </select>`;
+        const renderCustomSelect = (id, options, selected) => {
+            const selectedOption = options.find(o => o.value === selected) || options[0];
+            return `
+            <div class="custom-select-wrapper" data-id="${id}">
+                <div class="custom-select-trigger" data-id="${id}">
+                    <span class="custom-select-value">${selectedOption.name}</span>
+                    <span class="custom-select-arrow">▼</span>
+                </div>
+                <div class="custom-select-options" data-id="${id}" style="display:none;">
+                    ${options.map(opt => `
+                        <div class="custom-select-option ${opt.value === selected ? 'selected' : ''}" 
+                             data-value="${opt.value}" data-id="${id}">
+                            ${opt.name}
+                        </div>
+                    `).join('')}
+                </div>
+                <input type="hidden" id="${id}" value="${selected}">
+            </div>`;
         };
         
         return `
@@ -3353,51 +3365,62 @@ Write only the comment:`;
         const data = this.getData(settings, charId);
         const imgSettings = data.imageSettings?.[imageType] || { source: 'default', style: 'default' };
         
-        if (imgSettings.source === 'default' && imageType === 'scenery') {
-            return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true`;
-        }
-        
+        // Pollinations 직접 사용
         if (imgSettings.source === 'pollinations') {
             return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&model=flux`;
         }
         
+        // default이고 scenery면 Pollinations
+        if (imgSettings.source === 'default' && imageType === 'scenery') {
+            return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true`;
+        }
+        
+        // SD 확장 사용
         const retries = 2;
         for (let i = 0; i <= retries; i++) {
             try {
                 const { SlashCommandParser } = await import('../../../slash-commands/SlashCommandParser.js');
                 
                 if (!SlashCommandParser.commands['sd']) {
-                    console.log('[Insta] SD command not ready, waiting...');
                     await new Promise(r => setTimeout(r, 500));
                     continue;
                 }
                 
-                let originalSource = null;
-                let originalStyle = null;
-                const sdSettings = window.extension_settings?.sd;
+                // DOM에서 원래 값 저장
+                const sdSourceEl = document.getElementById('sd_source');
+                const sdStyleEl = document.getElementById('sd_style');
                 
-                if (sdSettings && imgSettings.source !== 'default') {
-                    originalSource = sdSettings.source;
-                    sdSettings.source = imgSettings.source;
-                    console.log(`[Insta] Switched SD source: ${originalSource} → ${imgSettings.source}`);
+                const originalSource = sdSourceEl?.value;
+                const originalStyle = sdStyleEl?.value;
+                
+                // source 변경 (default 아닐 때만)
+                if (imgSettings.source !== 'default' && sdSourceEl) {
+                    sdSourceEl.value = imgSettings.source;
+                    sdSourceEl.dispatchEvent(new Event('change'));
+                    await new Promise(r => setTimeout(r, 100));
                 }
                 
-                if (sdSettings && imgSettings.style !== 'default' && imgSettings.style !== 'none') {
-                    originalStyle = sdSettings.style;
-                    sdSettings.style = parseInt(imgSettings.style);
-                    console.log(`[Insta] Switched SD style: ${originalStyle} → ${imgSettings.style}`);
+                // style 변경 (default 아닐 때만)
+                if (imgSettings.style !== 'default' && sdStyleEl) {
+                    sdStyleEl.value = imgSettings.style;
+                    sdStyleEl.dispatchEvent(new Event('change'));
+                    await new Promise(r => setTimeout(r, 100));
                 }
                 
+                // 이미지 생성
                 const result = await SlashCommandParser.commands['sd'].callback(
                     { quiet: 'true' },
                     prompt
                 );
                 
-                if (originalSource !== null && sdSettings) {
-                    sdSettings.source = originalSource;
+                // 원래 값 복구
+                if (originalSource && sdSourceEl && imgSettings.source !== 'default') {
+                    sdSourceEl.value = originalSource;
+                    sdSourceEl.dispatchEvent(new Event('change'));
                 }
-                if (originalStyle !== null && sdSettings) {
-                    sdSettings.style = originalStyle;
+                if (originalStyle && sdStyleEl && imgSettings.style !== 'default') {
+                    sdStyleEl.value = originalStyle;
+                    sdStyleEl.dispatchEvent(new Event('change'));
                 }
                 
                 if (result) return result;
@@ -3407,7 +3430,7 @@ Write only the comment:`;
             }
         }
         
-        console.log('[Insta] SD failed, using Pollinations fallback');
+        // 실패시 Pollinations fallback
         return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&model=flux`;
     },
     
@@ -3633,12 +3656,58 @@ Write only the comment:`;
         document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
     },
 
-    // 수정: bindSettingsEvents를 별도 메서드로 분리
     bindSettingsEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
         const data = this.getData(settings, charId);
         const charList = this.getCharacterList();
+        
+        // 커스텀 셀렉트 토글
+        document.querySelectorAll('.custom-select-trigger').forEach(trigger => {
+            trigger.addEventListener('click', (e) => {
+                const id = trigger.dataset.id;
+                const options = document.querySelector(`.custom-select-options[data-id="${id}"]`);
+                
+                // 다른 드롭다운 닫기
+                document.querySelectorAll('.custom-select-options').forEach(opt => {
+                    if (opt.dataset.id !== id) opt.style.display = 'none';
+                });
+                
+                // 현재 드롭다운 토글
+                options.style.display = options.style.display === 'none' ? 'block' : 'none';
+            });
+        });
+        
+        // 옵션 선택
+        document.querySelectorAll('.custom-select-option').forEach(option => {
+            option.addEventListener('click', (e) => {
+                const id = option.dataset.id;
+                const value = option.dataset.value;
+                const wrapper = option.closest('.custom-select-wrapper');
+                
+                // hidden input 업데이트
+                wrapper.querySelector('input[type="hidden"]').value = value;
+                
+                // 표시 텍스트 업데이트
+                wrapper.querySelector('.custom-select-value').textContent = option.textContent.trim();
+                
+                // selected 클래스 업데이트
+                wrapper.querySelectorAll('.custom-select-option').forEach(opt => opt.classList.remove('selected'));
+                option.classList.add('selected');
+                
+                // 드롭다운 닫기
+                wrapper.querySelector('.custom-select-options').style.display = 'none';
+            });
+        });
+        
+        // 바깥 클릭시 닫기
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.custom-select-wrapper')) {
+                document.querySelectorAll('.custom-select-options').forEach(opt => {
+                    opt.style.display = 'none';
+                });
+            }
+        });
         
         document.getElementById('insta-settings-back')?.addEventListener('click', () => {
             document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
