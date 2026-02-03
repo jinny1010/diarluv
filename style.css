@@ -715,6 +715,36 @@
     flex-shrink: 0;
 }
 
+instaSettingsStyle.textContent = `
+    .insta-settings-select {
+        background: #333 !important;
+        color: #fff !important;
+        border: 1px solid #555 !important;
+        padding: 8px !important;
+        border-radius: 6px !important;
+        width: 100% !important;
+        font-size: 13px !important;
+        cursor: pointer !important;
+    }
+    .insta-settings-select option {
+        background: #333 !important;
+        color: #fff !important;
+        padding: 8px !important;
+    }
+    .insta-settings-select:focus {
+        outline: none !important;
+        border-color: var(--phone-primary, #ff6b9d) !important;
+    }
+    .insta-settings-row {
+        margin: 10px 0 !important;
+    }
+    .insta-settings-row label {
+        display: block !important;
+        margin-bottom: 4px !important;
+        font-size: 12px !important;
+        opacity: 0.8 !important;
+    }
+
 /* 3열 그리드 */
 .phone-container .insta-grid {
     display: grid;
