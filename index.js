@@ -2954,8 +2954,11 @@ IMAGE_PROMPT: (comma-separated tags for image generation, under 80 words. If SEL
             const promptMatch = result.match(/IMAGE_PROMPT:\s*(.+?)$/s);
             if (promptMatch) imagePrompt = Utils.cleanResponse(promptMatch[1]).substring(0, 400);
             
-            let imageUrl = '';
-            let imageUrl = await this.generateSDImage(imagePrompt || defaultPrompt, imageType);
+            // 수정: 중복 선언 제거
+            const defaultPrompt = imageType === 'selfie' 
+                ? `${charName}, selfie, instagram photo, cute pose` 
+                : 'beautiful scenery, instagram photo';
+            const imageUrl = await this.generateSDImage(imagePrompt || defaultPrompt, imageType);
             
             if (!data.charPosts[charId]) data.charPosts[charId] = [];
             
@@ -3100,7 +3103,6 @@ Write only the prompt:`;
         const settings = PhoneCore.getSettings();
         const lang = settings.language || 'ko';
         
-        
         const lorebookChars = this.extractLorebookCharacters();
         
         const npcNames = [
@@ -3110,7 +3112,6 @@ Write only the prompt:`;
             'cherry_blossom', 'night_owl_99', 'coffee_lover_kr', 'travel_with_me', 'foodie_seoul'
         ];
         
-        
         const allCommenters = [...npcNames];
         lorebookChars.forEach(char => {
             const handle = char.toLowerCase().replace(/\s+/g, '_') + '_official';
@@ -3119,7 +3120,6 @@ Write only the prompt:`;
         
         const commentCount = Math.floor(Math.random() * 5) + 2; 
         const usedNames = new Set();
-        
         
         const generateContextualComment = async (commenterName, isLorebookChar) => {
             const prompt = `${getSystemInstruction()}
@@ -3161,7 +3161,6 @@ Write only the comment:`;
             
             usedNames.add(name);
             
-            
             const useAI = i < 2 || Utils.chance(50);
             let text;
             
@@ -3187,7 +3186,6 @@ Write only the comment:`;
         
         return comments;
     },
-    
     
     extractLorebookCharacters() {
         const ctx = getContext();
@@ -3234,7 +3232,6 @@ Write only the comment:`;
             return null;
         }
     },
-    
     
     render(charName) {
         return `
@@ -3400,10 +3397,8 @@ Write only the comment:`;
             return `<div class="empty-state">📸<br>아직 게시물이 없어요</div>`;
         }
         
-        
         let profilesHtml = `<div class="insta-profiles">`;
         
-       
         const userPostCount = data.userPosts?.length || 0;
         profilesHtml += `
             <div class="insta-profile" data-user="true">
@@ -3448,7 +3443,6 @@ Write only the comment:`;
         const ctx = getContext();
         const userName = ctx.name1 || 'User';
         const userAvatar = this.getUserAvatar();
-        
         
         let profileHtml = `
         <div class="insta-my-profile">
@@ -3595,17 +3589,16 @@ Write only the comment:`;
         </div>`;
     },
     
+    // 수정: loadUI 함수 완전히 다시 작성
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
         const charList = this.getCharacterList();
         
         this.state.currentView = 'feed';
         document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
-        document.getElementById('insta-settings-btn')?.addEventListener('click', () => {
-        document.getElementById('insta-content').innerHTML = this.renderSettings(data);
-        this.bindSettingsEvents(Core);
     },
 
+    // 수정: bindSettingsEvents를 별도 메서드로 분리
     bindSettingsEvents(Core) {
         const settings = Core.getSettings();
         const charId = Core.getCharId();
@@ -3640,6 +3633,12 @@ Write only the comment:`;
         const data = this.getData(settings, charId);
         const ctx = getContext();
         const charName = ctx.name2 || '캐릭터';
+        
+        // 수정: 설정 버튼 이벤트 추가
+        document.getElementById('insta-settings-btn')?.addEventListener('click', () => {
+            document.getElementById('insta-content').innerHTML = this.renderSettings(data);
+            this.bindSettingsEvents(Core);
+        });
         
         document.querySelectorAll('.insta-tab').forEach(tab => {
             tab.addEventListener('click', () => {
@@ -3708,14 +3707,12 @@ Write only the comment:`;
             });
         });
         
-        
         document.querySelector('.insta-profile[data-user="true"]')?.addEventListener('click', () => {
             document.querySelectorAll('.insta-tab').forEach(t => t.classList.remove('active'));
             document.querySelector('.insta-tab[data-tab="my"]')?.classList.add('active');
             document.getElementById('insta-content').innerHTML = this.renderMyPosts(data);
             this.bindGridEvents(Core);
         });
-        
         
         document.querySelectorAll('.insta-profile[data-char-id]').forEach(profile => {
             profile.addEventListener('click', () => {
@@ -3834,7 +3831,6 @@ Write only the comment:`;
             }
             
             if (isUser && post.comments.filter(c => !c.isUser).length === 0) {
-                
                 const charName = ctx.name2 || '캐릭터';
                 const charComment = await this.generateCharacterComment(post.caption, charName);
                 if (charComment) {
