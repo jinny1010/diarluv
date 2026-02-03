@@ -2772,9 +2772,61 @@ const InstaApp = {
             userPosts: [],      
             charPosts: {},     
             lastAutoPost: null, 
-            language: 'ko'
+            language: 'ko',
+            imageSettings: {
+                selfie: { source: 'default', style: 'default' },
+                scenery: { source: 'default', style: 'default' }
+            }
         };
+        
+        if (!settings.appData[key].imageSettings) {
+            settings.appData[key].imageSettings = {
+                selfie: { source: 'default', style: 'default' },
+                scenery: { source: 'default', style: 'default' }
+            };
+        }
         return settings.appData[key];
+    },
+
+    getSDExtensionInfo() {
+        try {
+            const sdSettings = window.extension_settings?.sd || {};
+            
+            const sourceOptions = [
+                { value: 'default', name: '⚙️ Default (현재 설정)' },
+                { value: 'pollinations', name: '🌸 Pollinations (무료)' },
+                { value: 'novel', name: '🎨 NovelAI' },
+                { value: 'horde', name: '🐴 Stable Horde' },
+                { value: 'auto', name: '🖥️ SD WebUI (A1111)' },
+                { value: 'comfy', name: '🔧 ComfyUI' },
+                { value: 'togetherai', name: '🤝 TogetherAI' },
+                { value: 'stability', name: '⚡ Stability AI' },
+                { value: 'openai', name: '🤖 OpenAI DALL-E' },
+            ];
+            
+            const styles = sdSettings.styles || [];
+            const styleOptions = [
+                { value: 'default', name: '⚙️ Default (현재 설정)' },
+                { value: 'none', name: '❌ 스타일 없음' },
+                ...styles.map((style, idx) => ({
+                    value: String(idx),
+                    name: style.name || `Style ${idx}`
+                }))
+            ];
+            
+            return { sourceOptions, styleOptions, currentSource: sdSettings.source, currentStyle: sdSettings.style };
+        } catch (e) {
+            console.error('[Insta] SD extension info error:', e);
+            return {
+                sourceOptions: [
+                    { value: 'default', name: '⚙️ Default' },
+                    { value: 'pollinations', name: '🌸 Pollinations' }
+                ],
+                styleOptions: [{ value: 'default', name: '⚙️ Default' }],
+                currentSource: 'novel',
+                currentStyle: 0
+            };
+        }
     },
     
     getCharacterAvatar(charId) {
@@ -3193,6 +3245,7 @@ Write only the comment:`;
         <div class="app-header">
             <button class="app-back-btn" data-back="home">◀</button>
             <span class="app-title">CHATSITARGRAM</span>
+            <button class="app-nav-btn" id="insta-settings-btn">⚙️</button>
             <button class="app-nav-btn" id="insta-upload-btn">➕</button>
         </div>
         <div class="insta-tabs">
@@ -3200,6 +3253,134 @@ Write only the comment:`;
             <button class="insta-tab" data-tab="my">내 게시물</button>
         </div>
         <div class="app-content" id="insta-content"></div>`;
+    },
+
+    renderSettings(data) {
+        const sdInfo = this.getSDExtensionInfo();
+        const imgSettings = data.imageSettings || {
+            selfie: { source: 'default', style: 'default' },
+            scenery: { source: 'default', style: 'default' }
+        };
+        
+        const renderSelect = (id, options, selected) => {
+            return `<select id="${id}" class="insta-settings-select">
+                ${options.map(opt => 
+                    `<option value="${opt.value}" ${opt.value === selected ? 'selected' : ''}>${opt.name}</option>`
+                ).join('')}
+            </select>`;
+        };
+        
+        return `
+        <div class="insta-settings">
+            <div class="insta-settings-header">
+                <button class="app-back-btn" id="insta-settings-back">◀</button>
+                <span>이미지 생성 설정</span>
+            </div>
+            
+            <div class="card" style="margin:10px;">
+                <div class="card-label">👤 인물 (셀피)</div>
+                <div class="insta-settings-row">
+                    <label>Source</label>
+                    ${renderSelect('insta-selfie-source', sdInfo.sourceOptions, imgSettings.selfie.source)}
+                </div>
+                <div class="insta-settings-row">
+                    <label>Style</label>
+                    ${renderSelect('insta-selfie-style', sdInfo.styleOptions, imgSettings.selfie.style)}
+                </div>
+                <div class="insta-settings-desc">
+                    Default = NovelAI (현재 SD 확장 설정 사용)
+                </div>
+            </div>
+            
+            <div class="card" style="margin:10px;">
+                <div class="card-label">🏞️ 인물 외 (풍경/음식 등)</div>
+                <div class="insta-settings-row">
+                    <label>Source</label>
+                    ${renderSelect('insta-scenery-source', sdInfo.sourceOptions, imgSettings.scenery.source)}
+                </div>
+                <div class="insta-settings-row">
+                    <label>Style</label>
+                    ${renderSelect('insta-scenery-style', sdInfo.styleOptions, imgSettings.scenery.style)}
+                </div>
+                <div class="insta-settings-desc">
+                    Default = Pollinations (무료 API)
+                </div>
+            </div>
+            
+            <div class="card" style="margin:10px;background:rgba(255,107,157,0.1);">
+                <div class="card-label">ℹ️ 현재 SD 확장 설정</div>
+                <div style="font-size:12px;opacity:0.8;">
+                    Source: ${sdInfo.currentSource || 'unknown'}<br>
+                    Style: ${sdInfo.currentStyle ?? 'none'}
+                </div>
+            </div>
+            
+            <button class="btn-primary" id="insta-settings-save" style="margin:10px;width:calc(100% - 20px);">💾 저장</button>
+        </div>`;
+    },
+
+    async generateSDImage(prompt, imageType = 'selfie') {
+        const settings = PhoneCore.getSettings();
+        const charId = PhoneCore.getCharId();
+        const data = this.getData(settings, charId);
+        const imgSettings = data.imageSettings?.[imageType] || { source: 'default', style: 'default' };
+        
+        if (imgSettings.source === 'default' && imageType === 'scenery') {
+            return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true`;
+        }
+        
+        if (imgSettings.source === 'pollinations') {
+            return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&model=flux`;
+        }
+        
+        const retries = 2;
+        for (let i = 0; i <= retries; i++) {
+            try {
+                const { SlashCommandParser } = await import('../../../slash-commands/SlashCommandParser.js');
+                
+                if (!SlashCommandParser.commands['sd']) {
+                    console.log('[Insta] SD command not ready, waiting...');
+                    await new Promise(r => setTimeout(r, 500));
+                    continue;
+                }
+                
+                let originalSource = null;
+                let originalStyle = null;
+                const sdSettings = window.extension_settings?.sd;
+                
+                if (sdSettings && imgSettings.source !== 'default') {
+                    originalSource = sdSettings.source;
+                    sdSettings.source = imgSettings.source;
+                    console.log(`[Insta] Switched SD source: ${originalSource} → ${imgSettings.source}`);
+                }
+                
+                if (sdSettings && imgSettings.style !== 'default' && imgSettings.style !== 'none') {
+                    originalStyle = sdSettings.style;
+                    sdSettings.style = parseInt(imgSettings.style);
+                    console.log(`[Insta] Switched SD style: ${originalStyle} → ${imgSettings.style}`);
+                }
+                
+                const result = await SlashCommandParser.commands['sd'].callback(
+                    { quiet: 'true' },
+                    prompt
+                );
+                
+                if (originalSource !== null && sdSettings) {
+                    sdSettings.source = originalSource;
+                }
+                if (originalStyle !== null && sdSettings) {
+                    sdSettings.style = originalStyle;
+                }
+                
+                if (result) return result;
+            } catch (e) {
+                console.error(`[Insta] SD attempt ${i+1} failed:`, e);
+                if (i < retries) await new Promise(r => setTimeout(r, 300));
+            }
+        }
+        
+        console.log('[Insta] SD failed, using Pollinations fallback');
+        return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&model=flux`;
     },
     
     renderFeed(data, charList) {
@@ -3424,6 +3605,33 @@ Write only the comment:`;
         
         this.state.currentView = 'feed';
         document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
+    },
+
+    bindSettingsEvents(Core) {
+        const settings = Core.getSettings();
+        const charId = Core.getCharId();
+        const data = this.getData(settings, charId);
+        const charList = this.getCharacterList();
+        
+        document.getElementById('insta-settings-back')?.addEventListener('click', () => {
+            document.getElementById('insta-content').innerHTML = this.renderFeed(data, charList);
+            this.bindGridEvents(Core);
+        });
+        
+        document.getElementById('insta-settings-save')?.addEventListener('click', () => {
+            data.imageSettings = {
+                selfie: {
+                    source: document.getElementById('insta-selfie-source').value,
+                    style: document.getElementById('insta-selfie-style').value
+                },
+                scenery: {
+                    source: document.getElementById('insta-scenery-source').value,
+                    style: document.getElementById('insta-scenery-style').value
+                }
+            };
+            Core.saveSettings();
+            toastr.success('⚙️ 이미지 설정 저장됨!');
+        });
     },
     
     bindEvents(Core) {
