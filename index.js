@@ -2790,76 +2790,53 @@ const InstaApp = {
 
     getSDExtensionInfo() {
         try {
-            const sdSettings = window.extension_settings?.sd || {};
+            const sdSourceEl = document.getElementById('sd_source');
+            const sdStyleEl = document.getElementById('sd_style');
             
-            // 실제 SD 확장의 source 목록 (스크린샷 기준)
-            const sourceOptions = [
-                { value: 'default', name: '⚙️ Default (현재 설정)' },
-                { value: 'pollinations', name: '🌸 Pollinations (무료)' },
-                { value: 'novel', name: '🎨 NovelAI Diffusion' },
-                { value: 'aimlapi', name: '🤖 AI/ML API' },
-                { value: 'bfl', name: '🖼️ BFL (Black Forest Labs)' },
-                { value: 'comfy', name: '🔧 ComfyUI' },
-                { value: 'drawthings', name: '✏️ DrawThings HTTP API' },
-                { value: 'electronhub', name: '⚡ Electron Hub' },
-                { value: 'extras', name: '📦 Extras API (deprecated)' },
-                { value: 'falai', name: '🎯 FAL.AI' },
-                { value: 'google', name: '🔵 Google AI' },
-                { value: 'huggingface', name: '🤗 HuggingFace Inference API' },
-                { value: 'nanogpt', name: '🍌 NanoGPT' },
-                { value: 'openai', name: '🟢 OpenAI' },
-                { value: 'sdnext', name: '⏭️ SD.Next (vladmandic)' },
-                { value: 'stability', name: '⚡ Stability AI' },
-                { value: 'horde', name: '🐴 Stable Horde' },
-                { value: 'auto', name: '🖥️ Stable Diffusion Web UI (A1111)' },
-                { value: 'togetherai', name: '🤝 TogetherAI' },
-                { value: 'xai', name: '❌ xAI (Grok)' },
+            let sourceOptions = [
+                { value: 'default', name: '⚙️ Default (현재 설정)' }
             ];
             
-            // Style 목록 가져오기 - 더 안전하게
-            let styleOptions = [
-                { value: 'default', name: '⚙️ Default (현재 설정)' },
-                { value: 'none', name: '❌ 스타일 없음' },
-            ];
-            
-            // SD 확장의 styles 배열 확인
-            const styles = sdSettings.styles;
-            if (styles && Array.isArray(styles) && styles.length > 0) {
-                styles.forEach((style, idx) => {
-                    const styleName = typeof style === 'object' ? (style.name || `Style ${idx}`) : String(style);
-                    styleOptions.push({
-                        value: String(idx),
-                        name: styleName
-                    });
+            if (sdSourceEl) {
+                [...sdSourceEl.options].forEach(opt => {
+                    sourceOptions.push({ value: opt.value, name: opt.text });
                 });
+            } else {
+                sourceOptions.push(
+                    { value: 'novel', name: 'NovelAI Diffusion' },
+                    { value: 'nanogpt', name: 'NanoGPT' },
+                    { value: 'pollinations', name: 'Pollinations' }
+                );
             }
             
-            // 현재 설정값
-            const currentSource = sdSettings.source || 'unknown';
-            const currentStyle = sdSettings.style ?? 'none';
+            let styleOptions = [
+                { value: 'default', name: '⚙️ Default (현재 설정)' }
+            ];
+            
+            if (sdStyleEl) {
+                [...sdStyleEl.options].forEach(opt => {
+                    styleOptions.push({ value: opt.value, name: opt.text });
+                });
+            }
             
             return { 
                 sourceOptions, 
                 styleOptions, 
-                currentSource, 
-                currentStyle 
+                currentSource: sdSourceEl?.value || 'novel',
+                currentStyle: sdStyleEl?.value || 'Default'
             };
         } catch (e) {
-            console.error('[Insta] SD extension info error:', e);
+            console.error('[Insta] SD info error:', e);
             return {
                 sourceOptions: [
                     { value: 'default', name: '⚙️ Default' },
-                    { value: 'pollinations', name: '🌸 Pollinations' },
-                    { value: 'novel', name: '🎨 NovelAI' },
-                    { value: 'google', name: '🔵 Google AI' },
-                    { value: 'nanogpt', name: '🍌 NanoGPT' },
+                    { value: 'novel', name: 'NovelAI' },
+                    { value: 'nanogpt', name: 'NanoGPT' },
+                    { value: 'pollinations', name: 'Pollinations' }
                 ],
-                styleOptions: [
-                    { value: 'default', name: '⚙️ Default' },
-                    { value: 'none', name: '❌ 스타일 없음' }
-                ],
-                currentSource: 'unknown',
-                currentStyle: 'none'
+                styleOptions: [{ value: 'default', name: '⚙️ Default' }],
+                currentSource: 'novel',
+                currentStyle: 'Default'
             };
         }
     },
