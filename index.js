@@ -3290,24 +3290,13 @@ Write only the comment:`;
             scenery: { source: 'default', style: 'default' }
         };
         
-        const renderCustomSelect = (id, options, selected) => {
-            const selectedOption = options.find(o => o.value === selected) || options[0];
-            return `
-            <div class="custom-select-wrapper" data-id="${id}">
-                <div class="custom-select-trigger" data-id="${id}">
-                    <span class="custom-select-value">${selectedOption.name}</span>
-                    <span class="custom-select-arrow">▼</span>
-                </div>
-                <div class="custom-select-options" data-id="${id}" style="display:none;">
-                    ${options.map(opt => `
-                        <div class="custom-select-option ${opt.value === selected ? 'selected' : ''}" 
-                             data-value="${opt.value}" data-id="${id}">
-                            ${opt.name}
-                        </div>
-                    `).join('')}
-                </div>
-                <input type="hidden" id="${id}" value="${selected}">
-            </div>`;
+        // renderSelect 함수 정의
+        const renderSelect = (id, options, selected) => {
+            return `<select id="${id}" class="insta-settings-select">
+                ${options.map(opt => 
+                    `<option value="${opt.value}" ${opt.value === selected ? 'selected' : ''}>${opt.name}</option>`
+                ).join('')}
+            </select>`;
         };
         
         return `
@@ -3319,39 +3308,35 @@ Write only the comment:`;
             
             <div class="card" style="margin:10px;">
                 <div class="card-label">👤 인물 (셀피)</div>
-                <div class="insta-settings-row" style="margin:8px 0;">
-                    <label style="display:block;margin-bottom:4px;font-size:12px;opacity:0.8;">Source</label>
+                <div class="insta-settings-row">
+                    <label>Source</label>
                     ${renderSelect('insta-selfie-source', sdInfo.sourceOptions, imgSettings.selfie.source)}
                 </div>
-                <div class="insta-settings-row" style="margin:8px 0;">
-                    <label style="display:block;margin-bottom:4px;font-size:12px;opacity:0.8;">Style</label>
+                <div class="insta-settings-row">
+                    <label>Style</label>
                     ${renderSelect('insta-selfie-style', sdInfo.styleOptions, imgSettings.selfie.style)}
                 </div>
-                <div class="insta-settings-desc" style="font-size:11px;opacity:0.6;margin-top:8px;">
-                    Default = NovelAI (현재 SD 확장 설정 사용)
-                </div>
+                <div class="insta-settings-desc">Default = 현재 SD 확장 설정 사용</div>
             </div>
             
             <div class="card" style="margin:10px;">
                 <div class="card-label">🏞️ 인물 외 (풍경/음식 등)</div>
-                <div class="insta-settings-row" style="margin:8px 0;">
-                    <label style="display:block;margin-bottom:4px;font-size:12px;opacity:0.8;">Source</label>
+                <div class="insta-settings-row">
+                    <label>Source</label>
                     ${renderSelect('insta-scenery-source', sdInfo.sourceOptions, imgSettings.scenery.source)}
                 </div>
-                <div class="insta-settings-row" style="margin:8px 0;">
-                    <label style="display:block;margin-bottom:4px;font-size:12px;opacity:0.8;">Style</label>
+                <div class="insta-settings-row">
+                    <label>Style</label>
                     ${renderSelect('insta-scenery-style', sdInfo.styleOptions, imgSettings.scenery.style)}
                 </div>
-                <div class="insta-settings-desc" style="font-size:11px;opacity:0.6;margin-top:8px;">
-                    Default = Pollinations (무료 API)
-                </div>
+                <div class="insta-settings-desc">Default = Pollinations (무료 API)</div>
             </div>
             
             <div class="card" style="margin:10px;background:rgba(255,107,157,0.1);">
                 <div class="card-label">ℹ️ 현재 SD 확장 설정</div>
                 <div style="font-size:12px;opacity:0.8;">
                     Source: ${sdInfo.currentSource || 'unknown'}<br>
-                    Style: ${sdInfo.currentStyle ?? 'none'}
+                    Style: ${sdInfo.currentStyle || 'none'}
                 </div>
             </div>
             
