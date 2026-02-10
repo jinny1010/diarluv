@@ -72,6 +72,55 @@ const DataManager = {
         }
         return this.cache;
     },
+
+    migrateToAvatarKeys() {
+        const settings = this.get();
+        if (settings._migratedToAvatarKeys) return;
+
+        const ctx = getContext();
+        const characters = ctx.characters || [];
+        if (characters.length === 0) return;
+
+        const prefixes = ['mundap_', 'message_', 'letter_', 'book_', 'movie_', 'diary_', 'settings_', 'dday_', 'insta_', 'sumone_'];
+
+        const indexToAvatar = {};
+        characters.forEach((char, idx) => {
+            if (char?.avatar) {
+                indexToAvatar[idx] = char.avatar.replace(/\.[^/.]+$/, '');
+            }
+        });
+
+        if (!settings.appData) settings.appData = {};
+        for (const [oldIdx, newId] of Object.entries(indexToAvatar)) {
+            for (const prefix of prefixes) {
+                const oldKey = `${prefix}${oldIdx}`;
+                const newKey = `${prefix}${newId}`;
+                if (settings.appData[oldKey] && !settings.appData[newKey]) {
+                    settings.appData[newKey] = settings.appData[oldKey];
+                    delete settings.appData[oldKey];
+                    console.log(`[Phone] Migrated appData: ${oldKey} -> ${newKey}`);
+                }
+            }
+        }
+
+        const migrateMap = (obj) => {
+            if (!obj) return;
+            for (const [oldIdx, newId] of Object.entries(indexToAvatar)) {
+                if (obj[oldIdx] !== undefined && obj[newId] === undefined) {
+                    obj[newId] = obj[oldIdx];
+                    delete obj[oldIdx];
+                    console.log(`[Phone] Migrated key: ${oldIdx} -> ${newId}`);
+                }
+            }
+        };
+        migrateMap(settings.wallpapers);
+        migrateMap(settings.themeColors);
+        migrateMap(settings.enabledApps);
+
+        settings._migratedToAvatarKeys = true;
+        this.save();
+        console.log('[Phone] Migration to avatar-based keys complete');
+    },
 };
 
 // ========================================
@@ -2865,7 +2914,7 @@ const InstaApp = {
                 return group.members.map(memberId => {
                     const char = ctx.characters?.[memberId];
                     return char ? {
-                        id: memberId,
+                        id: char.avatar ? char.avatar.replace(/\.[^/.]+$/, '') : `idx_${memberId}`,
                         name: char.name,
                         avatar: char.avatar ? `/characters/${char.avatar}` : ''
                     } : null;
@@ -2874,7 +2923,7 @@ const InstaApp = {
         }
         const char = ctx.characters?.[ctx.characterId];
         return char ? [{
-            id: ctx.characterId,
+            id: char.avatar ? char.avatar.replace(/\.[^/.]+$/, '') : `idx_${ctx.characterId}`,
             name: char.name,
             avatar: char.avatar ? `/characters/${char.avatar}` : ''
         }] : [];
@@ -3904,7 +3953,7 @@ Write only the comment:`;
                         id: Utils.generateId(),
                         text: charComment,
                         isUser: false,
-                        charId: ctx.characterId,
+                        charId: Core.getCharId(),
                         charName: charName,
                         timestamp: Date.now()
                     });
@@ -3995,7 +4044,7 @@ ${lang === 'ko' ? 'Write all comments in Korean.' : 'Write in English.'}`;
                         id: Utils.generateId(),
                         text: Utils.cleanResponse(charMatch[1]).substring(0, 100),
                         isUser: false,
-                        charId: ctx.characterId,
+                        charId: Core.getCharId(),
                         charName: charName,
                         timestamp: Date.now()
                     });
@@ -4069,7 +4118,7 @@ ${lang === 'ko' ? 'Write all comments in Korean.' : 'Write in English.'}`;
         
         const ctx = getContext();
         const charName = ctx.name2 || '캐릭터';
-        const charId = ctx.characterId;
+        const charId = PhoneCore.getCharId();
         const settings = PhoneCore.getSettings();
         
         this.state.isGenerating = true;
@@ -4121,7 +4170,14 @@ const PhoneCore = {
     saveSettings() {
         DataManager.save();
     },
-    getCharId() { const ctx = getContext(); return ctx.characterId ?? ctx.groupId ?? 'default'; },
+    getCharId() {
+        const ctx = getContext();
+        if (ctx.groupId) return ctx.groupId;
+        const char = ctx.characters?.[ctx.characterId];
+        if (char?.avatar) return char.avatar.replace(/\.[^/.]+$/, '');
+        if (ctx.characterId !== undefined) return `idx_${ctx.characterId}`;
+        return 'default';
+    },
     getWallpaper() { return this.getSettings().wallpapers?.[this.getCharId()] || ''; },
     setWallpaper(url) {
         const s = this.getSettings();
@@ -4367,6 +4423,7 @@ const PhoneCore = {
         this.setupEvents();
         setTimeout(() => this.addMenuButton(), 1000);
         eventSource.on(event_types.CHAT_CHANGED, () => {
+            DataManager.migrateToAvatarKeys();
             this.applyWallpaper();
         });
 
