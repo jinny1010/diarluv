@@ -2339,7 +2339,7 @@ const SettingsApp = {
         </div>
         <div class="app-content" id="settings-content"></div>
         <div id="settings-reset-modal" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:100;align-items:center;justify-content:center;">
-            <div style="background:#2a2a2a;padding:20px;border-radius:12px;max-width:320px;width:90%;">
+            <div style="background:#2a2a2a;padding:20px;border-radius:12px;max-width:320px;width:90%;color:#fff;">
                 <div style="font-size:16px;font-weight:bold;margin-bottom:15px;">🗑️ 앱 데이터 초기화</div>
                 <div style="font-size:12px;color:#aaa;margin-bottom:15px;">초기화할 앱을 선택하세요. 선택한 앱의 대화/기록이 모두 삭제됩니다.</div>
                 <div id="settings-reset-app-list" style="max-height:250px;overflow-y:auto;"></div>
