@@ -4374,6 +4374,20 @@ const PhoneCore = {
                             </label>
                         </div>
                     </div>
+                    <div style="margin:15px 0;"><b>데이터 초기화</b> <small>(현재 캐릭터)</small>
+                        <button id="phone-reset-btn" class="menu_button" style="width:100%;margin-top:5px;">🗑️ 앱 데이터 초기화</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="phone-reset-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10001;align-items:center;justify-content:center;">
+            <div style="background:#2a2a2a;padding:20px;border-radius:12px;max-width:320px;width:90%;">
+                <div style="font-size:16px;font-weight:bold;margin-bottom:15px;">🗑️ 앱 데이터 초기화</div>
+                <div style="font-size:12px;color:#aaa;margin-bottom:15px;">초기화할 앱을 선택하세요. 선택한 앱의 대화/기록이 모두 삭제됩니다.</div>
+                <div id="phone-reset-app-list" style="max-height:250px;overflow-y:auto;"></div>
+                <div style="display:flex;gap:10px;margin-top:15px;">
+                    <button id="phone-reset-cancel" class="menu_button" style="flex:1;">취소</button>
+                    <button id="phone-reset-confirm" class="menu_button" style="flex:1;background:#e74c3c;">삭제</button>
                 </div>
             </div>
         </div>`;
@@ -4402,6 +4416,86 @@ const PhoneCore = {
             s.msgLanguage = this.value;
             PhoneCore.saveSettings();
             toastr.success(this.value === 'ko' ? '문자: 한국어' : 'Message: English');
+        });
+
+        // Reset button events
+        $('#phone-reset-btn').on('click', () => {
+            const charId = PhoneCore.getCharId();
+            const ctx = getContext();
+            if (ctx.characterId === undefined && !ctx.groupId) {
+                toastr.warning('먼저 캐릭터를 선택해주세요.');
+                return;
+            }
+            
+            const appInfo = {
+                mundap: { name: '문답', icon: '💕', prefix: 'mundap_' },
+                message: { name: '메시지', icon: '💬', prefix: 'message_' },
+                letter: { name: '편지', icon: '💌', prefix: 'letter_' },
+                book: { name: '책', icon: '📚', prefix: 'book_' },
+                movie: { name: '영화', icon: '🎬', prefix: 'movie_' },
+                diary: { name: '일기', icon: '📔', prefix: 'diary_' },
+                dday: { name: '디데이', icon: '📅', prefix: 'dday_' },
+                insta: { name: '챗시타그램', icon: '📸', prefix: 'insta_' }
+            };
+            
+            const settings = PhoneCore.getSettings();
+            let listHtml = '';
+            for (const [id, info] of Object.entries(appInfo)) {
+                const dataKey = `${info.prefix}${charId}`;
+                const hasData = settings.appData && settings.appData[dataKey];
+                listHtml += `
+                    <label style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px;cursor:pointer;${hasData ? '' : 'opacity:0.5;'}">
+                        <input type="checkbox" class="phone-reset-checkbox" data-app="${id}" data-prefix="${info.prefix}" ${hasData ? '' : 'disabled'}>
+                        <span>${info.icon} ${info.name}</span>
+                        ${hasData ? '<span style="font-size:10px;color:#888;margin-left:auto;">데이터 있음</span>' : '<span style="font-size:10px;color:#666;margin-left:auto;">데이터 없음</span>'}
+                    </label>
+                `;
+            }
+            
+            $('#phone-reset-app-list').html(listHtml);
+            $('#phone-reset-modal').css('display', 'flex');
+        });
+        
+        $('#phone-reset-cancel').on('click', () => {
+            $('#phone-reset-modal').hide();
+        });
+        
+        $('#phone-reset-modal').on('click', function(e) {
+            if (e.target === this) {
+                $(this).hide();
+            }
+        });
+        
+        $('#phone-reset-confirm').on('click', () => {
+            const charId = PhoneCore.getCharId();
+            const settings = PhoneCore.getSettings();
+            const selectedApps = [];
+            
+            $('.phone-reset-checkbox:checked').each(function() {
+                const prefix = $(this).data('prefix');
+                const appName = $(this).closest('label').find('span').first().text();
+                selectedApps.push({ prefix, appName });
+            });
+            
+            if (selectedApps.length === 0) {
+                toastr.warning('삭제할 앱을 선택해주세요.');
+                return;
+            }
+            
+            let deletedCount = 0;
+            for (const { prefix } of selectedApps) {
+                const dataKey = `${prefix}${charId}`;
+                if (settings.appData && settings.appData[dataKey]) {
+                    delete settings.appData[dataKey];
+                    deletedCount++;
+                }
+            }
+            
+            PhoneCore.saveSettings();
+            $('#phone-reset-modal').hide();
+            
+            const appNames = selectedApps.map(a => a.appName).join(', ');
+            toastr.success(`${appNames} 데이터가 초기화되었습니다.`);
         });
     },
     
