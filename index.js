@@ -3015,7 +3015,6 @@ IMAGE_PROMPT: (comma-separated tags for image generation, under 80 words. If SEL
             const promptMatch = result.match(/IMAGE_PROMPT:\s*(.+?)$/s);
             if (promptMatch) imagePrompt = Utils.cleanResponse(promptMatch[1]).substring(0, 400);
             
-            // 수정: 중복 선언 제거
             const defaultPrompt = imageType === 'selfie' 
                 ? `${charName}, selfie, instagram photo, cute pose` 
                 : 'beautiful scenery, instagram photo';
@@ -3316,7 +3315,6 @@ Write only the comment:`;
             scenery: { source: 'default', style: 'default' }
         };
         
-        // renderSelect 함수 정의
         const renderSelect = (id, options, selected) => {
             return `<select id="${id}" class="insta-settings-select">
                 ${options.map(opt => 
@@ -3376,17 +3374,14 @@ Write only the comment:`;
         const data = this.getData(settings, charId);
         const imgSettings = data.imageSettings?.[imageType] || { source: 'default', style: 'default' };
         
-        // Pollinations 직접 사용
         if (imgSettings.source === 'pollinations') {
             return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&model=flux`;
         }
         
-        // default이고 scenery면 Pollinations
         if (imgSettings.source === 'default' && imageType === 'scenery') {
             return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true`;
         }
         
-        // SD 확장 사용
         const retries = 2;
         for (let i = 0; i <= retries; i++) {
             try {
@@ -3397,34 +3392,29 @@ Write only the comment:`;
                     continue;
                 }
                 
-                // DOM에서 원래 값 저장
                 const sdSourceEl = document.getElementById('sd_source');
                 const sdStyleEl = document.getElementById('sd_style');
                 
                 const originalSource = sdSourceEl?.value;
                 const originalStyle = sdStyleEl?.value;
                 
-                // source 변경 (default 아닐 때만)
                 if (imgSettings.source !== 'default' && sdSourceEl) {
                     sdSourceEl.value = imgSettings.source;
                     sdSourceEl.dispatchEvent(new Event('change'));
                     await new Promise(r => setTimeout(r, 100));
                 }
                 
-                // style 변경 (default 아닐 때만)
                 if (imgSettings.style !== 'default' && sdStyleEl) {
                     sdStyleEl.value = imgSettings.style;
                     sdStyleEl.dispatchEvent(new Event('change'));
                     await new Promise(r => setTimeout(r, 100));
                 }
                 
-                // 이미지 생성
                 const result = await SlashCommandParser.commands['sd'].callback(
                     { quiet: 'true' },
                     prompt
                 );
                 
-                // 원래 값 복구
                 if (originalSource && sdSourceEl && imgSettings.source !== 'default') {
                     sdSourceEl.value = originalSource;
                     sdSourceEl.dispatchEvent(new Event('change'));
@@ -3441,7 +3431,6 @@ Write only the comment:`;
             }
         }
         
-        // 실패시 Pollinations fallback
         return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&model=flux`;
     },
     
@@ -3658,7 +3647,6 @@ Write only the comment:`;
         </div>`;
     },
     
-    // 수정: loadUI 함수 완전히 다시 작성
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
         const charList = this.getCharacterList();
@@ -3673,45 +3661,36 @@ Write only the comment:`;
         const data = this.getData(settings, charId);
         const charList = this.getCharacterList();
         
-        // 커스텀 셀렉트 토글
         document.querySelectorAll('.custom-select-trigger').forEach(trigger => {
             trigger.addEventListener('click', (e) => {
                 const id = trigger.dataset.id;
                 const options = document.querySelector(`.custom-select-options[data-id="${id}"]`);
                 
-                // 다른 드롭다운 닫기
                 document.querySelectorAll('.custom-select-options').forEach(opt => {
                     if (opt.dataset.id !== id) opt.style.display = 'none';
                 });
                 
-                // 현재 드롭다운 토글
                 options.style.display = options.style.display === 'none' ? 'block' : 'none';
             });
         });
         
-        // 옵션 선택
         document.querySelectorAll('.custom-select-option').forEach(option => {
             option.addEventListener('click', (e) => {
                 const id = option.dataset.id;
                 const value = option.dataset.value;
                 const wrapper = option.closest('.custom-select-wrapper');
                 
-                // hidden input 업데이트
                 wrapper.querySelector('input[type="hidden"]').value = value;
                 
-                // 표시 텍스트 업데이트
                 wrapper.querySelector('.custom-select-value').textContent = option.textContent.trim();
                 
-                // selected 클래스 업데이트
                 wrapper.querySelectorAll('.custom-select-option').forEach(opt => opt.classList.remove('selected'));
                 option.classList.add('selected');
                 
-                // 드롭다운 닫기
                 wrapper.querySelector('.custom-select-options').style.display = 'none';
             });
         });
         
-        // 바깥 클릭시 닫기
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.custom-select-wrapper')) {
                 document.querySelectorAll('.custom-select-options').forEach(opt => {
@@ -3749,7 +3728,6 @@ Write only the comment:`;
         const ctx = getContext();
         const charName = ctx.name2 || '캐릭터';
         
-        // 수정: 설정 버튼 이벤트 추가
         document.getElementById('insta-settings-btn')?.addEventListener('click', () => {
             document.getElementById('insta-content').innerHTML = this.renderSettings(data);
             this.bindSettingsEvents(Core);
@@ -4418,7 +4396,6 @@ const PhoneCore = {
             toastr.success(this.value === 'ko' ? '문자: 한국어' : 'Message: English');
         });
 
-        // Reset button events
         $('#phone-reset-btn').on('click', () => {
             const charId = PhoneCore.getCharId();
             const ctx = getContext();
