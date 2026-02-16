@@ -41,7 +41,7 @@
 
 /* Screen */
 .phone-container .phone-screen { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
-.phone-container .phone-page { display: none; height: 100%; flex-direction: column; background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%); overflow: hidden; }
+.phone-container .phone-page { display: none; height: 100%; flex-direction: column; background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%); overflow: hidden; position: relative; }
 .phone-container .phone-page.active { display: flex; }
 .phone-container .phone-page[data-page="home"] { background-size: cover; background-position: center; }
 
