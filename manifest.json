@@ -1,12 +1,12 @@
 {
-    "display_name": "폰 (Phone)",
+    "display_name": "Chatsy Phone",
     "loading_order": 10,
     "requires": [],
     "optional": [],
     "js": "index.js",
     "css": "style.css",
     "author": "Custom",
-    "version": "2.2.0",
+    "version": "2.6.0",
     "homePage": "",
     "auto_update": false
 }

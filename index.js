@@ -1,8 +1,8 @@
-import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
+import { saveSettingsDebounced, eventSource, event_types, getRequestHeaders } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 
-const extensionName = 'sumone-phone';
+const extensionName = 'chatsy-phone';
 const extensionFolderPath = `scripts/extensions/third_party/${extensionName}`;
 const getContext = () => SillyTavern.getContext(); 
 
@@ -36,20 +36,132 @@ const DEFAULT_COLOR = '#ff6b9d';
 const DataManager = {
     cache: null,
     saveTimeout: null,
+    FILE_NAME: 'chatsy-phone-data.json',
+    
+    async _saveFile(name, data) {
+        try {
+            const jsonStr = typeof data === 'string' ? data : JSON.stringify(data);
+            const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
+            const resp = await fetch('/api/files/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...getRequestHeaders() },
+                body: JSON.stringify({ name, data: b64 })
+            });
+            if (!resp.ok) throw new Error(`${resp.status}`);
+            console.log(`[Phone] File saved: ${name}`);
+            return true;
+        } catch (e) {
+            console.error(`[Phone] File save failed: ${name}`, e);
+            return false;
+        }
+    },
+    
+    async _loadFile(name) {
+        try {
+            const resp = await fetch(`/user/files/${name}`, { method: 'GET', cache: 'no-store' });
+            if (!resp.ok) return null;
+            const text = await resp.text();
+            return JSON.parse(text);
+        } catch (e) {
+            return null;
+        }
+    },
+    
+    async _deleteFile(name) {
+        try {
+            await fetch('/api/files/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...getRequestHeaders() },
+                body: JSON.stringify({ path: `/user/files/${name}` })
+            });
+        } catch (e) { /* ignore */ }
+    },
     
     async load() {
         if (this.cache) return this.cache;
         
-        if (extension_settings[extensionName]) {
-            this.cache = extension_settings[extensionName];
-            console.log('[Phone] Data loaded from extension_settings');
+        // 1) Try loading from file API
+        let fileData = await this._loadFile(this.FILE_NAME);
+        if (fileData) {
+            this.cache = fileData;
+            console.log('[Phone] Data loaded from file API');
             return this.cache;
         }
         
+        // 2) Migrate from settings.json via API
+        try {
+            const resp = await fetch('/api/settings/get', {
+                method: 'POST',
+                headers: getRequestHeaders()
+            });
+            if (resp.ok) {
+                const raw = await resp.json();
+                // settings.json returns { settings: "JSON string", ... }
+                const parsed = typeof raw.settings === 'string' ? JSON.parse(raw.settings) : raw;
+                const ext = parsed?.extension_settings || {};
+                
+                const source = (ext['sumone-phone'] && !ext['sumone-phone']._movedToFile && ext['sumone-phone'].appData)
+                    ? ext['sumone-phone']
+                    : (ext[extensionName] && !ext[extensionName]._movedToFile && ext[extensionName].appData)
+                        ? ext[extensionName]
+                        : null;
+                
+                if (source) {
+                    console.log(`[Phone] Found data in settings.json (${(JSON.stringify(source).length/1024).toFixed(1)}KB), migrating...`);
+                    this.cache = source;
+                    this._compactLikes(this.cache);
+                    await this._doSave();
+                    
+                    // Verify save worked
+                    const verify = await this._loadFile(this.FILE_NAME);
+                    if (verify) {
+                        // Clear from settings.json
+                        try {
+                            if (extension_settings['sumone-phone']) extension_settings['sumone-phone'] = { _movedToFile: true };
+                            if (extension_settings[extensionName]) extension_settings[extensionName] = { _movedToFile: true };
+                            saveSettingsDebounced();
+                        } catch(e) {
+                            console.warn('[Phone] Could not auto-clear settings.json. Run manual cleanup.');
+                        }
+                        console.log('[Phone] Migration complete!');
+                        return this.cache;
+                    } else {
+                        console.error('[Phone] Migration save verification failed!');
+                    }
+                }
+            }
+        } catch(e) {
+            console.error('[Phone] Migration check failed:', e);
+        }
+        
+        // 3) New data
         this.cache = { enabledApps: {}, wallpapers: {}, themeColors: {}, appData: {} };
-        extension_settings[extensionName] = this.cache;
         console.log('[Phone] Created new data');
         return this.cache;
+    },
+    
+    _compactLikes(data) {
+        if (!data?.appData) return;
+        let count = 0;
+        for (const [key, appData] of Object.entries(data.appData)) {
+            if (!key.startsWith('insta_') || !appData) continue;
+            const fixPosts = (posts) => {
+                if (!Array.isArray(posts)) return;
+                for (const post of posts) {
+                    if (Array.isArray(post.likes)) {
+                        const userLiked = post.likes.includes('user');
+                        const charLiked = post.likes.includes('char');
+                        post.likes = { count: post.likes.length, userLiked, charLiked };
+                        count++;
+                    }
+                }
+            };
+            fixPosts(appData.userPosts);
+            if (appData.charPosts) {
+                for (const posts of Object.values(appData.charPosts)) fixPosts(posts);
+            }
+        }
+        if (count > 0) console.log(`[Phone] Compacted ${count} likes arrays`);
     },
     
     save() {
@@ -57,18 +169,19 @@ const DataManager = {
         this.saveTimeout = setTimeout(() => this._doSave(), 1000);
     },
     
-    _doSave() {
+    async _doSave() {
         if (!this.cache) return;
-        
-        extension_settings[extensionName] = this.cache;
-        saveSettingsDebounced();
-        console.log('[Phone] Data saved to extension_settings');
+        await this._saveFile(this.FILE_NAME, this.cache);
     },
     
     get() {
         if (!this.cache) {
-            this.cache = extension_settings[extensionName] || { enabledApps: {}, wallpapers: {}, themeColors: {}, appData: {} };
-            extension_settings[extensionName] = this.cache;
+            // Sync fallback - should not normally happen after load()
+            if (extension_settings[extensionName] && !extension_settings[extensionName]._movedToFile) {
+                this.cache = extension_settings[extensionName];
+            } else {
+                this.cache = { enabledApps: {}, wallpapers: {}, themeColors: {}, appData: {} };
+            }
         }
         return this.cache;
     },
@@ -81,7 +194,7 @@ const DataManager = {
         const characters = ctx.characters || [];
         if (characters.length === 0) return;
 
-        const prefixes = ['mundap_', 'message_', 'letter_', 'book_', 'movie_', 'diary_', 'settings_', 'dday_', 'insta_', 'sumone_'];
+        const prefixes = ['mundap_', 'message_', 'letter_', 'book_', 'movie_', 'diary_', 'settings_', 'dday_', 'insta_', 'chatsy_'];
 
         const indexToAvatar = {};
         characters.forEach((char, idx) => {
@@ -265,7 +378,7 @@ const MundapApp = {
         if (!settings.appData[key]) {
             settings.appData[key] = { history: {}, questionPool: [...this.initialQuestions], usedQuestions: [] };
         }
-        const oldKey = `sumone_${charId}`;
+        const oldKey = `chatsy_${charId}`;
         if (settings.appData[oldKey] && !settings.appData[key].history) {
             settings.appData[key] = settings.appData[oldKey];
         }
@@ -3191,14 +3304,6 @@ Write only the prompt:`;
     },
 
     async generateLikes(isUserPost) {
-        const likes = [];
-        
-        if (isUserPost) {
-            likes.push('char');
-        } else {
-            likes.push('user');
-        }
-        
         let baseFollowers = 20;
         let maxFollowers = 200;
         
@@ -3236,11 +3341,13 @@ Write only the prompt:`;
         }
         
         const followerCount = Math.floor(Math.random() * (maxFollowers - baseFollowers + 1)) + baseFollowers;
-        for (let i = 0; i < followerCount; i++) {
-            likes.push(`follower_${i}`);
-        }
+        const totalCount = followerCount + 1; // +1 for char or user
         
-        return likes;
+        return {
+            count: totalCount,
+            userLiked: !isUserPost,
+            charLiked: isUserPost
+        };
     },
 
     async generateNPCComments(caption, charName, isUserPost) {
@@ -3634,7 +3741,7 @@ Write only the comment:`;
             authorName = post.charName || charInfo?.name || '캐릭터';
         }
         
-        const isLiked = post.likes?.includes('user');
+        const isLiked = Array.isArray(post.likes) ? post.likes.includes('user') : post.likes?.userLiked;
         
         let commentsHtml = '';
         if (post.comments && post.comments.length > 0) {
@@ -3694,7 +3801,7 @@ Write only the comment:`;
                 </div>
                 <div class="insta-detail-actions">
                     <button class="insta-like-btn ${isLiked ? 'liked' : ''}" data-post-id="${post.id}">
-                        ${isLiked ? '❤️' : '🤍'} ${post.likes?.length || 0}
+                        ${isLiked ? '❤️' : '🤍'} ${Array.isArray(post.likes) ? post.likes.length : (post.likes?.count || 0)}
                     </button>
                     <span class="insta-date">${Utils.formatDate(post.date)}</span>
                 </div>
@@ -3958,17 +4065,22 @@ Write only the comment:`;
             const postId = btn.dataset.postId;
             const { post, isUser, postCharId } = this.state.selectedPost;
             
-            if (!post.likes) post.likes = [];
+            if (!post.likes) post.likes = { count: 0, userLiked: false, charLiked: false };
+            // Migrate old array format on the fly
+            if (Array.isArray(post.likes)) {
+                post.likes = { count: post.likes.length, userLiked: post.likes.includes('user'), charLiked: post.likes.includes('char') };
+            }
             
-            const idx = post.likes.indexOf('user');
-            if (idx > -1) {
-                post.likes.splice(idx, 1);
+            if (post.likes.userLiked) {
+                post.likes.userLiked = false;
+                post.likes.count = Math.max(0, post.likes.count - 1);
                 btn.classList.remove('liked');
-                btn.innerHTML = `🤍 ${post.likes.length}`;
+                btn.innerHTML = `🤍 ${post.likes.count}`;
             } else {
-                post.likes.push('user');
+                post.likes.userLiked = true;
+                post.likes.count++;
                 btn.classList.add('liked');
-                btn.innerHTML = `❤️ ${post.likes.length}`;
+                btn.innerHTML = `❤️ ${post.likes.count}`;
             }
             
             Core.saveSettings();
@@ -4243,17 +4355,45 @@ const PhoneCore = {
         return 'default';
     },
     getWallpaper() { return this.getSettings().wallpapers?.[this.getCharId()] || ''; },
-    setWallpaper(url) {
+    async setWallpaper(url) {
         const s = this.getSettings();
         if (!s.wallpapers) s.wallpapers = {};
-        s.wallpapers[this.getCharId()] = url;
+        const charId = this.getCharId();
+        
+        // Delete old wallpaper file if it was a file reference
+        const oldWp = s.wallpapers[charId];
+        if (oldWp && oldWp.startsWith('wp:')) {
+            DataManager._deleteFile(oldWp.substring(3));
+        }
+        
+        // Save base64 as separate file, keep URLs as-is
+        if (url && url.startsWith('data:')) {
+            const fileName = `chatsy-phone-wp-${charId.replace(/[^a-zA-Z0-9_-]/g, '_')}.b64`;
+            const b64Data = btoa(unescape(encodeURIComponent(url)));
+            const resp = await fetch('/api/files/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...getRequestHeaders() },
+                body: JSON.stringify({ name: fileName, data: b64Data })
+            });
+            s.wallpapers[charId] = resp.ok ? `wp:${fileName}` : '';
+        } else {
+            s.wallpapers[charId] = url;
+        }
+        
         this.saveSettings();
         this.applyWallpaper();
     },
-    applyWallpaper() {
+    async applyWallpaper() {
         const home = document.querySelector('.phone-page[data-page="home"]');
         if (home) {
-            const wp = this.getWallpaper();
+            let wp = this.getWallpaper();
+            if (wp && wp.startsWith('wp:')) {
+                const fileName = wp.substring(3);
+                try {
+                    const resp = await fetch(`/user/files/${fileName}`, { cache: 'no-store' });
+                    wp = resp.ok ? await resp.text() : '';
+                } catch(e) { wp = ''; }
+            }
             home.style.backgroundImage = wp ? `url(${wp})` : '';
         }
     },
@@ -4397,11 +4537,11 @@ const PhoneCore = {
     createSettingsUI() {
         const settings = this.getSettings();
         const html = `
-        <div class="sumone-phone-settings">
+        <div class="chatsy-phone-settings">
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header"><b>📱 폰</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
                 <div class="inline-drawer-content">
-                    <p style="margin:10px 0;opacity:0.7;">v2.5.0 - 동기화 패턴</p>
+                    <p style="margin:10px 0;opacity:0.7;">v2.6.0 - 파일 API 저장</p>
                     <div style="margin:15px 0;"><b>앱 표시</b>
                         ${Object.entries(this.apps).map(([id, app]) => `
                             <div style="display:flex;align-items:center;gap:8px;margin:8px 0;">
@@ -4446,8 +4586,8 @@ const PhoneCore = {
         $('.phone-app-toggle').on('change', function() { const s = PhoneCore.getSettings(); if (!s.enabledApps) s.enabledApps = {}; s.enabledApps[$(this).data('app')] = this.checked; PhoneCore.saveSettings(); });
         
         $('#phone-wp-btn').on('click', () => $('#phone-wp-input').click());
-        $('#phone-wp-input').on('change', function() { if (this.files[0]) { const r = new FileReader(); r.onload = e => { PhoneCore.setWallpaper(e.target.result); toastr.success('배경 변경!'); }; r.readAsDataURL(this.files[0]); } });
-        $('#phone-wp-reset').on('click', () => { PhoneCore.setWallpaper(''); toastr.info('기본으로'); });
+        $('#phone-wp-input').on('change', function() { if (this.files[0]) { const r = new FileReader(); r.onload = async e => { await PhoneCore.setWallpaper(e.target.result); toastr.success('배경 변경!'); }; r.readAsDataURL(this.files[0]); } });
+        $('#phone-wp-reset').on('click', async () => { await PhoneCore.setWallpaper(''); toastr.info('기본으로'); });
 
         $('#phone-theme-color').on('change', function() {
             PhoneCore.setThemeColor(this.value);
@@ -4471,13 +4611,13 @@ const PhoneCore = {
     },
     
     addMenuButton() {
-        $('#sumone-phone-btn-container').remove();
-        $('#extensionsMenu').prepend(`<div id="sumone-phone-btn-container" class="extension_container interactable"><div id="sumone-phone-btn" class="list-group-item flex-container flexGap5 interactable"><div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton" style="color:var(--phone-theme-color, #ff6b9d);"></div><span>폰</span></div></div>`);
-        $('#sumone-phone-btn').on('click', () => this.openModal());
+        $('#chatsy-phone-btn-container').remove();
+        $('#extensionsMenu').prepend(`<div id="chatsy-phone-btn-container" class="extension_container interactable"><div id="chatsy-phone-btn" class="list-group-item flex-container flexGap5 interactable"><div class="fa-solid fa-mobile-screen extensionsMenuExtensionButton" style="color:var(--phone-theme-color, #ff6b9d);"></div><span>폰</span></div></div>`);
+        $('#chatsy-phone-btn').on('click', () => this.openModal());
     },
     
     async init() {
-        console.log('[Phone] v2.2.0 로딩...');
+        console.log('[Phone] v2.6.0 로딩...');
         
         await DataManager.load();
         this.applyThemeColor();
