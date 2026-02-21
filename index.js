@@ -1353,7 +1353,7 @@ const LetterApp = {
                 ${letter.reply ? `
                     <div class="letter-reply">
                         <div class="reply-label">💕 답장 <button class="regen-btn" id="letter-regen-reply" data-idx="${idx}">🔄</button></div>
-                        <div class="reply-content clickable-text" data-fulltext="${Utils.escapeHtml(letter.reply)}" data-fulltext-title="답장">${Utils.escapeHtml(letter.reply)} <span class="clickable-hint">👆</span></div>
+                        <div class="reply-content clickable-text" data-fulltext="${Utils.escapeHtml(letter.reply)}" data-fulltext-title="답장">${Utils.escapeHtml(letter.reply)} <span class="clickable-hint"></span></div>
                     </div>
                 ` : ''}
             </div>
@@ -1658,7 +1658,7 @@ Reason: (why you recommend it, 1-2 sentences, make it personal)`;
                         <span><span class="char-name">${charName}</span>의 한마디</span>
                         <button class="regen-btn" id="book-regen" data-idx="${idx}">🔄</button>
                     </div>
-                    <div class="clickable-text" data-fulltext="${Utils.escapeHtml(book.charComment)}" data-fulltext-title="${charName}의 한마디">"${Utils.escapeHtml(book.charComment)}" <span class="clickable-hint">👆</span></div>
+                    <div class="clickable-text" data-fulltext="${Utils.escapeHtml(book.charComment)}" data-fulltext-title="${charName}의 한마디">"${Utils.escapeHtml(book.charComment)}" <span class="clickable-hint"></span></div>
                 </div>
             ` : ''}
             <button id="book-back-list" class="btn-secondary">목록으로</button>
@@ -1933,7 +1933,7 @@ Reason: (why you want to watch it together, 1 sentence)`;
                         <span><span class="char-name">${charName}</span>의 한마디</span>
                         <button class="regen-btn" id="movie-regen" data-idx="${idx}">🔄</button>
                     </div>
-                    <div class="clickable-text" data-fulltext="${Utils.escapeHtml(movie.charComment)}" data-fulltext-title="${charName}의 한마디">"${Utils.escapeHtml(movie.charComment)}" <span class="clickable-hint">👆</span></div>
+                    <div class="clickable-text" data-fulltext="${Utils.escapeHtml(movie.charComment)}" data-fulltext-title="${charName}의 한마디">"${Utils.escapeHtml(movie.charComment)}" <span class="clickable-hint"></span></div>
                 </div>
             ` : ''}
             <button id="movie-back-list" class="btn-secondary">목록으로</button>
@@ -2248,7 +2248,7 @@ Diary entry:`;
                     <span>📔 ${charName}의 일기 ${charEntry.mood || ''} ${!charEntry.read ? '🆕' : ''}</span>
                     <button class="regen-btn" id="diary-regen-char">🔄</button>
                 </div>
-                <div class="diary-content clickable-text" data-fulltext="${Utils.escapeHtml(charEntry.content)}" data-fulltext-title="${charName}의 일기">${Utils.escapeHtml(charEntry.content)} <span class="clickable-hint">👆</span></div>
+                <div class="diary-content clickable-text" data-fulltext="${Utils.escapeHtml(charEntry.content)}" data-fulltext-title="${charName}의 일기">${Utils.escapeHtml(charEntry.content)} <span class="clickable-hint"></span></div>
             </div>`;
         }
         
@@ -2256,14 +2256,14 @@ Diary entry:`;
             html += `
             <div class="card">
                 <div class="card-label">📔 나의 일기 ${entry.mood || ''}</div>
-                <div class="diary-content clickable-text" data-fulltext="${Utils.escapeHtml(entry.content)}" data-fulltext-title="나의 일기">${Utils.escapeHtml(entry.content)} <span class="clickable-hint">👆</span></div>
+                <div class="diary-content clickable-text" data-fulltext="${Utils.escapeHtml(entry.content)}" data-fulltext-title="나의 일기">${Utils.escapeHtml(entry.content)} <span class="clickable-hint"></span></div>
                 ${entry.charReply ? `
                     <div class="char-comment">
                         <div class="char-comment-header">
                             <span><span class="char-name">${charName}</span>의 답장</span>
                             <button class="regen-btn" id="diary-regen-reply">🔄</button>
                         </div>
-                        <div class="clickable-text" data-fulltext="${Utils.escapeHtml(entry.charReply)}" data-fulltext-title="${charName}의 답장">"${Utils.escapeHtml(entry.charReply)}" <span class="clickable-hint">👆</span></div>
+                        <div class="clickable-text" data-fulltext="${Utils.escapeHtml(entry.charReply)}" data-fulltext-title="${charName}의 답장">"${Utils.escapeHtml(entry.charReply)}" <span class="clickable-hint"></span></div>
                     </div>
                 ` : ''}
             </div>`;
