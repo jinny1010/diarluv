@@ -80,7 +80,6 @@ const DataManager = {
     async load() {
         if (this.cache) return this.cache;
         
-        // 1) Try loading from file API
         let fileData = await this._loadFile(this.FILE_NAME);
         if (fileData) {
             this.cache = fileData;
@@ -88,7 +87,6 @@ const DataManager = {
             return this.cache;
         }
         
-        // 2) Migrate from settings.json via API
         try {
             const resp = await fetch('/api/settings/get', {
                 method: 'POST',
@@ -96,7 +94,6 @@ const DataManager = {
             });
             if (resp.ok) {
                 const raw = await resp.json();
-                // settings.json returns { settings: "JSON string", ... }
                 const parsed = typeof raw.settings === 'string' ? JSON.parse(raw.settings) : raw;
                 const ext = parsed?.extension_settings || {};
                 
@@ -112,10 +109,8 @@ const DataManager = {
                     this._compactLikes(this.cache);
                     await this._doSave();
                     
-                    // Verify save worked
                     const verify = await this._loadFile(this.FILE_NAME);
                     if (verify) {
-                        // Clear from settings.json
                         try {
                             if (extension_settings['sumone-phone']) extension_settings['sumone-phone'] = { _movedToFile: true };
                             if (extension_settings[extensionName]) extension_settings[extensionName] = { _movedToFile: true };
@@ -134,7 +129,6 @@ const DataManager = {
             console.error('[Phone] Migration check failed:', e);
         }
         
-        // 3) New data
         this.cache = { enabledApps: {}, wallpapers: {}, themeColors: {}, appData: {} };
         console.log('[Phone] Created new data');
         return this.cache;
@@ -176,7 +170,6 @@ const DataManager = {
     
     get() {
         if (!this.cache) {
-            // Sync fallback - should not normally happen after load()
             if (extension_settings[extensionName] && !extension_settings[extensionName]._movedToFile) {
                 this.cache = extension_settings[extensionName];
             } else {
@@ -3341,7 +3334,7 @@ Write only the prompt:`;
         }
         
         const followerCount = Math.floor(Math.random() * (maxFollowers - baseFollowers + 1)) + baseFollowers;
-        const totalCount = followerCount + 1; // +1 for char or user
+        const totalCount = followerCount + 1; 
         
         return {
             count: totalCount,
@@ -4066,7 +4059,6 @@ Write only the comment:`;
             const { post, isUser, postCharId } = this.state.selectedPost;
             
             if (!post.likes) post.likes = { count: 0, userLiked: false, charLiked: false };
-            // Migrate old array format on the fly
             if (Array.isArray(post.likes)) {
                 post.likes = { count: post.likes.length, userLiked: post.likes.includes('user'), charLiked: post.likes.includes('char') };
             }
@@ -4360,13 +4352,11 @@ const PhoneCore = {
         if (!s.wallpapers) s.wallpapers = {};
         const charId = this.getCharId();
         
-        // Delete old wallpaper file if it was a file reference
         const oldWp = s.wallpapers[charId];
         if (oldWp && oldWp.startsWith('wp:')) {
             DataManager._deleteFile(oldWp.substring(3));
         }
         
-        // Save base64 as separate file, keep URLs as-is
         if (url && url.startsWith('data:')) {
             const fileName = `chatsy-phone-wp-${charId.replace(/[^a-zA-Z0-9_-]/g, '_')}.b64`;
             const b64Data = btoa(unescape(encodeURIComponent(url)));
