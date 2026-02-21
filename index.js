@@ -6,9 +6,6 @@ const extensionName = 'chatsy-phone';
 const extensionFolderPath = `scripts/extensions/third_party/${extensionName}`;
 const getContext = () => SillyTavern.getContext(); 
 
-// ========================================
-// System Prompt (Top Priority)
-// ========================================
 function getSystemInstruction() {
     const settings = DataManager.get();
     const lang = settings.language || 'ko';
@@ -25,14 +22,8 @@ function getSystemInstruction() {
 ${langInstruction}`;
 }
 
-// ========================================
-// Default Colors
-// ========================================
 const DEFAULT_COLOR = '#ff6b9d';
 
-// ========================================
-// Data Manager
-// ========================================
 const DataManager = {
     cache: null,
     saveTimeout: null,
@@ -84,6 +75,7 @@ const DataManager = {
         if (fileData) {
             this.cache = fileData;
             console.log('[Phone] Data loaded from file API');
+            await this._extractImages(this.cache);
             return this.cache;
         }
         
@@ -107,6 +99,7 @@ const DataManager = {
                     console.log(`[Phone] Found data in settings.json (${(JSON.stringify(source).length/1024).toFixed(1)}KB), migrating...`);
                     this.cache = source;
                     this._compactLikes(this.cache);
+                    await this._extractImages(this.cache);
                     await this._doSave();
                     
                     const verify = await this._loadFile(this.FILE_NAME);
@@ -156,6 +149,42 @@ const DataManager = {
             }
         }
         if (count > 0) console.log(`[Phone] Compacted ${count} likes arrays`);
+    },
+    
+    async _extractImages(data) {
+        if (!data?.appData) return;
+        let extracted = 0;
+        const processPosts = async (posts) => {
+            if (!Array.isArray(posts)) return;
+            for (const post of posts) {
+                if (post.imageUrl && post.imageUrl.startsWith('data:')) {
+                    const imgName = `chatsy-insta-${post.id}.b64`;
+                    const imgB64 = btoa(unescape(encodeURIComponent(post.imageUrl)));
+                    try {
+                        const resp = await fetch('/api/files/upload', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', ...getRequestHeaders() },
+                            body: JSON.stringify({ name: imgName, data: imgB64 })
+                        });
+                        if (resp.ok) {
+                            post.imageUrl = `file:${imgName}`;
+                            extracted++;
+                        }
+                    } catch(e) {}
+                }
+            }
+        };
+        for (const [key, appData] of Object.entries(data.appData)) {
+            if (!key.startsWith('insta_')) continue;
+            await processPosts(appData?.userPosts);
+            if (appData?.charPosts) {
+                for (const posts of Object.values(appData.charPosts)) await processPosts(posts);
+            }
+        }
+        if (extracted > 0) {
+            console.log(`[Phone] Extracted ${extracted} images to files`);
+            await this._doSave();
+        }
     },
     
     save() {
@@ -229,10 +258,26 @@ const DataManager = {
     },
 };
 
-// ========================================
-// Utilities
-// ========================================
 const Utils = {
+    async resolveFileImages(container) {
+        if (!container) return;
+        const imgs = container.querySelectorAll('img[data-file-src]');
+        for (const img of imgs) {
+            const fileName = img.dataset.fileSrc;
+            try {
+                const resp = await fetch(`/user/files/${fileName}`, { cache: 'no-store' });
+                if (resp.ok) {
+                    const dataUrl = await resp.text();
+                    if (dataUrl.startsWith('data:')) img.src = dataUrl;
+                }
+            } catch(e) {}
+        }
+    },
+    imgTag(url) {
+        if (!url) return '<div class="insta-thumb-placeholder">📷</div>';
+        if (url.startsWith('file:')) return `<img data-file-src="${url.substring(5)}" alt="">`;
+        return `<img src="${url}" alt="">`;
+    },
     getTodayKey() {
         const now = new Date();
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -279,12 +324,12 @@ const Utils = {
         text = text.replace(/&#\d+;/g, ' ');
         
         return text
-            .replace(/\*[^*]*\*/g, '')       // *actions*
-            .replace(/「[^」]*」/g, '')        // 「brackets」
-            .replace(/『[^』]*』/g, '')        // 『brackets』
+            .replace(/\*[^*]*\*/g, '')
+            .replace(/「[^」]*」/g, '')
+            .replace(/『[^』]*』/g, '')
             .replace(/^\s*["']|["']\s*$/g, '') // leading/trailing quotes
-            .replace(/[ \t]+/g, ' ')           // collapse spaces
-            .replace(/\n{3,}/g, '\n\n')        // collapse newlines
+            .replace(/[ \t]+/g, ' ')
+            .replace(/\n{3,}/g, '\n\n')
             .trim();
     },
 
@@ -329,9 +374,6 @@ const Utils = {
     },
 };
 
-// ========================================
-// 문답 앱 (Q&A)
-// ========================================
 const MundapApp = {
     id: 'mundap',
     name: '문답',
@@ -942,9 +984,6 @@ Write only the message content:`;
 
 
 
-// ========================================
-// 편지 앱 (Letter)
-// ========================================
 const LetterApp = {
     id: 'letter',
     name: '편지',
@@ -1250,9 +1289,6 @@ Write only the reply content:`;
     },
 };
 
-// ========================================
-// 독서기록 앱 (Book)
-// ========================================
 const BookApp = {
     id: 'book',
     name: '독서',
@@ -1523,9 +1559,6 @@ Write only your response:`;
     },
 };
 
-// ========================================
-// 영화기록 앱 (Movie)
-// ========================================
 const MovieApp = {
     id: 'movie',
     name: '영화',
@@ -1806,9 +1839,6 @@ Write only your response:`;
     },
 };
 
-// ========================================
-// 일기장 앱 (Diary)
-// ========================================
 const DiaryApp = {
     id: 'diary',
     name: '일기장',
@@ -3334,7 +3364,7 @@ Write only the prompt:`;
         }
         
         const followerCount = Math.floor(Math.random() * (maxFollowers - baseFollowers + 1)) + baseFollowers;
-        const totalCount = followerCount + 1; 
+        const totalCount = followerCount + 1;
         
         return {
             count: totalCount,
@@ -3673,7 +3703,7 @@ Write only the comment:`;
             gridHtml += `
                 <div class="insta-thumb" data-post-id="${post.id}" data-char-id="${post.charId}">
                     ${post.imageUrl 
-                        ? `<img src="${post.imageUrl}" alt="">`
+                        ? Utils.imgTag(post.imageUrl)
                         : `<div class="insta-thumb-placeholder">📷 포스트</div>`
                     }
                 </div>`;
@@ -3709,7 +3739,7 @@ Write only the comment:`;
             gridHtml += `
                 <div class="insta-thumb" data-post-id="${post.id}" data-is-user="true">
                     ${post.imageUrl 
-                        ? `<img src="${post.imageUrl}" alt="">`
+                        ? Utils.imgTag(post.imageUrl)
                         : `<div class="insta-thumb-placeholder">📷</div>`
                     }
                 </div>`;
@@ -3788,7 +3818,7 @@ Write only the comment:`;
             <div class="insta-detail-body">
                 <div class="insta-detail-image">
                     ${post.imageUrl 
-                        ? `<img src="${post.imageUrl}" alt="">`
+                        ? Utils.imgTag(post.imageUrl)
                         : `<div class="insta-image-placeholder">📷</div>`
                     }
                 </div>
@@ -3943,6 +3973,7 @@ Write only the comment:`;
     },
     
     bindGridEvents(Core) {
+        Utils.resolveFileImages(document.getElementById('insta-content'));
         const settings = Core.getSettings();
         const charId = Core.getCharId();
         const charList = this.getCharacterList();
@@ -4012,7 +4043,7 @@ Write only the comment:`;
                         gridHtml += `
                             <div class="insta-thumb" data-post-id="${post.id}" data-char-id="${clickedCharId}">
                                 ${post.imageUrl 
-                                    ? `<img src="${post.imageUrl}" alt="">`
+                                    ? Utils.imgTag(post.imageUrl)
                                     : `<div class="insta-thumb-placeholder">📷</div>`
                                 }
                             </div>`;
@@ -4033,6 +4064,7 @@ Write only the comment:`;
     },
     
     bindDetailEvents(Core) {
+        Utils.resolveFileImages(document.getElementById('insta-content'));
         const settings = Core.getSettings();
         const charId = Core.getCharId();
         const charList = this.getCharacterList();
@@ -4259,6 +4291,19 @@ ${lang === 'ko' ? 'Write all comments in Korean.' : 'Write in English.'}`;
                 comments: allComments
             };
             
+            if (post.imageUrl && post.imageUrl.startsWith('data:')) {
+                const imgName = `chatsy-insta-${post.id}.b64`;
+                const imgB64 = btoa(unescape(encodeURIComponent(post.imageUrl)));
+                const imgResp = await fetch('/api/files/upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...getRequestHeaders() },
+                    body: JSON.stringify({ name: imgName, data: imgB64 })
+                });
+                if (imgResp.ok) {
+                    post.imageUrl = `file:${imgName}`;
+                }
+            }
+            
             data.userPosts.unshift(post);
             Core.saveSettings();
             
@@ -4322,9 +4367,6 @@ ${lang === 'ko' ? 'Write all comments in Korean.' : 'Write in English.'}`;
     }
 };
 
-// ========================================
-// Phone Core
-// ========================================
 const PhoneCore = {
     apps: { mundap: MundapApp, message: MessageApp, letter: LetterApp, book: BookApp, movie: MovieApp, diary: DiaryApp, dday: DdayApp, insta: InstaApp, settings: SettingsApp },
     pageHistory: [],
