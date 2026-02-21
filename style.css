@@ -55,12 +55,21 @@
     padding: 30px 25px; justify-items: center; align-content: start; flex: 1; overflow-y: auto;
 }
 .phone-container .phone-app-icon { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; transition: transform 0.2s; }
-.phone-container .phone-app-icon:hover { transform: scale(1.1); }
-.phone-container .phone-app-icon:active { transform: scale(0.95); }
+.phone-container .phone-app-icon:hover { transform: scale(1.05); }
+.phone-container .phone-app-icon:active { transform: scale(0.92); }
 .phone-container .app-icon-img {
-    width: 60px; height: 60px; background: linear-gradient(145deg, var(--phone-primary), var(--phone-primary-dark)); border-radius: 15px;
+    width: 62px; height: 62px;
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 16px;
     display: flex; align-items: center; justify-content: center; font-size: 28px;
-    box-shadow: 0 4px 12px rgba(var(--phone-primary-rgb), 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.15);
+    transition: background 0.2s;
+}
+.phone-container .phone-app-icon:hover .app-icon-img {
+    background: rgba(255, 255, 255, 0.18);
 }
 .phone-container .app-icon-name { font-size: 11px; color: white; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
 
@@ -1503,4 +1512,183 @@
 .phone-container .card select option {
     color: #fff !important;
     background: #2a2a2a !important;
+}
+
+/* Lock Screen */
+.lock-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    padding: 40px 20px 20px;
+    user-select: none;
+    overflow-y: auto;
+    --lock-text: #fff;
+}
+
+.lock-date {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--lock-text);
+    letter-spacing: 1px;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+
+.lock-custom-text {
+    font-size: 13px;
+    color: var(--lock-text);
+    margin: 6px 0 2px;
+    cursor: pointer;
+    min-height: 18px;
+    text-align: center;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+
+.lock-time {
+    font-size: 72px;
+    font-weight: 200;
+    color: var(--lock-text);
+    letter-spacing: -2px;
+    line-height: 1;
+    margin: 0 0 16px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    cursor: pointer;
+}
+
+.lock-dday-widget {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 14px;
+    padding: 10px 16px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    color: var(--lock-text);
+    border: 1px solid rgba(255,255,255,0.1);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.lock-dday-emoji { font-size: 18px; }
+.lock-dday-label { opacity: 0.9; flex: 1; }
+.lock-dday-count { font-weight: 700; font-size: 16px; }
+
+.lock-notif-list {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    min-height: 0;
+}
+
+.lock-notif {
+    display: flex;
+    gap: 10px;
+    background: rgba(255,255,255,0.12);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 14px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: 1px solid rgba(255,255,255,0.08);
+}
+
+.lock-notif:active {
+    background: rgba(255,255,255,0.2);
+}
+
+.lock-notif.read {
+    opacity: 0.5;
+}
+
+.lock-notif-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+    width: 28px;
+    text-align: center;
+}
+
+.lock-notif-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.lock-notif-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.lock-notif-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--lock-text);
+}
+
+.lock-notif-time {
+    font-size: 11px;
+    color: var(--lock-text);
+    opacity: 0.6;
+}
+
+.lock-notif-text {
+    font-size: 13px;
+    color: var(--lock-text);
+    opacity: 0.85;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lock-no-notif {
+    text-align: center;
+    color: var(--lock-text);
+    opacity: 0.5;
+    font-size: 13px;
+    padding: 30px 0;
+}
+
+.lock-clear-btn {
+    background: none;
+    border: none;
+    color: var(--lock-text);
+    opacity: 0.5;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 8px 0 4px;
+}
+.lock-clear-btn:active { opacity: 1; }
+
+.lock-swipe-hint {
+    padding: 16px 0 8px;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+}
+
+.lock-swipe-bar {
+    width: 40px;
+    height: 4px;
+    background: var(--lock-text);
+    opacity: 0.4;
+    border-radius: 2px;
+}
+
+/* Lock/Home page backgrounds */
+.phone-container .phone-page[data-page="lock"] {
+    background-color: #000;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+.phone-container .phone-page[data-page="home"] {
+    background-color: #000;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
 }

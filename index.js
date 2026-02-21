@@ -24,6 +24,260 @@ ${langInstruction}`;
 
 const DEFAULT_COLOR = '#ff6b9d';
 
+const AIService = {
+    profileId: null,
+    
+    getProfileId() {
+        if (this.profileId) return this.profileId;
+        const settings = DataManager.get();
+        return settings?.connectionProfileId || null;
+    },
+    
+    setProfileId(id) {
+        this.profileId = id;
+        const settings = DataManager.get();
+        settings.connectionProfileId = id;
+        DataManager.save();
+    },
+    
+    getAvailableProfiles() {
+        try {
+            const ctx = getContext();
+            return ctx.extensionSettings?.connectionManager?.profiles || [];
+        } catch(e) { return []; }
+    },
+    
+    async generate(prompt) {
+        const profileId = this.getProfileId();
+        const ctx = getContext();
+        
+        if (profileId && ctx.ConnectionManagerRequestService) {
+            try {
+                const profiles = this.getAvailableProfiles();
+                const profile = profiles.find(p => p.id === profileId);
+                if (!profile) {
+                    console.warn('[Phone] Connection profile not found, falling back');
+                    return await ctx.generateQuietPrompt(prompt, false, false);
+                }
+                const response = await ctx.ConnectionManagerRequestService.sendRequest(
+                    profileId,
+                    [{ content: prompt, role: 'user' }],
+                    2048
+                );
+                return response?.content || '';
+            } catch(e) {
+                console.error('[Phone] ConnectionManager request failed:', e);
+                return await ctx.generateQuietPrompt(prompt, false, false);
+            }
+        }
+        
+        return await ctx.generateQuietPrompt(prompt, false, false);
+    }
+};
+
+const NotificationManager = {
+    getData(settings, charId) {
+        const key = `notif_${charId}`;
+        if (!settings.appData) settings.appData = {};
+        if (!settings.appData[key]) settings.appData[key] = { 
+            notifications: [],
+            lockScreenText: '(ᵔ·ᵕ·ᵔ)',
+            lastTriggerDate: null
+        };
+        return settings.appData[key];
+    },
+    
+    add(appId, icon, title, text) {
+        const settings = PhoneCore.getSettings();
+        const charId = PhoneCore.getCharId();
+        const data = this.getData(settings, charId);
+        data.notifications.unshift({
+            id: Utils.generateId(),
+            appId,
+            icon,
+            title,
+            text: text.substring(0, 100),
+            timestamp: Date.now(),
+            read: false
+        });
+        if (data.notifications.length > 50) data.notifications = data.notifications.slice(0, 50);
+        DataManager.save();
+    },
+    
+    getUnread(settings, charId) {
+        const data = this.getData(settings, charId);
+        return data.notifications.filter(n => !n.read).length;
+    },
+    
+    markAllRead(settings, charId) {
+        const data = this.getData(settings, charId);
+        data.notifications.forEach(n => n.read = true);
+        DataManager.save();
+    },
+    
+    async runTriggers() {
+        const ctx = getContext();
+        if (!ctx.characterId && !ctx.groupId) return;
+        
+        const settings = PhoneCore.getSettings();
+        const charId = PhoneCore.getCharId();
+        const charName = ctx.name2 || '캐릭터';
+        const userName = ctx.name1 || '나';
+        const data = this.getData(settings, charId);
+        const today = Utils.getTodayKey();
+        
+        if (data.lastTriggerDate === today) return;
+        data.lastTriggerDate = today;
+        
+        const lastMessage = ctx.chat?.[ctx.chat.length - 1];
+        if (!lastMessage || lastMessage.is_user) return;
+        
+        const tasks = [];
+        
+        if (settings.enabledApps?.message !== false) {
+            tasks.push(this._tryMessage(settings, charId, charName, userName, lastMessage.mes || ''));
+        }
+        if (settings.enabledApps?.letter !== false) {
+            tasks.push(this._tryLetter(settings, charId, charName, userName));
+        }
+        if (settings.enabledApps?.book !== false) {
+            tasks.push(this._tryBook(settings, charId, charName, userName));
+        }
+        if (settings.enabledApps?.movie !== false) {
+            tasks.push(this._tryMovie(settings, charId, charName, userName));
+        }
+        
+        await Promise.allSettled(tasks);
+    },
+    
+    async _tryMessage(settings, charId, charName, userName, recentMessage) {
+        const msgData = MessageApp.getData(settings, charId);
+        const ddayData = DdayApp.getData(settings, charId);
+        const today = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
+        if (msgData.lastCharMsgDate === today) return;
+        
+        const shouldSend = await this._llmShouldText(charName, recentMessage);
+        if (!shouldSend) {
+            msgData.lastCharMsgDate = today;
+            return;
+        }
+        
+        const result = await MessageApp.tryCharacterMessage(settings, charId, charName, userName);
+        if (result) {
+            this.add('message', '💬', charName, result);
+        }
+    },
+    
+    async _llmShouldText(charName, recentMessage) {
+        const prompt = `[Decision Task]
+Read the latest roleplay message and decide: would ${charName} send a TEXT MESSAGE (SMS) right now?
+
+Conditions for YES:
+1. ${charName} is NOT physically with the user right now (they parted/separated/are in different places)
+2. The situation naturally calls for a text (checking in, missing someone, sharing news)
+
+Conditions for NO:
+1. They are together in the same scene
+2. The conversation is actively ongoing face-to-face
+3. It would be unnatural for the character to text right now
+
+Latest message:
+"${recentMessage.substring(0, 500)}"
+
+Reply with ONLY "YES" or "NO":`;
+        
+        try {
+            const result = await AIService.generate(prompt);
+            return result.trim().toUpperCase().startsWith('YES');
+        } catch(e) {
+            return false;
+        }
+    },
+    
+    async _tryLetter(settings, charId, charName, userName) {
+        const result = await LetterApp.tryCharacterLetter(settings, charId, charName, userName);
+        if (result) {
+            this.add('letter', '💌', charName, '새 편지가 도착했어요');
+        }
+    },
+    
+    async _tryBook(settings, charId, charName, userName) {
+        const result = await BookApp.tryCharacterRecommend(settings, charId, charName, userName);
+        if (result) {
+            this.add('book', '📚', charName, '새 책을 추천했어요');
+        }
+    },
+    
+    async _tryMovie(settings, charId, charName, userName) {
+        const result = await MovieApp.tryCharacterRecommend(settings, charId, charName, userName);
+        if (result) {
+            this.add('movie', '🎬', charName, '새 영화를 추천했어요');
+        }
+    },
+    
+    renderLockScreen(settings, charId) {
+        const data = this.getData(settings, charId);
+        const ddayData = DdayApp.getData(settings, charId);
+        const now = new Date();
+        
+        const days = ['일', '월', '화', '수', '목', '금', '토'];
+        const rpDate = ddayData.currentRpDate;
+        let displayDate;
+        if (rpDate) {
+            const d = new Date(rpDate.year, rpDate.month, rpDate.day);
+            displayDate = `${rpDate.month + 1}월 ${rpDate.day}일 (${days[d.getDay()]})`;
+        } else {
+            displayDate = `${now.getMonth() + 1}월 ${now.getDate()}일 (${days[now.getDay()]})`;
+        }
+        
+        let ddayWidget = '';
+        if (ddayData.ddays && ddayData.ddays.length > 0) {
+            const firstDday = ddayData.ddays[0];
+            const baseDate = rpDate 
+                ? new Date(rpDate.year, rpDate.month, rpDate.day)
+                : new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const targetDate = new Date(firstDday.date);
+            const diff = Math.ceil((baseDate - targetDate) / 86400000);
+            const ddayText = diff > 0 ? `D+${diff}` : diff === 0 ? 'D-DAY' : `D${diff}`;
+            ddayWidget = `<div class="lock-dday-widget"><span class="lock-dday-emoji">${firstDday.emoji || '💑'}</span><span class="lock-dday-label">${firstDday.name || 'D-Day'}</span><span class="lock-dday-count">${ddayText}</span></div>`;
+        }
+        
+        const notifications = data.notifications.slice(0, 5);
+        const notifHtml = notifications.length > 0
+            ? notifications.map(n => {
+                const ago = this._timeAgo(n.timestamp);
+                return `<div class="lock-notif ${n.read ? 'read' : ''}" data-app="${n.appId}">
+                    <div class="lock-notif-icon">${n.icon}</div>
+                    <div class="lock-notif-body">
+                        <div class="lock-notif-header"><span class="lock-notif-title">${n.title}</span><span class="lock-notif-time">${ago}</span></div>
+                        <div class="lock-notif-text">${Utils.escapeHtml(n.text)}</div>
+                    </div>
+                </div>`;
+            }).join('') + '<button class="lock-clear-btn" id="lock-clear-all">전체 삭제</button>'
+            : '<div class="lock-no-notif">알림이 없습니다</div>';
+        
+        return `
+        <div class="lock-screen" id="lock-screen" style="--lock-text: ${data.lockTextColor || '#fff'}">
+            <div class="lock-date" id="lock-date">${displayDate}</div>
+            <div class="lock-custom-text" id="lock-custom-text">${Utils.escapeHtml(data.lockScreenText || '')}</div>
+            <div class="lock-time" id="lock-time">${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}</div>
+            ${ddayWidget}
+            <div class="lock-notif-list">${notifHtml}</div>
+            <div class="lock-swipe-hint">
+                <div class="lock-swipe-bar"></div>
+            </div>
+        </div>`;
+    },
+    
+    _timeAgo(ts) {
+        const diff = Math.floor((Date.now() - ts) / 1000);
+        if (diff < 60) return '방금';
+        if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
+        return `${Math.floor(diff / 86400)}일 전`;
+    }
+};
+
 const DataManager = {
     cache: null,
     saveTimeout: null,
@@ -122,7 +376,7 @@ const DataManager = {
             console.error('[Phone] Migration check failed:', e);
         }
         
-        this.cache = { enabledApps: {}, wallpapers: {}, themeColors: {}, appData: {} };
+        this.cache = { enabledApps: {}, wallpapers: {}, lockWallpapers: {}, themeColors: {}, appData: {} };
         console.log('[Phone] Created new data');
         return this.cache;
     },
@@ -202,7 +456,7 @@ const DataManager = {
             if (extension_settings[extensionName] && !extension_settings[extensionName]._movedToFile) {
                 this.cache = extension_settings[extensionName];
             } else {
-                this.cache = { enabledApps: {}, wallpapers: {}, themeColors: {}, appData: {} };
+                this.cache = { enabledApps: {}, wallpapers: {}, lockWallpapers: {}, themeColors: {}, appData: {} };
             }
         }
         return this.cache;
@@ -454,7 +708,7 @@ Output format exactly:
 Answer: 
 Comment: `;
         try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const result = await AIService.generate(prompt);
             let answer = '', comment = '';
             for (const line of result.split('\n').filter(l => l.trim())) {
                 if (line.match(/^(Answer|답변?):/i)) answer = Utils.cleanResponse(line.replace(/^(Answer|답변?):\s*/i, ''));
@@ -673,10 +927,6 @@ const MessageApp = {
         const today = ddayData.currentRpDate?.dateKey || Utils.getTodayKey();
         
         if (data.lastCharMsgDate === today) return null;
-        if (!Utils.chance(40)) {
-            data.lastCharMsgDate = today;
-            return null;
-        }
         
         const ctx = getContext();
         const msgLang = PhoneCore.getSettings().msgLanguage || 'ko'; 
@@ -701,7 +951,7 @@ Stay in character based on your personality and relationship.
 Write only the message content:`;
         
         try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const result = await AIService.generate(prompt);
             const content = Utils.cleanResponse(result).substring(0, 300);
             
             if (content && content.length > 5) {
@@ -769,7 +1019,7 @@ Write only the message content:`;
     Write only the reply:`;
         
         try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const result = await AIService.generate(prompt);
             return Utils.cleanResponse(result).substring(0, 250);
         } catch { return null; }
     },
@@ -834,14 +1084,6 @@ Write only the message content:`;
     
     async loadUI(settings, charId, charName) {
         const data = this.getData(settings, charId);
-        const userName = getContext().name1 || '나';
-        
-        if (!this.state.isGenerating) {
-            const charMsg = await this.tryCharacterMessage(settings, charId, charName, userName);
-            if (charMsg) {
-                toastr.info(`💬 ${charName}에게서 문자가 왔어요!`);
-            }
-        }
         
         document.getElementById('msg-container').innerHTML = this.renderMessages(data, charName);
         this.scrollToBottom();
@@ -1018,7 +1260,7 @@ const LetterApp = {
     Write only the letter content (no greeting/signature):`;
         
         try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const result = await AIService.generate(prompt);
             return Utils.cleanResponse(result).substring(0, 1200);
         } catch (e) {
             console.error('[Letter] Generation failed:', e);
@@ -1111,7 +1353,7 @@ const LetterApp = {
                 ${letter.reply ? `
                     <div class="letter-reply">
                         <div class="reply-label">💕 답장 <button class="regen-btn" id="letter-regen-reply" data-idx="${idx}">🔄</button></div>
-                        <div class="reply-content clickable-text" data-fulltext="${Utils.escapeHtml(letter.reply)}" data-fulltext-title="답장">${Utils.escapeHtml(letter.reply)} <span class="clickable-hint"></span></div>
+                        <div class="reply-content clickable-text" data-fulltext="${Utils.escapeHtml(letter.reply)}" data-fulltext-title="답장">${Utils.escapeHtml(letter.reply)} <span class="clickable-hint">👆</span></div>
                     </div>
                 ` : ''}
             </div>
@@ -1133,7 +1375,7 @@ Stay in character based on your personality and relationship.
 
 Write only the reply content:`;
         try {
-            let result = await ctx.generateQuietPrompt(prompt, false, false);
+            let result = await AIService.generate(prompt);
             return Utils.cleanResponse(result).substring(0, 400);
         } catch { return null; }
     },
@@ -1315,7 +1557,7 @@ Title: (book title)
 Reason: (why you recommend it, 1-2 sentences, make it personal)`;
         
         try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const result = await AIService.generate(prompt);
             let title = '', reason = '';
             for (const line of result.split('\n')) {
                 if (line.match(/Title:|제목:/i)) title = Utils.cleanResponse(line.replace(/.*(?:Title|제목):\s*/i, ''));
@@ -1416,7 +1658,7 @@ Reason: (why you recommend it, 1-2 sentences, make it personal)`;
                         <span><span class="char-name">${charName}</span>의 한마디</span>
                         <button class="regen-btn" id="book-regen" data-idx="${idx}">🔄</button>
                     </div>
-                    <div class="clickable-text" data-fulltext="${Utils.escapeHtml(book.charComment)}" data-fulltext-title="${charName}의 한마디">"${Utils.escapeHtml(book.charComment)}" <span class="clickable-hint"></span></div>
+                    <div class="clickable-text" data-fulltext="${Utils.escapeHtml(book.charComment)}" data-fulltext-title="${charName}의 한마디">"${Utils.escapeHtml(book.charComment)}" <span class="clickable-hint">👆</span></div>
                 </div>
             ` : ''}
             <button id="book-back-list" class="btn-secondary">목록으로</button>
@@ -1433,7 +1675,7 @@ As ${charName}, share your thoughts or reaction about this book in 1-2 sentences
 
 Write only your response:`;
         try {
-            let result = await ctx.generateQuietPrompt(prompt, false, false);
+            let result = await AIService.generate(prompt);
             return Utils.cleanResponse(result).substring(0, 150);
         } catch { return null; }
     },
@@ -1585,7 +1827,7 @@ Genre: (genre)
 Reason: (why you want to watch it together, 1 sentence)`;
         
         try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const result = await AIService.generate(prompt);
             let title = '', genre = '', reason = '';
             for (const line of result.split('\n')) {
                 if (line.match(/Title:|제목:/i)) title = Utils.cleanResponse(line.replace(/.*(?:Title|제목):\s*/i, ''));
@@ -1691,7 +1933,7 @@ Reason: (why you want to watch it together, 1 sentence)`;
                         <span><span class="char-name">${charName}</span>의 한마디</span>
                         <button class="regen-btn" id="movie-regen" data-idx="${idx}">🔄</button>
                     </div>
-                    <div class="clickable-text" data-fulltext="${Utils.escapeHtml(movie.charComment)}" data-fulltext-title="${charName}의 한마디">"${Utils.escapeHtml(movie.charComment)}" <span class="clickable-hint"></span></div>
+                    <div class="clickable-text" data-fulltext="${Utils.escapeHtml(movie.charComment)}" data-fulltext-title="${charName}의 한마디">"${Utils.escapeHtml(movie.charComment)}" <span class="clickable-hint">👆</span></div>
                 </div>
             ` : ''}
             <button id="movie-back-list" class="btn-secondary">목록으로</button>
@@ -1708,7 +1950,7 @@ As ${charName}, share your thoughts about this movie in 1-2 sentences.
 
 Write only your response:`;
     try {
-        let result = await ctx.generateQuietPrompt(prompt, false, false);
+        let result = await AIService.generate(prompt);
         
         const cleaned = Utils.cleanResponse(result);
         
@@ -1872,7 +2114,7 @@ Make it personal and heartfelt, 2-4 sentences.
 Write only the diary content:`;
         
         try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const result = await AIService.generate(prompt);
             return Utils.cleanResponse(result).substring(0, 300);
         } catch (e) {
             console.error('[Diary] Generation failed:', e);
@@ -1881,66 +2123,10 @@ Write only the diary content:`;
     },
     
     async tryCharacterDiary(settings, charId, charName, userName) {
-        const data = this.getData(settings, charId);
-        const today = Utils.getTodayKey();
-        
-        if (data.lastCharDiaryDate === today) return null;
-        if (data.entries[today]?.charDiary) return null;
-        if (!Utils.chance(20)) {
-            data.lastCharDiaryDate = today;
-            return null;
-        }
-        
-        const moods = ['😊', '🥰', '😴', '🤔', '😎'];
-        const mood = moods[Math.floor(Math.random() * moods.length)];
-        
-        const content = await this.generateCharacterDiary(charName, userName, mood);
-        
-        if (content && content.length > 10) {
-            if (!data.entries[today]) data.entries[today] = {};
-            data.entries[today].charDiary = {
-                content: content,
-                mood: mood,
-                date: today,
-                read: false,
-            };
-            data.lastCharDiaryDate = today;
-            return content;
-        }
         return null;
     },
     
     async tryCharacterDiaryRP(settings, charId, charName, userName) {
-        const data = this.getData(settings, charId);
-        const ddayData = DdayApp.getData(settings, charId);
-        const rpDate = ddayData.currentRpDate;
-        
-        if (!rpDate) return null;
-        const dateKey = rpDate.dateKey;
-        
-        if (data.lastRpCharDiaryDate === dateKey) return null;
-        if (data.rpEntries[dateKey]?.charDiary) return null;
-        if (!Utils.chance(20)) {
-            data.lastRpCharDiaryDate = dateKey;
-            return null;
-        }
-        
-        const moods = ['😊', '🥰', '😴', '🤔', '😎'];
-        const mood = moods[Math.floor(Math.random() * moods.length)];
-        
-        const content = await this.generateCharacterDiary(charName, userName, mood);
-        
-        if (content && content.length > 10) {
-            if (!data.rpEntries[dateKey]) data.rpEntries[dateKey] = {};
-            data.rpEntries[dateKey].charDiary = {
-                content: content,
-                mood: mood,
-                date: dateKey,
-                read: false,
-            };
-            data.lastRpCharDiaryDate = dateKey;
-            return content;
-        }
         return null;
     },
     async generateAutoSummaryDiary(charName, settings, charId) {
@@ -1993,7 +2179,7 @@ Write a diary entry as ${charName} would actually write it:
 Diary entry:`;
 
         try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const result = await AIService.generate(prompt);
             const content = Utils.cleanResponse(result).substring(0, 400);
             
             if (content && content.length > 10) {
@@ -2062,7 +2248,7 @@ Diary entry:`;
                     <span>📔 ${charName}의 일기 ${charEntry.mood || ''} ${!charEntry.read ? '🆕' : ''}</span>
                     <button class="regen-btn" id="diary-regen-char">🔄</button>
                 </div>
-                <div class="diary-content clickable-text" data-fulltext="${Utils.escapeHtml(charEntry.content)}" data-fulltext-title="${charName}의 일기">${Utils.escapeHtml(charEntry.content)} <span class="clickable-hint"></span></div>
+                <div class="diary-content clickable-text" data-fulltext="${Utils.escapeHtml(charEntry.content)}" data-fulltext-title="${charName}의 일기">${Utils.escapeHtml(charEntry.content)} <span class="clickable-hint">👆</span></div>
             </div>`;
         }
         
@@ -2070,14 +2256,14 @@ Diary entry:`;
             html += `
             <div class="card">
                 <div class="card-label">📔 나의 일기 ${entry.mood || ''}</div>
-                <div class="diary-content clickable-text" data-fulltext="${Utils.escapeHtml(entry.content)}" data-fulltext-title="나의 일기">${Utils.escapeHtml(entry.content)} <span class="clickable-hint"></span></div>
+                <div class="diary-content clickable-text" data-fulltext="${Utils.escapeHtml(entry.content)}" data-fulltext-title="나의 일기">${Utils.escapeHtml(entry.content)} <span class="clickable-hint">👆</span></div>
                 ${entry.charReply ? `
                     <div class="char-comment">
                         <div class="char-comment-header">
                             <span><span class="char-name">${charName}</span>의 답장</span>
                             <button class="regen-btn" id="diary-regen-reply">🔄</button>
                         </div>
-                        <div class="clickable-text" data-fulltext="${Utils.escapeHtml(entry.charReply)}" data-fulltext-title="${charName}의 답장">"${Utils.escapeHtml(entry.charReply)}" <span class="clickable-hint"></span></div>
+                        <div class="clickable-text" data-fulltext="${Utils.escapeHtml(entry.charReply)}" data-fulltext-title="${charName}의 답장">"${Utils.escapeHtml(entry.charReply)}" <span class="clickable-hint">👆</span></div>
                     </div>
                 ` : ''}
             </div>`;
@@ -2106,7 +2292,7 @@ Offer comfort, encouragement, or empathy. 1-2 sentences.
 
 Write only the reply:`;
         try {
-            let result = await ctx.generateQuietPrompt(prompt, false, false);
+            let result = await AIService.generate(prompt);
             return Utils.cleanResponse(result).substring(0, 150);
         } catch { return null; }
     },
@@ -3163,7 +3349,7 @@ Message: "${recentMessage.substring(0, 500)}"
 Answer only: YES or NO`;
 
         try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const result = await AIService.generate(prompt);
             return result.toUpperCase().includes('YES');
         } catch {
             return false;
@@ -3185,7 +3371,7 @@ Most personal CHATSITARGRAM posts are SELFIE type.
 Answer only: SELFIE or SCENERY`;
 
         try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const result = await AIService.generate(prompt);
             return result.toUpperCase().includes('SCENERY') ? 'scenery' : 'selfie';
         } catch {
             return 'selfie';
@@ -3224,7 +3410,7 @@ IMAGE_TYPE: (SELFIE if photo has people, SCENERY if landscape/food/objects)
 IMAGE_PROMPT: (comma-separated tags for image generation, under 80 words. If SELFIE: character appearance, pose, expression, setting. If SCENERY: describe the scene)`;
 
         try {
-            const result = await ctx.generateQuietPrompt(combinedPrompt, false, false);
+            const result = await AIService.generate(combinedPrompt);
             
             let caption = '', imageType = 'selfie', imagePrompt = '';
             
@@ -3288,7 +3474,7 @@ Use tags separated by commas. Keep under 100 words.
 Write only the prompt:`;
             
             try {
-                const result = await ctx.generateQuietPrompt(prompt, false, false);
+                const result = await AIService.generate(prompt);
                 return Utils.cleanResponse(result).substring(0, 400);
             } catch {
                 return `${charName}, selfie, instagram photo, cute pose, smile`;
@@ -3304,7 +3490,7 @@ Use descriptive tags separated by commas. Keep under 50 words.
 Write only the prompt:`;
             
             try {
-                const result = await ctx.generateQuietPrompt(prompt, false, false);
+                const result = await AIService.generate(prompt);
                 return Utils.cleanResponse(result).substring(0, 200);
             } catch {
                 return 'beautiful scenery, instagram photo, aesthetic';
@@ -3415,7 +3601,7 @@ ${lang === 'ko' ? 'Write in Korean with appropriate slang/emojis.' : 'Write in E
 Write only the comment:`;
 
             try {
-                const result = await ctx.generateQuietPrompt(prompt, false, false);
+                const result = await AIService.generate(prompt);
                 return Utils.cleanResponse(result).substring(0, 100);
             } catch {
                 const fallbackComments = lang === 'ko' 
@@ -3502,7 +3688,7 @@ Write only the comment:`;
     Write only the comment:`;
 
         try {
-            const result = await ctx.generateQuietPrompt(prompt, false, false);
+            const result = await AIService.generate(prompt);
             return Utils.cleanResponse(result).substring(0, 200);
         } catch {
             return null;
@@ -4236,7 +4422,7 @@ ${lang === 'ko' ? 'Write all comments in Korean.' : 'Write in English.'}`;
             let allComments = [];
             
             try {
-                const result = await ctx.generateQuietPrompt(commentPrompt, false, false);
+                const result = await AIService.generate(commentPrompt);
                 
                 const charMatch = result.match(new RegExp(`${charName.toUpperCase()}_COMMENT:\\s*(.+?)(?=COMMENT_|$)`, 's'));
                 if (charMatch) {
@@ -4343,6 +4529,7 @@ ${lang === 'ko' ? 'Write all comments in Korean.' : 'Write in English.'}`;
         
         if (post) {
             toastr.success(`📸 ${charName}님이 챗시타그램에 올렸어요!`);
+            NotificationManager.add('insta', '📸', '챗시타그램', `${charName}님이 새 게시물을 올렸어요`);
         } else {
             toastr.error('포스트 생성에 실패했어요');
         }
@@ -4389,44 +4576,59 @@ const PhoneCore = {
         return 'default';
     },
     getWallpaper() { return this.getSettings().wallpapers?.[this.getCharId()] || ''; },
-    async setWallpaper(url) {
+    getLockWallpaper() { return this.getSettings().lockWallpapers?.[this.getCharId()] || ''; },
+    async setWallpaper(url, isLock = false) {
         const s = this.getSettings();
-        if (!s.wallpapers) s.wallpapers = {};
+        const key = isLock ? 'lockWallpapers' : 'wallpapers';
+        if (!s[key]) s[key] = {};
         const charId = this.getCharId();
         
-        const oldWp = s.wallpapers[charId];
+        const oldWp = s[key][charId];
         if (oldWp && oldWp.startsWith('wp:')) {
             DataManager._deleteFile(oldWp.substring(3));
         }
         
         if (url && url.startsWith('data:')) {
-            const fileName = `chatsy-phone-wp-${charId.replace(/[^a-zA-Z0-9_-]/g, '_')}.b64`;
+            const prefix = isLock ? 'chatsy-phone-lwp' : 'chatsy-phone-wp';
+            const fileName = `${prefix}-${charId.replace(/[^a-zA-Z0-9_-]/g, '_')}.b64`;
             const b64Data = btoa(unescape(encodeURIComponent(url)));
             const resp = await fetch('/api/files/upload', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...getRequestHeaders() },
                 body: JSON.stringify({ name: fileName, data: b64Data })
             });
-            s.wallpapers[charId] = resp.ok ? `wp:${fileName}` : '';
+            s[key][charId] = resp.ok ? `wp:${fileName}` : '';
         } else {
-            s.wallpapers[charId] = url;
+            s[key][charId] = url;
         }
         
         this.saveSettings();
         this.applyWallpaper();
     },
+    async _resolveWp(wp) {
+        if (!wp) return '';
+        if (wp.startsWith('wp:')) {
+            try {
+                const resp = await fetch(`/user/files/${wp.substring(3)}`, { cache: 'no-store' });
+                return resp.ok ? await resp.text() : '';
+            } catch(e) { return ''; }
+        }
+        return wp;
+    },
     async applyWallpaper() {
         const home = document.querySelector('.phone-page[data-page="home"]');
         if (home) {
-            let wp = this.getWallpaper();
-            if (wp && wp.startsWith('wp:')) {
-                const fileName = wp.substring(3);
-                try {
-                    const resp = await fetch(`/user/files/${fileName}`, { cache: 'no-store' });
-                    wp = resp.ok ? await resp.text() : '';
-                } catch(e) { wp = ''; }
-            }
+            const wp = await this._resolveWp(this.getWallpaper());
             home.style.backgroundImage = wp ? `url(${wp})` : '';
+            home.style.backgroundSize = 'cover';
+            home.style.backgroundPosition = 'center';
+        }
+        const lock = document.getElementById('phone-lock-page');
+        if (lock) {
+            const lwp = await this._resolveWp(this.getLockWallpaper());
+            lock.style.backgroundImage = lwp ? `url(${lwp})` : '';
+            lock.style.backgroundSize = 'cover';
+            lock.style.backgroundPosition = 'center';
         }
     },
 
@@ -4464,7 +4666,8 @@ const PhoneCore = {
                         <div class="phone-status-icons">●●●●○ 🔋</div>
                     </div>
                     <div class="phone-screen">
-                        <div class="phone-page active" data-page="home"><div class="phone-app-grid" id="phone-app-grid"></div></div>
+                        <div class="phone-page" data-page="lock" id="phone-lock-page"></div>
+                        <div class="phone-page" data-page="home"><div class="phone-app-grid" id="phone-app-grid"></div></div>
                         <div class="phone-page" data-page="app" id="phone-app-page"></div>
                     </div>
                     <div class="phone-home-bar"></div>
@@ -4477,15 +4680,30 @@ const PhoneCore = {
         const grid = document.getElementById('phone-app-grid');
         if (!grid) return;
         const settings = this.getSettings();
+        const homeColor = settings.homeTextColors?.[this.getCharId()] || '#fff';
         grid.innerHTML = Object.entries(this.apps).filter(([id]) => settings.enabledApps?.[id] !== false)
-            .map(([id, app]) => `<div class="phone-app-icon" data-app="${id}"><div class="app-icon-img">${app.icon}</div><div class="app-icon-name">${app.name}</div></div>`).join('');
+            .map(([id, app]) => `<div class="phone-app-icon" data-app="${id}"><div class="app-icon-img">${app.icon}</div><div class="app-icon-name" style="color:${homeColor}">${app.name}</div></div>`).join('');
         grid.querySelectorAll('.phone-app-icon').forEach(el => el.onclick = () => this.openApp(el.dataset.app));
+        Utils.bindLongPress(grid, () => {
+            const s = this.getSettings();
+            if (!s.homeTextColors) s.homeTextColors = {};
+            const cid = this.getCharId();
+            const newColor = s.homeTextColors[cid] === '#000' ? '#fff' : '#000';
+            s.homeTextColors[cid] = newColor;
+            grid.querySelectorAll('.app-icon-name').forEach(el => el.style.color = newColor);
+            DataManager.save();
+            toastr.info(`홈화면: ${newColor === '#fff' ? '⬜ 흰색' : '⬛ 검정'}`);
+        });
         this.applyWallpaper();
     },
     
     switchPage(pageName) {
         this.currentPage = pageName;
-        document.querySelectorAll('.phone-page').forEach(p => p.classList.toggle('active', p.dataset.page === pageName || (pageName !== 'home' && p.dataset.page === 'app')));
+        document.querySelectorAll('.phone-page').forEach(p => {
+            const isActive = p.dataset.page === pageName || 
+                (pageName !== 'home' && pageName !== 'lock' && p.dataset.page === 'app');
+            p.classList.toggle('active', isActive);
+        });
     },
     
     openPage(pageId, html) {
@@ -4550,10 +4768,94 @@ const PhoneCore = {
     
     openModal() {
         document.getElementById('phone-modal').style.display = 'flex';
-        this.switchPage('home');
         this.pageHistory = [];
-        this.renderAppGrid();
+        this.showLockScreen();
         this.applyThemeColor();
+    },
+    
+    showLockScreen() {
+        const settings = this.getSettings();
+        const charId = this.getCharId();
+        const lockPage = document.getElementById('phone-lock-page');
+        if (lockPage) {
+            lockPage.innerHTML = NotificationManager.renderLockScreen(settings, charId);
+            this.switchPage('lock');
+            this.applyWallpaper();
+            this.bindLockScreenEvents();
+        } else {
+            this.switchPage('home');
+            this.renderAppGrid();
+        }
+    },
+    
+    bindLockScreenEvents() {
+        const lockScreen = document.getElementById('lock-screen');
+        if (!lockScreen) return;
+        
+        let startY = 0;
+        lockScreen.addEventListener('touchstart', e => { startY = e.touches[0].clientY; });
+        lockScreen.addEventListener('touchend', e => {
+            const diff = startY - e.changedTouches[0].clientY;
+            if (diff > 80) this.unlockToHome();
+        });
+        lockScreen.addEventListener('click', e => {
+            const notif = e.target.closest('.lock-notif');
+            if (notif) {
+                const appId = notif.dataset.app;
+                NotificationManager.markAllRead(this.getSettings(), this.getCharId());
+                this.unlockToHome();
+                if (this.apps[appId]) setTimeout(() => this.openApp(appId), 200);
+                return;
+            }
+            if (!e.target.closest('.lock-custom-text') && !e.target.closest('.lock-dday-widget')) {
+                this.unlockToHome();
+            }
+        });
+        
+        const customText = document.getElementById('lock-custom-text');
+        if (customText) {
+            Utils.bindLongPress(customText, () => {
+                const settings = this.getSettings();
+                const charId = this.getCharId();
+                const data = NotificationManager.getData(settings, charId);
+                const newText = prompt('잠금화면 문구 입력:', data.lockScreenText || '');
+                if (newText !== null) {
+                    data.lockScreenText = newText;
+                    DataManager.save();
+                    customText.textContent = newText;
+                }
+            });
+        }
+        
+        document.getElementById('lock-clear-all')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const settings = this.getSettings();
+            const charId = this.getCharId();
+            const data = NotificationManager.getData(settings, charId);
+            data.notifications = [];
+            DataManager.save();
+            document.querySelector('.lock-notif-list').innerHTML = '<div class="lock-no-notif">알림이 없습니다</div>';
+        });
+        
+        const lockTime = document.getElementById('lock-time');
+        if (lockTime) {
+            Utils.bindLongPress(lockTime, () => {
+                const settings = this.getSettings();
+                const charId = this.getCharId();
+                const data = NotificationManager.getData(settings, charId);
+                
+                const lockColor = data.lockTextColor === '#000' ? '#fff' : '#000';
+                data.lockTextColor = lockColor;
+                document.getElementById('lock-screen').style.setProperty('--lock-text', lockColor);
+                DataManager.save();
+                toastr.info(`잠금화면: ${lockColor === '#fff' ? '⬜ 흰색' : '⬛ 검정'}`);
+            });
+        }
+    },
+    
+    unlockToHome() {
+        this.switchPage('home');
+        this.renderAppGrid();
     },
     closeModal() { document.getElementById('phone-modal').style.display = 'none'; },
     
@@ -4573,7 +4875,7 @@ const PhoneCore = {
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header"><b>📱 폰</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
                 <div class="inline-drawer-content">
-                    <p style="margin:10px 0;opacity:0.7;">v2.6.0 - 파일 API 저장</p>
+                    <p style="margin:10px 0;opacity:0.7;">v2.9.0 - 잠금화면 & 알림</p>
                     <div style="margin:15px 0;"><b>앱 표시</b>
                         ${Object.entries(this.apps).map(([id, app]) => `
                             <div style="display:flex;align-items:center;gap:8px;margin:8px 0;">
@@ -4590,10 +4892,15 @@ const PhoneCore = {
                             </div>
                         `).join('')}
                     </div>
-                    <div style="margin:15px 0;"><b>배경화면</b> <small>(캐릭터별)</small>
+                    <div style="margin:15px 0;"><b>홈 배경화면</b> <small>(캐릭터별)</small>
                         <input type="file" id="phone-wp-input" accept="image/*" style="display:none;">
                         <button id="phone-wp-btn" class="menu_button" style="width:100%;margin-top:5px;">🖼️ 이미지 선택</button>
                         <button id="phone-wp-reset" class="menu_button" style="width:100%;margin-top:5px;">↩️ 기본으로</button>
+                    </div>
+                    <div style="margin:15px 0;"><b>잠금화면 배경</b> <small>(캐릭터별)</small>
+                        <input type="file" id="phone-lwp-input" accept="image/*" style="display:none;">
+                        <button id="phone-lwp-btn" class="menu_button" style="width:100%;margin-top:5px;">🖼️ 이미지 선택</button>
+                        <button id="phone-lwp-reset" class="menu_button" style="width:100%;margin-top:5px;">↩️ 기본으로</button>
                     </div>
                     <div style="margin:15px 0;"><b>테마 색상</b> <small>(캐릭터별)</small>
                         <input type="color" id="phone-theme-color" value="${this.getThemeColor()}" style="width:100%;height:40px;margin-top:5px;border:none;cursor:pointer;">
@@ -4610,6 +4917,13 @@ const PhoneCore = {
                             </label>
                         </div>
                     </div>
+                    <div style="margin:15px 0;"><b>AI 연결 프로필</b> <small>(별도 API 사용)</small>
+                        <select id="phone-ai-profile" style="width:100%;padding:6px;margin-top:5px;border-radius:4px;">
+                            <option value="">기본 (메인 API)</option>
+                            ${AIService.getAvailableProfiles().map(p => `<option value="${p.id}" ${AIService.getProfileId() === p.id ? 'selected' : ''}>${p.name || p.id}</option>`).join('')}
+                        </select>
+                        <small style="opacity:0.6;display:block;margin-top:4px;">선택하면 메인 RP와 독립적으로 동작</small>
+                    </div>
                 </div>
             </div>
         </div>`;
@@ -4618,8 +4932,12 @@ const PhoneCore = {
         $('.phone-app-toggle').on('change', function() { const s = PhoneCore.getSettings(); if (!s.enabledApps) s.enabledApps = {}; s.enabledApps[$(this).data('app')] = this.checked; PhoneCore.saveSettings(); });
         
         $('#phone-wp-btn').on('click', () => $('#phone-wp-input').click());
-        $('#phone-wp-input').on('change', function() { if (this.files[0]) { const r = new FileReader(); r.onload = async e => { await PhoneCore.setWallpaper(e.target.result); toastr.success('배경 변경!'); }; r.readAsDataURL(this.files[0]); } });
-        $('#phone-wp-reset').on('click', async () => { await PhoneCore.setWallpaper(''); toastr.info('기본으로'); });
+        $('#phone-wp-input').on('change', function() { if (this.files[0]) { const r = new FileReader(); r.onload = async e => { await PhoneCore.setWallpaper(e.target.result, false); toastr.success('홈 배경 변경!'); }; r.readAsDataURL(this.files[0]); } });
+        $('#phone-wp-reset').on('click', async () => { await PhoneCore.setWallpaper('', false); toastr.info('홈 배경 기본으로'); });
+        
+        $('#phone-lwp-btn').on('click', () => $('#phone-lwp-input').click());
+        $('#phone-lwp-input').on('change', function() { if (this.files[0]) { const r = new FileReader(); r.onload = async e => { await PhoneCore.setWallpaper(e.target.result, true); toastr.success('잠금화면 배경 변경!'); }; r.readAsDataURL(this.files[0]); } });
+        $('#phone-lwp-reset').on('click', async () => { await PhoneCore.setWallpaper('', true); toastr.info('잠금화면 기본으로'); });
 
         $('#phone-theme-color').on('change', function() {
             PhoneCore.setThemeColor(this.value);
@@ -4640,6 +4958,11 @@ const PhoneCore = {
             toastr.success(this.value === 'ko' ? '문자: 한국어' : 'Message: English');
         });
 
+        $('#phone-ai-profile').on('change', function() {
+            AIService.setProfileId(this.value || null);
+            toastr.success(this.value ? '별도 AI 프로필 연결됨' : '기본 API 사용');
+        });
+
     },
     
     addMenuButton() {
@@ -4649,7 +4972,7 @@ const PhoneCore = {
     },
     
     async init() {
-        console.log('[Phone] v2.6.0 로딩...');
+        console.log('[Phone] v2.9.0 로딩...');
         
         await DataManager.load();
         this.applyThemeColor();
@@ -4667,11 +4990,15 @@ const PhoneCore = {
         this.addInstaTriggerButton();
 
         eventSource.on(event_types.MESSAGE_RECEIVED, async () => {
-            if (!this.apps.insta) return;
             const ctx = getContext();
             const lastMessage = ctx.chat?.[ctx.chat.length - 1];
             if (!lastMessage || lastMessage.is_user) return;
-            await this.apps.insta.checkAutoPost(lastMessage.mes || '');
+            
+            if (this.apps.insta) {
+                await this.apps.insta.checkAutoPost(lastMessage.mes || '');
+            }
+            
+            await NotificationManager.runTriggers();
         });
         console.log('[Phone] 로딩 완료!');
     },
